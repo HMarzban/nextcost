@@ -4,8 +4,8 @@
 import { atom, read, update } from 'claude-code'
 import type { ClassicEventOf, EngineInterface, ProcessRunResult, Register, Timer } from 'claude-code'
 import { drawBand } from './band'
-import { newCache } from './cache'
-import type { CacheModel, RecalledReply, Remembered, ResumedCache, Spend, TranscriptFacts } from './cache'
+import { newCache, wakerOf } from './cache'
+import type { CacheModel, RecalledReply, Remembered, ResumedCache, Spend, TranscriptFacts, Waker } from './cache'
 import { idleCompactFrom, resolveTtl } from './cache-settings'
 import { ARGUMENT_HINT, commandPlan, parseCommand } from './command'
 import { contextUsed, hostZone, paintKey, readableZone } from './format'
@@ -102,6 +102,9 @@ type Band = {
   resets: readonly number[]
   /** Each toast's level reached, so it speaks once per crossing. */
   warned: Warned
+  /** What submitted the prompt about to start a turn of its own, when the
+   *  user didn't type it, for that turn's start to take. */
+  nextWaker: Waker | undefined
   tick: Timer | undefined
 }
 
@@ -131,6 +134,7 @@ const band: Band = {
   samples: [],
   reads: 0,
   resume: undefined,
+  nextWaker: undefined,
   tick: undefined,
 }
 
@@ -524,9 +528,22 @@ export const register: Register = on => {
     const priceModel = await $.session.model().catch(() => undefined)
     const cost = await ledgerUsd($)
     band.insights.noteTurnStart(e.turnId, cost)
-    band.cache.turnStarted({ priceModel, ledger: cost })
+    band.cache.turnStarted({ priceModel, ledger: cost, wokenBy: band.nextWaker })
+    band.nextWaker = undefined
     return next(e)
   })
+
+  // A prompt the user didn't type, a background task's notification or
+  // another session's message, starts a turn that restarts the countdown:
+  // noted before it is passed on, since its turn starts before `next`
+  // resolves. One delivered into a running turn (`turnId`) starts none. Only
+  // its origin is read, never its text.
+  on('prompt.submit', async ($, e, next) => {
+    if (e.turnId === undefined) band.nextWaker = wakerOf(e.origin.kind)
+    const result = await next(e)
+    if (result.drop !== undefined) band.nextWaker = undefined
+    return result
+  }).catch(($, e, next) => next(e)) // a failure here must never stop a prompt
 
   // Main-loop turns only: a subagent's run is part of the turn that spawned it.
   on('turn.complete', async ($, e, next) => {

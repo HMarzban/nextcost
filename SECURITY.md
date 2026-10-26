@@ -57,6 +57,11 @@ it:
   each kind), how long the last cache write was made for, and, where Claude
   Code gives no idle time, the facts above. Nothing else is kept, shown or
   sent.
+- **Reads**, as each prompt is submitted, only where it came from (your
+  own, a background task's notification, another session, a schedule),
+  never its text, its attachments or its context, so the Cache card can say
+  who restarted the countdown. It passes every prompt on unchanged and keeps
+  that origin in memory alone, never in its store, until your own next turn.
 - **Writes** two values to the session's own state: whether the band is
   hidden, and whether it's expanded. In the plugin's own store it keeps,
   across sessions, the time of each session's last reply and the name of

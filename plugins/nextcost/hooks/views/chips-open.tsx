@@ -109,6 +109,7 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
     [
       cache.cardNote === undefined ? null : wrappedNote(kit, cache.cardNote),
       cache.known ? factRow(kit, cache.estimateLabel, cache.estimate) : null,
+      cache.wakeRow === undefined ? null : factRow(kit, cache.wakeRow.label, cache.wakeRow.value),
       knownRow(kit, 'idle for', cache.idleText),
       knownRow(kit, 'unexpected rebuilds', cache.rebuildsText),
       knownRow(kit, 'saved by cache', cache.savedText),

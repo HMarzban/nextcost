@@ -24,6 +24,36 @@ export const IDLE_COMPACT_MS = 54 * MINUTE_MS
  *  an idle one: an auto-compaction comes as a turn starts, not half an hour on. */
 const IDLE_GAP_MS = 30 * MINUTE_MS
 
+/** What started a main-loop turn the user didn't type: a background task's
+ *  notification, a schedule, another session, a channel, a plugin, or Claude
+ *  Code going on by itself. */
+export type Waker = 'task' | 'schedule' | 'session' | 'channel' | 'plugin' | 'claude'
+
+const WAKERS: Readonly<Record<string, Waker>> = {
+  'task-notification': 'task',
+  observer: 'task',
+  'observer-activity': 'task',
+  'scheduled-trigger': 'schedule',
+  peer: 'session',
+  'peer-send-message': 'session',
+  'projects-relay': 'session',
+  coordinator: 'session',
+  channel: 'channel',
+  'slack-ping': 'channel',
+  plugin: 'plugin',
+  'auto-continuation': 'claude',
+}
+
+/** What woke the session, by the origin of the prompt that started its turn;
+ *  undefined for the user's own (typed at the terminal, from a phone, or
+ *  through the desktop app's SDK host), one no engine could place, and a
+ *  kind a newer engine adds. */
+export const wakerOf = (kind: string): Waker | undefined => (Object.hasOwn(WAKERS, kind) ? WAKERS[kind] : undefined)
+
+/** The last main-loop turn, when the user didn't type it: what started it,
+ *  and whether it rebuilt the cache. */
+export type Wake = Readonly<{ by: Waker; reWarm: boolean }>
+
 /** What a conversation has spent: its dollars and its tokens. */
 export type Spend = Readonly<{ usd: number; tokens: TokenCounts }>
 
@@ -80,6 +110,8 @@ export type CacheView = Readonly<{
   recovered: boolean
   /** Every token since the conversation began, subagents included. */
   tokens: Readonly<{ sent: number; back: number; cached: number }>
+  /** The last turn restarted the countdown though the user didn't type it. */
+  wake: Wake | undefined
 }>
 
 type CacheState = {
@@ -95,6 +127,10 @@ type CacheState = {
   idleCompactFrom: number | undefined
   /** A main-loop turn is under way: a compaction then is no idle one. */
   turnOpen: boolean
+  /** What started the turn under way, when the user didn't type it. */
+  turnWaker: Waker | undefined
+  /** The last main-loop turn, when the user didn't type it. */
+  lastWake: Wake | undefined
   /** Main-loop requests this conversation. */
   requests: number
   /** Every token since the conversation began, subagents included. */
@@ -167,6 +203,8 @@ const INITIAL: Readonly<CacheState> = {
   ttlSeen: undefined,
   idleCompactFrom: undefined,
   turnOpen: false,
+  turnWaker: undefined,
+  lastWake: undefined,
   requests: 0,
   tokens: NO_TOKENS,
   premium: 0,
@@ -321,6 +359,7 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
     idleCompacts: s.idleCompactFrom !== undefined && !autoCompactOff && contextTokens >= s.idleCompactFrom,
     recovered: s.prior !== undefined,
     tokens: { sent: tokens.uncached + tokens.written, back: tokens.output, cached: tokens.read },
+    wake: s.lastWake,
   }
 }
 
@@ -483,9 +522,10 @@ export type CacheModel = Readonly<{
   /** classic.SessionStart, a resume or fork: the engine's word on its cache,
    *  and its transcript's once read. */
   resumed: (o: Readonly<{ cache: ResumedCache | undefined; transcript: TranscriptFacts | undefined }>) => void
-  /** turn.start of a main-loop turn: the model /model names now, and the
-   *  ledger, which the conversation's first turn takes as its baseline. */
-  turnStarted: (o: Readonly<{ priceModel: string | undefined; ledger: number | undefined }>) => void
+  /** turn.start of a main-loop turn: the model /model names now, the
+   *  ledger, which the conversation's first turn takes as its baseline, and
+   *  what started the turn, when the user didn't type it. */
+  turnStarted: (o: Readonly<{ priceModel: string | undefined; ledger: number | undefined; wokenBy?: Waker }>) => void
   /** turn.step: a response's tokens, sent at `sentAt`, and how many tool
    *  calls the API ran itself in it (the advisor), each starting a round
    *  whose tokens the usage sums. */
@@ -543,8 +583,9 @@ export const newCache = (): CacheModel => {
       noteResume(s, cache)
       if (transcript !== undefined) noteTranscript(s, transcript)
     },
-    turnStarted: ({ priceModel, ledger }) => {
+    turnStarted: ({ priceModel, ledger, wokenBy }) => {
       s.turnOpen = true
+      s.turnWaker = wokenBy
       s.priceModel = priceModel
       if (ledger !== undefined) s.ledgerSeen = ledger
       // The ledger as this conversation's first turn starts: its baseline.
@@ -571,6 +612,8 @@ export const newCache = (): CacheModel => {
       s.turnOpen = false
       const rebuilt = s.lastRebuilt
       s.lastRebuilt = false
+      s.lastWake = s.turnWaker === undefined ? undefined : { by: s.turnWaker, reWarm: rebuilt }
+      s.turnWaker = undefined
       return { rebuilt, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: ratePerToken(s, ledger), billed: s.billedModel, priceModel: s.priceModel } }
     },
     conversationEnded: (ledger, resumed) => {

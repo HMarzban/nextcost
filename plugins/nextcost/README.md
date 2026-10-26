@@ -113,7 +113,7 @@ Then come four cards with every fact labelled:
 
 | Card | Shows |
 | --- | --- |
-| Cache | Time left on a bar, what a re-warm would cost if it went cold, what the cache has saved, the hit rate, how long it lasts idle, unexpected rebuilds |
+| Cache | Time left on a bar, what a re-warm would cost if it went cold, who restarted it when you didn't, what the cache has saved, the hit rate, how long it lasts idle, unexpected rebuilds |
 | Spend | The session total, a bar of the token split with its legend (input, output, cache reads), your last message |
 | Context | How full toward auto-compaction, tokens in context, where compaction runs, room left, the model window |
 | Limits | The window closest to its limit, led by its reset and pace where the row doesn't say them, `resets Sat 13:30 · full before reset` (a countdown in departures); then each window (5h, 7d, a gateway's spend limit) with its bar and value, and each of the others named on a line of its own with its reset and pace in words: `5h resets 3h 00m · on pace for ~10%` |
@@ -330,6 +330,14 @@ always shown with `~`.
   cache saved, at the tier each request paid. A reopened session's cost
   record doesn't say which requests crossed, so there the last reply's
   prompt stands for them all.
+- **A reply that used the advisor** runs a tool loop on Anthropic's side:
+  its usage adds up every round, each reading the conversation again, and
+  the advisor's own round is billed without appearing in it. The band
+  measures the cache by one round's share and keeps that reply's bill out of
+  `r`, so neither the re-warm nor the rate doubles.
+- **A reply Claude Code wrote itself,** an API error such as a limit hit or
+  no connection, sent nothing, so it never restarts the countdown, and a
+  reopened session's last reply is the last one that reached the API.
 
 ## Your pace on the 5-hour limit
 
@@ -366,9 +374,13 @@ the expanded cards carry the same facts.
 
 The default lifetime depends on billing: an hour on a subscription within
 plan usage, five minutes on usage credits or an API key. A mod can't read
-which applies, so the band assumes an hour and says `· assumed`. If it
-then sees the cache rebuild after a gap longer than five minutes, with the
-same model, it corrects itself to `5m`. On a resumed session, the
+which applies, so the band assumes an hour and says `· assumed`. If a
+request after a gap longer than five minutes, on the same model, reads
+short of the cache, it corrects itself to `5m`. Such a request still reads
+the system prompt other sessions in the same folder keep warm, so short
+means short of the conversation, not nothing. A later request after five
+idle minutes that reads it all moves it back to an hour, as Claude Code
+does when a subscription moves off usage credits. On a resumed session, the
 transcript's last cache write says which until the band's first reply (see
 [Reopening an old session](#reopening-an-old-session)).
 
@@ -378,6 +390,18 @@ Code does, the first match in this order:
 - `CLAUDE_CODE_PROMPT_CACHE_TTL=5m` or `1h`
 - `"promptCacheTtl": "5m"` or `"1h"` in your settings.json
 - `ENABLE_PROMPT_CACHING_1H=1`
+
+### When a turn you didn't type restarts it
+
+A background task finishing, another Claude session's message, a schedule
+or a channel message can start a turn of its own. That turn reads the cache,
+so the countdown restarts though you sent nothing. The Cache card then says
+who did: `kept warm by · background task` within the lifetime, or
+`re-warmed by · background task` when the turn rebuilt a cold cache, with
+its cost as the Spend card's last message. Chips' cache hover says it too.
+Your own next turn takes the line away. The band learns it from where
+Claude Code says each prompt came from (`prompt.submit`'s origin); a
+message delivered into a turn already running starts none.
 
 ### Idle compaction
 
@@ -418,7 +442,8 @@ it, each given 3 seconds, and never while the band draws:
 | `grep -a -b -F '"type":"cost-state"' <transcript>`, then `tail -c +<offset> <transcript>` | the same | only when a conversation is resumed: what it spent before this process, so the session's cost includes it |
 
 **It reads** the session's id, model and usage from Claude Code (cost, token
-counts, context fill and rate-limit percentages), the clock, the project's
+counts, context fill and rate-limit percentages), where each prompt came
+from (never its text), the clock, the project's
 folder and repository root, two keys of your Claude Code settings
 (`promptCacheTtl` and `idleCompaction`), and these environment variables:
 `NEXTCOST_APPEARANCE` and `NEXTCOST_GLYPHS`, with their names before 0.18.0
@@ -454,7 +479,8 @@ none edits a message, a setting, a tool call or a result.
 | `session.end` | On `/clear` or a resume, starts the next conversation's count and reads git again. |
 | `classic.SessionStart` | On a resume or fork, notes that the conversation isn't new and reads its transcript as above. |
 | `turn.start`, `turn.complete` | Note the session's cost as each main turn starts and ends, the turn's cost, the context, and a limit reading; then read the layout and git again. A subagent's turn is left alone. |
-| `turn.step` | Reads each response's token counts, for the cache model and the price per token. |
+| `prompt.submit` | Notes where a prompt that starts a turn came from (your own, a background task, another session, a schedule), never its text, so the Cache card can say who restarted the countdown. |
+| `turn.step` | Reads each response's token counts, and how many tool calls Anthropic ran in it (the advisor), for the cache model and the price per token. |
 | `session.compact` | Notes that the conversation was compacted, so the cache counts as rebuilt at the summary's size. |
 | `session.measure` | Reads where auto-compaction runs, and shows a toast as the context or the 5-hour limit crosses its warning levels. |
 | `command.run` | Answers `/nextcost` and `/usage-band`, and no other command; `/nextcost more` reads git. |

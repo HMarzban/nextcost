@@ -5,7 +5,7 @@
 import type { CacheFacts } from './cache'
 import type { ContextFacts, Frame, LimitFacts } from './facts'
 import { clamp01, fmtCountdown, fmtTokens, severityMark } from './format'
-import { IDLE_COMPACT_AT, MOOD_ALT, UNKNOWN, compactsIn, goneShort } from './words'
+import { IDLE_COMPACT_AT, MOOD_ALT, UNKNOWN, compactsIn, goneShort, wakeSaid } from './words'
 import type { SpendWords } from './words'
 
 /** Every word chips' row says about the cache, for one mood: the pill, its
@@ -23,9 +23,11 @@ const cacheCopy = (f: CacheFacts, frame: Frame): CacheCopy => {
   // The rebuild's price after its tokens, where a rate is known.
   const priced = f.reWarmUsd === null ? '' : ` (${f.estimate})`
   const battery = f.charge <= 0 ? 'cache battery empty' : `cache battery ${Math.round(clamp01(f.charge) * 100)}% left`
-  const warmHover = f.idleCompactSoon
-    ? `${left} left; may be compacted ${IDLE_COMPACT_AT}`
-    : `${left} left; warm cache bills input at ${readPct}, expires ${f.ttl} after a request`
+  // A turn the user didn't type restarted the countdown: who did, said after.
+  const woken = (hover: string): string => (f.wake === undefined ? hover : `${hover}; ${wakeSaid(f.wake)}`)
+  const warmHover = woken(
+    f.idleCompactSoon ? `${left} left; may be compacted ${IDLE_COMPACT_AT}` : `${left} left; warm cache bills input at ${readPct}, expires ${f.ttl} after a request`,
+  )
   switch (f.mood) {
     case 'unmeasured':
       return {
@@ -56,7 +58,7 @@ const cacheCopy = (f: CacheFacts, frame: Frame): CacheCopy => {
       return {
         // Cold is a price, not an error: neutral, no hue, no alarm.
         pill: short => (short ? goneShort('cold', f.estimate) : `cache cold · next message ${f.estimate}`),
-        hover: `Cold: next message rebuilds ${fmtTokens(f.window)} tokens${priced}`,
+        hover: woken(`Cold: next message rebuilds ${fmtTokens(f.window)} tokens${priced}`),
         alt: battery,
       }
     case 'warm':

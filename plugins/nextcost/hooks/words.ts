@@ -24,7 +24,7 @@ import {
   severityMark,
 } from './format'
 import { IDLE_COMPACT_MS } from './cache'
-import type { CacheFacts } from './cache'
+import type { CacheFacts, Wake, Waker } from './cache'
 import type { ContextFacts, Frame, LimitFacts, SpendFacts, Tone } from './facts'
 import { lastCostOf, warmAverageOf } from './insights'
 import type { CostEntry, Trails } from './insights'
@@ -134,6 +134,9 @@ export type CacheWords = Readonly<{
   rebuildsText: string | undefined
   /** How long a recalled cache sat idle, `2h 05m`; undefined unless recalled. */
   idleText: string | undefined
+  /** Who started the last turn, when the user didn't: `re-warmed by
+   *  background task`, or within the TTL `kept warm by another session`. */
+  wakeRow: Fact | undefined
   /** The cache card's headline: its countdown, `59m left`, else its mood. */
   cardHead: Say
   /** The cache card's line while there is nothing to count. */
@@ -308,6 +311,20 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
   }
 }
 
+/** What woke a session, as a card's value names it and as a sentence's subject. */
+const WAKER_WORDS: Readonly<Record<Waker, Readonly<{ noun: string; subject: string }>>> = {
+  task: { noun: 'background task', subject: 'a background task' },
+  schedule: { noun: 'schedule', subject: 'a schedule' },
+  session: { noun: 'another session', subject: 'another session' },
+  channel: { noun: 'channel message', subject: 'a channel message' },
+  plugin: { noun: 'plugin', subject: 'a plugin' },
+  claude: { noun: 'Claude Code', subject: 'Claude Code' },
+}
+
+/** A turn the user didn't type, as a hover says it: `a background task
+ *  re-warmed it`, `another session kept it warm`. */
+export const wakeSaid = (wake: Wake): string => `${WAKER_WORDS[wake.by].subject} ${wake.reWarm ? 're-warmed it' : 'kept it warm'}`
+
 /** The cache in words, from its facts: its mood's, and the measures every
  *  mood says alike. It counts down only while `coldInMs` is set. */
 export const cacheWords = (f: CacheFacts): CacheWords => {
@@ -325,10 +342,11 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     amber: m.amber,
     savedText: f.measured && f.savedUsd !== null ? fmtEstimate(f.savedUsd) : undefined,
     hitText: f.hitFrac === undefined ? undefined : fmtPct(f.hitFrac),
-    // Inference only ever moves an assumed hour to 5m, so an unpinned hour is the guess.
+    // Unpinned, an hour is assumed until a pin or the transcript says it.
     lastsText: `${f.ttl} idle${!f.ttlPinned && f.ttl === '1h' ? ' · assumed' : ''}`,
     rebuildsText: f.misses > 0 ? String(f.misses) : undefined,
     idleText: f.recalled && f.idleMs !== null ? fmtAgo(f.idleMs) : undefined,
+    wakeRow: f.wake === undefined ? undefined : { label: f.wake.reWarm ? 're-warmed by' : 'kept warm by', value: WAKER_WORDS[f.wake.by].noun },
     cardHead: m.cardHead,
     cardNote: m.cardNote,
     estimateLabel: m.estimateLabel,

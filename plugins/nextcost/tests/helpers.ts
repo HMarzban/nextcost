@@ -271,6 +271,7 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
     return { value: usage.current }
   })
   on('session.compact', () => engine.compact)
+  on('prompt.submit', ($, e) => ({ text: e.text, origin: e.origin }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
