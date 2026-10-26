@@ -215,7 +215,7 @@ export const limitPill = (kit: Kit, read: Readings, key: ChipKey, k: Keeps<Piece
       hover: read.chips.limitHover[key],
     }
   }
-  const pace = w.fullIn === undefined ? '' : ` ${short ? w.fullIn : w.pace}`
+  const pace = w.fullShort === undefined ? '' : ` ${short ? w.fullShort : w.pace}`
   const fg = onTone(tone, tint.fg)
   const accent = onTone(tone, tint.accent)
   const bar = k.has('limitBars') ? [gap('g-bar'), meter(kit, { label: key, frac, tone, accent: tint.accent, size: CHIP_BAR })] : []

@@ -217,6 +217,9 @@ export type LimitWords = Readonly<{
   line: string
   /** A measured fill, `~40m`. */
   fullIn: string | undefined
+  /** The measured fill as a chip says it short, `full ~40m`: never the span
+   *  alone, which beside a reset reads as one. */
+  fullShort: string | undefined
   /** `! 5h 82%`, or with a measured fill, `! 5h full in ~40m` / `! 5h ~40m`. */
   amber: Amber | undefined
   /** Pulse's limits card, under its chart: `5h resets` and `16:40`; with a
@@ -458,6 +461,7 @@ export const limitWords = (f: LimitFacts, frame: Frame): LimitWords => {
     bandName: f.name,
     line: amber?.long ?? joined(say),
     fullIn,
+    fullShort: fullIn === undefined ? undefined : `full ${fullIn}`,
     amber,
     fact,
     alt: altOf(

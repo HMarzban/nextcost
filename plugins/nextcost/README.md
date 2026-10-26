@@ -349,7 +349,10 @@ It's always shown with `~`.
 The band records your 5-hour usage as it moves. Once it has at least 10
 minutes and a 2-point rise to go on, it projects when you'd hit 100%,
 using the last 30 minutes. If that's before the limit resets, the chip
-says so. The limit is shared across all your Claude use, so the pace
+says so: `5h 76% full in ~1h 15m`, or cut short `5h 76% full ~1h 15m`,
+never the time alone, which beside Claude Code's `Resets in 2h` would read
+as a reset. Its hover says it is a projection at the current pace: a burst
+of work, such as a workflow fanning out, fills the window sooner. The limit is shared across all your Claude use, so the pace
 includes your other sessions and devices, and `/clear` keeps it. The
 projection hides once its newest reading is more than 15 minutes old.
 

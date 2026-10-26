@@ -5,7 +5,7 @@
 import type { CacheFacts } from './cache'
 import type { ContextFacts, Frame, LimitFacts } from './facts'
 import { clamp01, fmtCountdown, fmtTokens, severityMark } from './format'
-import { IDLE_COMPACT_AT, MOOD_ALT, UNKNOWN, compactsIn, goneShort, wakeSaid } from './words'
+import { IDLE_COMPACT_AT, MOOD_ALT, UNKNOWN, compactsIn, goneShort, paceText, wakeSaid } from './words'
 import type { SpendWords } from './words'
 
 /** Every word chips' row says about the cache, for one mood: the pill, its
@@ -101,7 +101,10 @@ export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend:
     if (l === undefined) return undefined
     const title = CHIP_TITLES[key]
     if (l.passed) return `${title} has reset; it updates after your next message`
-    return l.reset?.kind === 'in' ? `Resets in ${l.reset.text}; ${title.toLowerCase()}, all your Claude use` : `Your ${title.toLowerCase()}, across all your Claude use`
+    const about = l.reset?.kind === 'in' ? `Resets in ${l.reset.text}; ${title.toLowerCase()}, all your Claude use` : `Your ${title.toLowerCase()}, across all your Claude use`
+    // A fill is the last half hour's pace drawn straight on: a burst of work
+    // fills the window sooner, so the hover says what it rests on.
+    return l.etaMs === null ? about : `${about}; ${paceText(l)} at the current pace`
   }
   return {
     cache: cacheCopy(r.cache, r.frame),
