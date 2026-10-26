@@ -305,3 +305,47 @@ test('a reply that sent no tokens leaves the cache as it was measured', () => {
   expect(cache.window).toBe(208_000)
   expect(cache.readShare).toBe(0.05) // still priced as Opus 5.5
 })
+
+/** The TTL and misses the model reads at `now`. */
+const ttlAt = (c: CacheModel, now: number) => {
+  const { cache } = c.view({ now, ledger: undefined, contextTokens: 0, autoCompactOff: false })
+  return { ttl: cache.ttl, misses: cache.misses }
+}
+
+test('a cold read that still finds the shared system prompt corrects an assumed hour to 5m', () => {
+  const c = newCache()
+  c.responded(resp(2_000, 0, 500_000, 1_000), 0, true)
+  // The prompt other sessions in the folder keep warm is read; the conversation isn't.
+  c.responded(resp(2_000, 44_323, 458_000, 1_000), 10 * MIN, true)
+  expect(ttlAt(c, 10 * MIN)).toEqual({ ttl: '5m', misses: 0 })
+  expect(rebuilt(c)).toBe(true)
+})
+
+test('on a small conversation the shared prompt is most of what a cold read finds, and it is still 5m', () => {
+  const c = newCache()
+  c.responded(resp(2_000, 0, 60_000, 1_000), 0, true)
+  c.responded(resp(2_000, 44_323, 18_000, 1_000), 10 * MIN, true)
+  expect(ttlAt(c, 10 * MIN)).toEqual({ ttl: '5m', misses: 0 })
+})
+
+test('an inferred 5m goes back to the hour when a read after five idle minutes finds it all', () => {
+  const c = newCache()
+  c.responded(resp(2_000, 0, 500_000, 1_000), 0, true)
+  c.responded(resp(2_000, 44_323, 458_000, 1_000), 10 * MIN, true)
+  c.turnEnded(undefined)
+  c.responded(resp(2_000, 502_000, 3_000, 1_000), 30 * MIN, true)
+  expect(ttlAt(c, 30 * MIN)).toEqual({ ttl: '1h', misses: 0 })
+  expect(rebuilt(c)).toBe(false)
+})
+
+test('a short read within five minutes is still a miss, and a pinned TTL is never inferred', () => {
+  const quick = newCache()
+  quick.responded(resp(2_000, 0, 500_000, 1_000), 0, true)
+  quick.responded(resp(2_000, 44_323, 458_000, 1_000), 2 * MIN, true)
+  expect(ttlAt(quick, 2 * MIN)).toEqual({ ttl: '1h', misses: 1 })
+  const pinned = newCache()
+  pinned.configured({ ttl: '1h', idleCompactFrom: undefined })
+  pinned.responded(resp(2_000, 0, 500_000, 1_000), 0, true)
+  pinned.responded(resp(2_000, 44_323, 458_000, 1_000), 10 * MIN, true)
+  expect(ttlAt(pinned, 10 * MIN)).toEqual({ ttl: '1h', misses: 1 })
+})

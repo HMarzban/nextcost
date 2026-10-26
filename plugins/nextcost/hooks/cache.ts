@@ -395,13 +395,12 @@ const billResponse = (s: CacheState, usage: Response, rounds: number): void => {
   if (rounds > 1) s.offBookPending = (s.offBookPending ?? 0) + weighted
 }
 
-/** Whether a main-loop request that read `hit` tokens, `gap` after the
- *  last, read short of a cache that should have been warm, by enough tokens
- *  and enough of what it held: within its TTL, on the same model, and with
- *  nothing rebuilding it on purpose. */
-const readShort = (s: CacheState, hit: number, gap: number, switched: boolean): boolean => {
+/** Whether a main-loop request that read `hit` tokens read short of what
+ *  the cache held, by enough tokens and enough of it; undefined with nothing
+ *  to measure it by: no prefix, one rebuilt on purpose, or another model. */
+const shortOf = (s: CacheState, hit: number, switched: boolean): boolean | undefined => {
   const prefix = s.cached
-  if (prefix <= 0 || s.rebuilding || switched || gap > TTL_MS[s.ttl]) return false
+  if (prefix <= 0 || s.rebuilding || switched) return undefined
   const shortfall = prefix - hit
   return shortfall >= MISS_MIN_TOKENS && shortfall > prefix * MISS_MIN_SHARE
 }
@@ -425,11 +424,14 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   const gap = s.requests > 0 ? sentAt - s.lastAt : 0
   // Another model has its own cache: reading nothing after a switch is no miss.
   const switched = s.model !== undefined && model !== undefined && model !== s.model
-  const short = readShort(s, hit, gap, switched)
-  // An assumed hour that read nothing after five idle minutes was five.
-  const wasFive = short && !s.ttlPinned && s.ttl === '1h' && hit === 0 && gap > TTL_MS['5m']
-  if (wasFive) s.ttl = '5m'
-  const missed = short && !wasFive
+  const short = shortOf(s, hit, switched)
+  // Unpinned, the TTL is read off a request after five idle minutes: one that
+  // read short found only what other sessions keep warm, the system prompt,
+  // so the cache lived five minutes; one that read it all, an hour. Claude
+  // Code switches as a subscription goes onto usage credits, or back off.
+  if (!s.ttlPinned && short !== undefined && gap > TTL_MS['5m'] && gap <= TTL_MS['1h']) s.ttl = short ? '5m' : '1h'
+  // Short of a cache that should have been warm: within its TTL.
+  const missed = short === true && gap <= TTL_MS[s.ttl]
   if (missed) s.misses += 1
 
   // A rebuild of a cache that existed: its time ran out, it missed, a
