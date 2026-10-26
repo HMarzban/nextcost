@@ -146,10 +146,8 @@ type CacheState = {
    *  usage, so the rate is solved without them. */
   offBookUsd: number
   offBookWeight: number
-  /** Such a step's weighted tokens, until the ledger read after it says
-   *  what the step was billed. */
-  offBookPending: number | undefined
-  /** The ledger as last read, from which a step's bill is told. */
+  /** The ledger as the last step or turn start read it, from which a step's
+   *  bill is told. A redraw's read leaves it, so it never hides a step's. */
   ledgerSeen: number | undefined
   /** Requests that missed a cache that should have been warm. */
   misses: number
@@ -211,7 +209,6 @@ const INITIAL: Readonly<CacheState> = {
   tieredReads: 0,
   offBookUsd: 0,
   offBookWeight: 0,
-  offBookPending: undefined,
   ledgerSeen: undefined,
   misses: 0,
   lastAt: 0,
@@ -387,22 +384,22 @@ const noteTranscript = (s: CacheState, facts: TranscriptFacts): void => {
 /** The engine may reset the ledger on /clear: once it reads below the
  *  baseline, it counts this conversation alone, so the baseline is 0. */
 const noteLedger = (s: CacheState, costNow: number | undefined): void => {
-  if (costNow === undefined) return
-  if (costNow < s.costBase) s.costBase = 0
-  s.ledgerSeen = costNow
+  if (costNow !== undefined && costNow < s.costBase) s.costBase = 0
 }
 
-/** The ledger read after a response: a step with a server-side tool loop is
- *  billed what the ledger grew by, kept off the rate's books with its
- *  tokens. With no reading on either side, neither is kept off. */
-const noteStepLedger = (s: CacheState, costNow: number | undefined): void => {
-  const pending = s.offBookPending
-  s.offBookPending = undefined
-  if (pending !== undefined && costNow !== undefined && s.ledgerSeen !== undefined && costNow >= s.ledgerSeen) {
-    s.offBookUsd += costNow - s.ledgerSeen
-    s.offBookWeight += pending
-  }
+/** The ledger read after a response. A step with a server-side tool loop,
+ *  `offBook` its weighted tokens, is billed what the ledger grew by since
+ *  the last step, kept off the rate's books with its tokens. Only a bill
+ *  that grew is kept off: with nothing to tell it by, the step stays on. */
+const noteStepLedger = (s: CacheState, costNow: number | undefined, offBook: number | undefined): void => {
+  const before = s.ledgerSeen
   noteLedger(s, costNow)
+  if (costNow === undefined) return
+  s.ledgerSeen = costNow
+  if (offBook !== undefined && before !== undefined && costNow > before) {
+    s.offBookUsd += costNow - before
+    s.offBookWeight += offBook
+  }
 }
 
 /** A compaction replaces the conversation with a summary: the next request
@@ -418,8 +415,8 @@ const noteCompaction = (s: CacheState, sizeAfter: number | undefined): void => {
 /** A response's tokens toward the bill: every response's, a subagent's
  *  included, since the session's bill includes every subagent and the rate
  *  is solved from it. Over `rounds` of a server-side tool loop, the usage
- *  sums every round's, so the step is kept off the rate's books. */
-const billResponse = (s: CacheState, usage: Response, rounds: number): void => {
+ *  sums every round's. Returns the response's weighted tokens. */
+const billResponse = (s: CacheState, usage: Response, rounds: number): number => {
   const hit = usage.cache_read_input_tokens
   const written = usage.cache_creation_input_tokens
   const uncached = usage.input_tokens
@@ -431,7 +428,7 @@ const billResponse = (s: CacheState, usage: Response, rounds: number): void => {
   const weighted = factor * weightedTokens(request, usage.model)
   s.premium += weighted - weightedTokens(request, usage.model)
   s.tieredReads += factor * hit
-  if (rounds > 1) s.offBookPending = (s.offBookPending ?? 0) + weighted
+  return weighted
 }
 
 /** Whether a main-loop request that read `hit` tokens read short of what
@@ -526,12 +523,10 @@ export type CacheModel = Readonly<{
    *  ledger, which the conversation's first turn takes as its baseline, and
    *  what started the turn, when the user didn't type it. */
   turnStarted: (o: Readonly<{ priceModel: string | undefined; ledger: number | undefined; wokenBy?: Waker }>) => void
-  /** turn.step: a response's tokens, sent at `sentAt`, and how many tool
-   *  calls the API ran itself in it (the advisor), each starting a round
-   *  whose tokens the usage sums. */
-  responded: (usage: Response, sentAt: number, isMain: boolean, serverTools?: number) => void
-  /** The ledger, as a hook read it after a response. */
-  ledgerRead: (ledger: number | undefined) => void
+  /** turn.step: a response's tokens, sent at `sentAt`; how many tool calls
+   *  the API ran itself in it (the advisor), each starting a round whose
+   *  tokens the usage sums; and the ledger as the hook read it after. */
+  responded: (usage: Response, sentAt: number, isMain: boolean, after?: Readonly<{ serverTools?: number; ledger?: number | undefined }>) => void
   /** A compaction of the main conversation at `now`, to `sizeAfter` tokens.
    *  With no turn under way, not /compact, and long after the last request,
    *  it is Claude Code compacting the conversation before its cache ran out
@@ -594,14 +589,14 @@ export const newCache = (): CacheModel => {
         s.baselined = true
       }
     },
-    responded: (usage, sentAt, isMain, serverTools = 0) => {
-      const rounds = serverTools + 1
-      billResponse(s, usage, rounds)
+    responded: (usage, sentAt, isMain, after = {}) => {
+      const rounds = (after.serverTools ?? 0) + 1
+      const weighted = billResponse(s, usage, rounds)
+      noteStepLedger(s, after.ledger, rounds > 1 ? weighted : undefined)
       // A reply that sent no tokens made no request: it read and kept no cache.
       const sent = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
       if (isMain && sent > 0) measureCache(s, usage, sentAt, rounds)
     },
-    ledgerRead: ledger => noteStepLedger(s, ledger),
     compacted: ({ now, sizeAfter, manual = false }) => {
       const idle = !s.turnOpen && !manual && s.requests > 0 && now - s.lastAt >= IDLE_GAP_MS
       noteCompaction(s, sizeAfter)

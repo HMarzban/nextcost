@@ -270,7 +270,7 @@ const ADVISOR_STEP = resp(4, 563_500, 1_800, 1_200)
 test("an advisor step's summed usage counts its prefix once", () => {
   const c = newCache()
   c.responded(resp(2_000, 0, 280_000, 500), 0, true)
-  c.responded(ADVISOR_STEP, MIN, true, 1)
+  c.responded(ADVISOR_STEP, MIN, true, { serverTools: 1 })
   // (4 + 563.5k + 1.8k) / 2 rounds, then its output: 282,652 + 1,200.
   expect(c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.window).toBe(283_852)
   c.responded(resp(2, 282_100, 2_500, 900), 2 * MIN, true)
@@ -348,4 +348,16 @@ test('a short read within five minutes is still a miss, and a pinned TTL is neve
   pinned.responded(resp(2_000, 0, 500_000, 1_000), 0, true)
   pinned.responded(resp(2_000, 44_323, 458_000, 1_000), 10 * MIN, true)
   expect(ttlAt(pinned, 10 * MIN)).toEqual({ ttl: '1h', misses: 1 })
+})
+
+test("a redraw that reads the ledger while an advisor step runs leaves its bill off the rate", () => {
+  const rewarm = (redraw: boolean): number | null => {
+    const m = newCache()
+    m.responded(BUILD_100K, 0, true, { ledger: 2.41 })
+    if (redraw) m.view({ now: MIN, ledger: 3.7009, contextTokens: 0, autoCompactOff: false })
+    m.responded(resp(4, 200_000, 2_000, 1_000), MIN, true, { serverTools: 1, ledger: 3.7009 })
+    return m.view({ now: 61 * MIN, ledger: 3.7009, contextTokens: 0, autoCompactOff: false }).cache.reWarmUsd
+  }
+  expect(rewarm(true)).toBe(rewarm(false))
+  expect(Math.abs((rewarm(false) ?? 0) - 2.1192) < 1e-3).toBe(true)
 })

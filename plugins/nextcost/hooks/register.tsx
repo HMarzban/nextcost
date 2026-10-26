@@ -579,8 +579,9 @@ export const register: Register = on => {
       // The tool calls the API ran itself (2.1.290+, read through `in`: older
       // engines' types don't declare them), each a round the usage sums.
       const served = 'serverToolUses' in result && Array.isArray(result.serverToolUses) ? result.serverToolUses.length : 0
-      band.cache.responded(result.usage, sentAt, isMain, served)
-      band.cache.ledgerRead(await ledgerUsd($))
+      // The ledger goes in with the response, so no other hook's step can
+      // come between them and take its bill for this one's.
+      band.cache.responded(result.usage, sentAt, isMain, { serverTools: served, ledger: await ledgerUsd($) })
       $.ui.invalidate('ui.render')
     }
     if (isMain && result?.stopReason === 'compaction') band.cache.compacted({ now: sentAt })
