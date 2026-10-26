@@ -5,6 +5,16 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/). Before
 1.0.0, a minor version may change how the band reads.
 
+## [0.20.0] - 2026-10-26
+
+### Added
+- The Cache card says who restarted the countdown when you didn't: `kept warm by · background task` when a background task's notification, another Claude session's message, a schedule or a channel message started a turn within the cache's lifetime, `re-warmed by · background task` when that turn rebuilt a cold cache. Chips' cache hover ends the same way: `; a background task re-warmed it`. Your own next turn takes the line away. In two long sessions checked, turns nobody typed paid $20.87 of $37.26 spent rebuilding cold caches, while the countdown seemed to restart by itself. The band learns where each prompt came from through a new `prompt.submit` hook, which reads only its origin, never its text, and passes every prompt on unchanged; the README and SECURITY.md say so.
+
+### Fixed
+- A reply that used the advisor no longer doubles the cache's size. Anthropic's usage for a reply with a server-side tool loop adds up every round, each reading the conversation again, so the band read about twice the context: the re-warm price doubled, the next message counted as an unexpected rebuild, and the advisor's own round, billed but missing from the usage, raised the price per token every later re-warm was priced at. The band now measures the cache by one round's share and keeps that reply's bill out of the rate. It needs Claude Code 2.1.290 or later, which says how many tool calls Anthropic ran.
+- A reopened session no longer counts its cache down from an API error. Claude Code logs a limit hit, a lost connection or an expired login as a reply on the model `<synthetic>` with no tokens, and the band took the last of these for the session's last reply: it showed a cold cache as warm and priced its re-warm under no real model. Those lines are skipped, and a step that sent no tokens leaves the countdown as it was.
+- On the five-minute cache, an assumed hour corrects itself. The band switched to `5m` only when a request after five idle minutes read nothing from the cache, but a cold request still reads the system prompt that other sessions in the same folder keep warm (about 44k tokens). So it counted an unexpected rebuild and kept counting down from an hour, about 50 minutes too long. A short read after five idle minutes now means five minutes, and a later read of nearly all of it after five idle minutes means an hour again, as when a subscription moves off usage credits.
+
 ## [0.19.0] - 2026-10-22
 
 ### Fixed
