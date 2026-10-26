@@ -88,6 +88,9 @@ type EngineFake = {
   compact: SessionCompactResult
   stop: TurnStopReason
   gate: Promise<void> | undefined
+  /** How many tool calls the API ran itself in the next step (the advisor):
+   *  its usage is then summed over that many rounds and one more. */
+  serverTools: number
   root: string
   repoRoot: string | undefined
   git: GitAnswer
@@ -163,6 +166,7 @@ const ENGINE_INITIAL: Readonly<EngineFake> = {
   compact: { messages: SUMMARY, tokensAfter: COMPACTED_TO },
   stop: 'end_turn',
   gate: undefined,
+  serverTools: 0,
 }
 
 // Cloned, not spread: `ran`, `statted` and the store logs are pushed to, and
@@ -289,6 +293,9 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
       toolUses: [],
       stopReason: engine.stop,
       usage: nextUsage === null ? null : { ...nextUsage, model: e.model },
+      ...(engine.serverTools > 0 && {
+        serverToolUses: Array.from({ length: engine.serverTools }, (_, i) => ({ id: `srv-${i}`, name: 'advisor', input: {}, startedAt: 0, endedAt: 1 })),
+      }),
     }
   })
 }

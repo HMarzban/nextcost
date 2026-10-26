@@ -559,7 +559,10 @@ export const register: Register = on => {
     const result = yield* next(e)
     const isMain = e.agentId === undefined
     if (result?.usage) {
-      band.cache.responded(result.usage, sentAt, isMain)
+      // The tool calls the API ran itself (2.1.290+, read through `in`: older
+      // engines' types don't declare them), each a round the usage sums.
+      const served = 'serverToolUses' in result && Array.isArray(result.serverToolUses) ? result.serverToolUses.length : 0
+      band.cache.responded(result.usage, sentAt, isMain, served)
       band.cache.ledgerRead(await ledgerUsd($))
       $.ui.invalidate('ui.render')
     }

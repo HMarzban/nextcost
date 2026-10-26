@@ -25,6 +25,7 @@ import {
   cardOf,
   setup,
   mountBand,
+  usage,
 } from './helpers'
 
 /** Whether the turn's end finds the cache rebuilt. */
@@ -259,5 +260,37 @@ test('switching model and back within a pinned hour is no miss', async ($, on) =
   const ui = await mountBand($, 'terminal', 160)
   await ui.press({ key: 'more' })
   expect(rebuilds(await ui.drawn())).toBe(0)
+  await ui.unmount()
+})
+
+// An advisor step: two message rounds read the same ~280k prefix, and the
+// usage the API reports sums them; the advisor's own round is billed apart.
+const ADVISOR_STEP = resp(4, 563_500, 1_800, 1_200)
+
+test("an advisor step's summed usage counts its prefix once", () => {
+  const c = newCache()
+  c.responded(resp(2_000, 0, 280_000, 500), 0, true)
+  c.responded(ADVISOR_STEP, MIN, true, 1)
+  // (4 + 563.5k + 1.8k) / 2 rounds, then its output: 282,652 + 1,200.
+  expect(c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.window).toBe(283_852)
+  c.responded(resp(2, 282_100, 2_500, 900), 2 * MIN, true)
+  expect(c.view({ now: 2 * MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.misses).toBe(0)
+})
+
+test("an advisor step's own bill stays out of the rate the re-warm is solved from", LONG, async ($, on) => {
+  const clock = setup(on)
+  await $.session.start(START)
+  await respond($, BUILD_100K) // the ledger reads $2.41
+  // Its message rounds cost 2.41/145k * 17,504 weighted = $0.29, the advisor $1.00 more.
+  usage.current = { ...USAGE, cost: { usd: 3.7009 } }
+  engine.serverTools = 1
+  await respond($, resp(4, 200_000, 2_000, 1_000))
+  engine.serverTools = 0
+  await clock.advance(61 * MIN)
+
+  // The rate stays 2.41/145k, on a window of 202,004/2 + 1,000 = 102,002:
+  // 1.25 * 102,002 * 2.41 / 145k = 2.12 (with the advisor's bill in, 2.90).
+  const ui = await mountBand($, 'terminal', 110)
+  expect(await ui.find({ type: 'Text', text: /~\$2\.12/ })).toBeDefined()
   await ui.unmount()
 })
