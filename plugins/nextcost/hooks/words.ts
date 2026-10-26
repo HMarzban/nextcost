@@ -135,7 +135,8 @@ export type CacheWords = Readonly<{
   /** How long a recalled cache sat idle, `2h 05m`; undefined unless recalled. */
   idleText: string | undefined
   /** Who started the last turn, when the user didn't: `re-warmed by
-   *  background task`, or within the TTL `kept warm by another session`. */
+   *  background task`, or within the TTL `kept warm by another session`;
+   *  once the cache has gone again, `last turn by background task`. */
   wakeRow: Fact | undefined
   /** The cache card's headline: its countdown, `59m left`, else its mood. */
   cardHead: Say
@@ -321,9 +322,23 @@ const WAKER_WORDS: Readonly<Record<Waker, Readonly<{ noun: string; subject: stri
   claude: { noun: 'Claude Code', subject: 'Claude Code' },
 }
 
+/** Whether the cache has gone since: what the last turn did no longer holds. */
+const goneMoods: ReadonlySet<CacheFacts['mood']> = new Set(['cold', 'compacted'])
+
 /** A turn the user didn't type, as a hover says it: `a background task
- *  re-warmed it`, `another session kept it warm`. */
-export const wakeSaid = (wake: Wake): string => `${WAKER_WORDS[wake.by].subject} ${wake.reWarm ? 're-warmed it' : 'kept it warm'}`
+ *  re-warmed it`, `another session kept it warm`; the cache gone since,
+ *  `last turn by a background task`. */
+export const wakeSaid = (wake: Wake, mood: CacheFacts['mood']): string => {
+  const { subject } = WAKER_WORDS[wake.by]
+  return goneMoods.has(mood) ? `last turn by ${subject}` : `${subject} ${wake.reWarm ? 're-warmed it' : 'kept it warm'}`
+}
+
+/** The Cache card's row for a turn the user didn't type: what it did, while
+ *  that still holds, and who started it. */
+const wakeRowOf = (wake: Wake, mood: CacheFacts['mood']): Fact => ({
+  label: goneMoods.has(mood) ? 'last turn by' : wake.reWarm ? 're-warmed by' : 'kept warm by',
+  value: WAKER_WORDS[wake.by].noun,
+})
 
 /** The cache in words, from its facts: its mood's, and the measures every
  *  mood says alike. It counts down only while `coldInMs` is set. */
@@ -346,7 +361,7 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     lastsText: `${f.ttl} idle${!f.ttlPinned && f.ttl === '1h' ? ' · assumed' : ''}`,
     rebuildsText: f.misses > 0 ? String(f.misses) : undefined,
     idleText: f.recalled && f.idleMs !== null ? fmtAgo(f.idleMs) : undefined,
-    wakeRow: f.wake === undefined ? undefined : { label: f.wake.reWarm ? 're-warmed by' : 'kept warm by', value: WAKER_WORDS[f.wake.by].noun },
+    wakeRow: f.wake === undefined ? undefined : wakeRowOf(f.wake, f.mood),
     cardHead: m.cardHead,
     cardNote: m.cardNote,
     estimateLabel: m.estimateLabel,

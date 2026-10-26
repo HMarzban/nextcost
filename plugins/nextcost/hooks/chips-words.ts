@@ -24,7 +24,7 @@ const cacheCopy = (f: CacheFacts, frame: Frame): CacheCopy => {
   const priced = f.reWarmUsd === null ? '' : ` (${f.estimate})`
   const battery = f.charge <= 0 ? 'cache battery empty' : `cache battery ${Math.round(clamp01(f.charge) * 100)}% left`
   // A turn the user didn't type restarted the countdown: who did, said after.
-  const woken = (hover: string): string => (f.wake === undefined ? hover : `${hover}; ${wakeSaid(f.wake)}`)
+  const woken = (hover: string): string => (f.wake === undefined ? hover : `${hover}; ${wakeSaid(f.wake, f.mood)}`)
   const warmHover = woken(
     f.idleCompactSoon ? `${left} left; may be compacted ${IDLE_COMPACT_AT}` : `${left} left; warm cache bills input at ${readPct}, expires ${f.ttl} after a request`,
   )

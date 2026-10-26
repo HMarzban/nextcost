@@ -97,3 +97,10 @@ test("chips' hover says who re-warmed the cache, and its words are the card's", 
   const kept = readingsOf(snapOf({ cache: cacheWith({ wake: { by: 'session', reWarm: false } }) }))
   expect(kept.chips.cache.hover).toMatch(/; another session kept it warm$/)
 })
+
+test('once the cache has gone cold again, the card and hover say only whose turn was last', () => {
+  const r = readingsOf(snapOf({ cache: cacheWith({ leftMs: 0, wake: { by: 'session', reWarm: false } }) }))
+  expect(r.cache.mood).toBe('cold')
+  expect(r.cache.wakeRow).toEqual({ label: 'last turn by', value: 'another session' })
+  expect(r.chips.cache.hover).toMatch(/; last turn by another session$/)
+})

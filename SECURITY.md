@@ -59,8 +59,8 @@ it:
   sent.
 - **Reads**, as each prompt is submitted, only where it came from (your
   own, a background task's notification, another session, a schedule),
-  never its text, its attachments or its context, so the Cache card can say
-  who restarted the countdown. It passes every prompt on unchanged and keeps
+  never its text, its attachments or its context, so chips' Cache card can
+  say who restarted the countdown. It passes every prompt on unchanged and keeps
   that origin in memory alone, never in its store, until your own next turn.
 - **Writes** two values to the session's own state: whether the band is
   hidden, and whether it's expanded. In the plugin's own store it keeps,
