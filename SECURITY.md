@@ -12,11 +12,13 @@ it:
   `NEXTCOST_APPEARANCE`, `NO_COLOR`,
   `NEXTCOST_GLYPHS` (and their names before 0.18.0, `CC_BAND_APPEARANCE`
   and `CC_BAND_GLYPHS`), `LC_ALL`, `LC_CTYPE`, `LANG`,
-  `CLAUDE_CODE_PROMPT_CACHE_TTL`, `ENABLE_PROMPT_CACHING_1H`,
+  `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL`,
+  `ENABLE_PROMPT_CACHING_1H`,
   `FORCE_PROMPT_CACHING_5M`, `DISABLE_AUTO_COMPACT`, `DISABLE_COMPACT` and
   `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS`.
 - **Reads** your merged Claude Code settings once when a session starts,
-  and keeps two keys from them, `promptCacheTtl` and `idleCompaction`.
+  and keeps three keys from them, `promptCacheTtl`, `subagentPromptCacheTtl`
+  and `idleCompaction`.
   Nothing else in them is kept, stored, drawn or logged.
 - **Runs** two read-only git commands in the project root, for the
   workspace strip, exactly:

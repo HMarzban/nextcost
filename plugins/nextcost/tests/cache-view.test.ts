@@ -26,7 +26,8 @@ test('recalled, the cache counts down from the last reply and prices the whole c
   expect(view.recalled).toBe(true)
   expect(view.leftMs).toBe(50 * MIN) // the assumed hour, from the last reply
   expect(view.window).toBe(76_000)
-  expect(Math.abs((view.reWarmUsd ?? 0) - 1.25 * RATE * 76_000)).toBeLessThan(1e-9)
+  // A re-warm on the hour writes for an hour, at 2× base input.
+  expect(Math.abs((view.reWarmUsd ?? 0) - 2 * RATE * 76_000)).toBeLessThan(1e-9)
   expect(view.idleMs).toBe(10 * MIN)
 })
 

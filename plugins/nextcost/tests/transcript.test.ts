@@ -222,7 +222,7 @@ const billed = (ms: number, id: string, input: number, model = 'claude-opus-5-5'
   message: { id, role: 'assistant', model, content: [], usage: { input_tokens: input, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } },
 })
 /** costRecord's tokens for one model, as the spend counts them. */
-const RECORD_TOKENS = { uncached: 1_000_000, written: 400_000, read: 20_000_000, output: 100_000 }
+const RECORD_TOKENS = { uncached: 1_000_000, written: 400_000, writtenHour: 0, read: 20_000_000, output: 100_000 }
 
 test("a session's spend is its cost record's dollars and tokens", () => {
   expect(transcriptSpend(jsonl({ ...costRecord('claude-opus-5-5'), sessionId: 's1' }), 's1', Infinity)).toEqual({ usd: 20, tokens: RECORD_TOKENS })
@@ -234,6 +234,15 @@ test('each reply logged after the record and before the cut adds its tokens, pri
   const spend = transcriptSpend(transcript, 's1', 5_000)
   expect(spend?.tokens).toEqual({ ...RECORD_TOKENS, uncached: 1_003_000 })
   expect(Math.abs((spend?.usd ?? 0) - 20.02)).toBeLessThan(1e-9)
+})
+
+test("a reply's hour-long cache write is priced at 2×, by the split its usage logs", () => {
+  // The record solves to $20 over 3M weighted tokens (its writes unsplit, at
+  // 1.25×); 4,000 tokens written for an hour weigh 8,000: $0.0533.
+  const hour = { ...billed(1_000, 'm1', 0), message: { ...billed(1_000, 'm1', 0).message, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 4_000, cache_creation: { ephemeral_1h_input_tokens: 4_000, ephemeral_5m_input_tokens: 0 } } } }
+  const spend = transcriptSpend(jsonl({ ...costRecord('claude-opus-5-5'), sessionId: 's1' }, hour), 's1', Infinity)
+  expect(spend?.tokens).toEqual({ ...RECORD_TOKENS, written: 404_000, writtenHour: 4_000 })
+  expect(Math.abs((spend?.usd ?? 0) - (20 + 8_000 / 150_000))).toBeLessThan(1e-9)
 })
 
 test('a reply logged once per content block counts once, by its id', () => {

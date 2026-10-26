@@ -132,10 +132,12 @@ test("a subagent's tokens still count toward the rate the re-warm is solved from
   await respond($, resp(3_000, 20_000, 10_000, 4_000), { agentId: 'agent-1' })
   await clock.advance(61 * MIN)
 
-  // reads at Opus 5.5's 0.05×: weighted = 13k + 1.25*110k + 0.05*20k + 5*6k = 181.5k;
-  // 1.25*112k*2.41/181.5k = 1.86 (without the subagent's tokens it would be 2.33)
+  // ENABLE_PROMPT_CACHING_1H, which setup pins, asks an hour of both buckets,
+  // so every write weighs 2×; reads at Opus 5.5's 0.05×: weighted = 10k +
+  // 2*100k + 5*2k + 3k + 2*10k + 0.05*20k + 5*4k = 264k; a re-warm is an
+  // hour's write: 2*112k*2.41/264k = 2.04 (without the subagent's tokens, 2.45)
   const ui = await mountBand($, 'terminal', 110)
-  expect(await ui.find({ type: 'Text', text: /~\$1\.86/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /~\$2\.04/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -147,10 +149,10 @@ test("the re-warm estimate is solved from every response's tokens", LONG, async 
   await respond($, resp(1_000, 110_000, 2_000, 1_000))
   await clock.advance(61 * MIN)
 
-  // reads at Opus 5.5's 0.05×: weighted = 15k + 1.25*108k + 0.05*210k + 5*6k = 190.5k;
-  // 1.25*114k*2.41/190.5k = 1.80
+  // writes for the pinned hour at 2×, reads at Opus 5.5's 0.05×: weighted =
+  // 15k + 2*108k + 0.05*210k + 5*6k = 271.5k; 2*114k*2.41/271.5k = 2.02
   const ui = await mountBand($, 'terminal', 110)
-  expect(await ui.find({ type: 'Text', text: /~\$1\.80/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /~\$2\.02/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -280,18 +282,19 @@ test("an advisor step's summed usage counts its prefix once", () => {
 test("an advisor step's own bill stays out of the rate the re-warm is solved from", LONG, async ($, on) => {
   const clock = setup(on)
   await $.session.start(START)
-  await respond($, BUILD_100K) // the ledger reads $2.41
-  // Its message rounds cost 2.41/145k * 17,504 weighted = $0.29, the advisor $1.00 more.
+  await respond($, BUILD_100K) // the ledger reads $2.41: 220k weighted, its writes an hour's
+  // The step's message rounds and the advisor's own round bill $1.29 more.
   usage.current = { ...USAGE, cost: { usd: 3.7009 } }
   engine.serverTools = 1
   await respond($, resp(4, 200_000, 2_000, 1_000))
   engine.serverTools = 0
   await clock.advance(61 * MIN)
 
-  // The rate stays 2.41/145k, on a window of 202,004/2 + 1,000 = 102,002:
-  // 1.25 * 102,002 * 2.41 / 145k = 2.12 (with the advisor's bill in, 2.90).
+  // The rate stays 2.41/220k, on a window of 202,004/2 + 1,000 = 102,002:
+  // 2 * 102,002 * 2.41 / 220k = 2.23 (with the step's bill and tokens in,
+  // 2 * 102,002 * 3.7009 / 239,004 = 3.16).
   const ui = await mountBand($, 'terminal', 110)
-  expect(await ui.find({ type: 'Text', text: /~\$2\.12/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /~\$2\.23/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -359,5 +362,63 @@ test("a redraw that reads the ledger while an advisor step runs leaves its bill 
     return m.view({ now: 61 * MIN, ledger: 3.7009, contextTokens: 0, autoCompactOff: false }).cache.reWarmUsd
   }
   expect(rewarm(true)).toBe(rewarm(false))
-  expect(Math.abs((rewarm(false) ?? 0) - 2.1192) < 1e-3).toBe(true)
+  // r = 2.41/220k, its 1h writes at 2x; window 202,004/2 + 1,000 = 102,002: 2 * 102,002 * r = $2.2346
+  expect(Math.abs((rewarm(false) ?? 0) - (2 * 102_002 * 2.41) / 220_000) < 1e-9).toBe(true)
+})
+
+// Claude Code's ledger bills a cache write by its lifetime, as Anthropic lists
+// it: 1.25x base input for five minutes, 2x for an hour (checked to the cent
+// against a session's cost record, 2026-10-26).
+
+/** The re-warm a model prices at `now`, its ledger at `ledger`. */
+const reWarmAt = (c: CacheModel, now: number, ledger: number): number | null =>
+  c.view({ now, ledger, contextTokens: 0, autoCompactOff: false }).cache.reWarmUsd
+const near = (a: number | null, b: number): boolean => a !== null && Math.abs(a - b) < 1e-6
+const pinnedTo = (ttl: '5m' | '1h', subagentTtl?: '5m' | '1h'): CacheModel => {
+  const c = newCache()
+  c.configured({ ttl, idleCompactFrom: undefined, subagentTtl })
+  return c
+}
+
+test("on the hour's cache the main loop's writes weigh 2x, and a re-warm is a 2x write", () => {
+  const c = pinnedTo('1h')
+  c.responded(BUILD_100K, 0, true, { ledger: 2.2 })
+  // weighted = 10k + 2*100k + 5*2k = 220k, so r = $0.00001; re-warm = 2 * 112k * r = $2.24
+  expect(near(reWarmAt(c, 61 * MIN, 2.2), 2.24)).toBe(true)
+})
+
+test("on five minutes' cache a write weighs 1.25x, as before", () => {
+  const c = pinnedTo('5m')
+  c.responded(BUILD_100K, 0, true, { ledger: 2.2 })
+  // weighted = 10k + 1.25*100k + 5*2k = 145k; re-warm = 1.25 * 112k * 2.2/145k = $2.1241
+  expect(near(reWarmAt(c, 10 * MIN, 2.2), (1.25 * 112_000 * 2.2) / 145_000)).toBe(true)
+})
+
+test("a subagent's writes weigh 1.25x on the hour's main cache, unless its own TTL is an hour", () => {
+  const SUB = { ...resp(3_000, 20_000, 10_000, 4_000), model: 'claude-opus-5-5' }
+  const MAIN = { ...BUILD_100K, model: 'claude-opus-5-5' }
+  const five = pinnedTo('1h')
+  five.responded(MAIN, 0, true, { ledger: 2.2 })
+  five.responded(SUB, MIN, false, { ledger: 2.565 })
+  // main 220k + subagent 3k + 1.25*10k + 0.05*20k + 5*4k = 36.5k: r = 2.565/256.5k = $0.00001
+  expect(near(reWarmAt(five, 61 * MIN, 2.565), 2.24)).toBe(true)
+  const hour = pinnedTo('1h', '1h')
+  hour.responded(MAIN, 0, true, { ledger: 2.2 })
+  hour.responded(SUB, MIN, false, { ledger: 2.565 })
+  // the subagent's 10k written for an hour weigh 20k: 44k, r = 2.565/264k
+  expect(near(reWarmAt(hour, 61 * MIN, 2.565), (2 * 112_000 * 2.565) / 264_000)).toBe(true)
+})
+
+test("a subagent's own TTL is read as Claude Code reads it, and an hour there prices its writes at 2x", LONG, async ($, on) => {
+  const clock = setup(on, { env: { ENABLE_PROMPT_CACHING_1H: '1', CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL: '5m' } })
+  await $.session.start(START)
+  await respond($, BUILD_100K) // main: weighted 220k
+  usage.current = { ...USAGE, cost: { usd: 2.565 } }
+  await respond($, resp(3_000, 20_000, 10_000, 4_000), { agentId: 'agent-1' }) // 36.5k at five minutes
+  await clock.advance(61 * MIN)
+  // ENABLE_PROMPT_CACHING_1H asks an hour for both buckets, but the subagent's
+  // own variable comes first: r = 2.565/256.5k; re-warm 2 * 112k * r = $2.24
+  const ui = await mountBand($, 'terminal', 110)
+  expect(await ui.find({ type: 'Text', text: /~\$2\.24/ })).toBeDefined()
+  await ui.unmount()
 })

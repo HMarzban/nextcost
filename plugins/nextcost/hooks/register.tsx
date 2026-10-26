@@ -433,8 +433,8 @@ const readAppearance = async ($: EngineInterface): Promise<void> => {
  *  `terminal` session or not, and hands the cache model the TTL they pin
  *  and where idle compaction runs from. */
 const readCacheSettings = async ($: EngineInterface, terminal: boolean): Promise<void> => {
-  // Only these two keys are taken; the rest, `env` included, is dropped here.
-  const { promptCacheTtl, idleCompaction } = (await $.settings.read().catch(() => undefined)) ?? {}
+  // Only these three keys are taken; the rest, `env` included, is dropped here.
+  const { promptCacheTtl, subagentPromptCacheTtl, idleCompaction } = (await $.settings.read().catch(() => undefined)) ?? {}
   const pinned = resolveTtl({
     force5m: await $.env.get('FORCE_PROMPT_CACHING_5M'),
     chosen: await $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL'),
@@ -448,7 +448,14 @@ const readCacheSettings = async ($: EngineInterface, terminal: boolean): Promise
     disableAll: await $.env.get('DISABLE_COMPACT'),
     minTokens: await $.env.get('CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS'),
   })
-  band.cache.configured({ ttl: pinned, idleCompactFrom: idleFrom })
+  // A subagent's bucket, in the same order with its own variable and setting.
+  const subagentPinned = resolveTtl({
+    force5m: await $.env.get('FORCE_PROMPT_CACHING_5M'),
+    chosen: await $.env.get('CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL'),
+    setting: subagentPromptCacheTtl,
+    enable1h: await $.env.get('ENABLE_PROMPT_CACHING_1H'),
+  })
+  band.cache.configured({ ttl: pinned, idleCompactFrom: idleFrom, subagentTtl: subagentPinned })
 }
 
 /** Recalls session `id`'s last reply into the cache model, off the store or

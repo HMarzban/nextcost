@@ -3,23 +3,29 @@
 // price tiers a long prompt pays. The base rate itself is no table's: the
 // cache model solves it from the session's own bill.
 
-/** Tokens by kind, as a bill counts them. */
-export type TokenCounts = Readonly<{ uncached: number; written: number; read: number; output: number }>
+/** How long a cache write lasts idle. */
+export type Ttl = '5m' | '1h'
 
-export const NO_TOKENS: TokenCounts = { uncached: 0, written: 0, read: 0, output: 0 }
+/** Tokens by kind, as a bill counts them; of those written, how many were
+ *  written for an hour. */
+export type TokenCounts = Readonly<{ uncached: number; written: number; writtenHour: number; read: number; output: number }>
+
+export const NO_TOKENS: TokenCounts = { uncached: 0, written: 0, writtenHour: 0, read: 0, output: 0 }
 
 export const addTokens = (a: TokenCounts, b: TokenCounts): TokenCounts => ({
   uncached: a.uncached + b.uncached,
   written: a.written + b.written,
+  writtenHour: a.writtenHour + b.writtenHour,
   read: a.read + b.read,
   output: a.output + b.output,
 })
 
 // The price of each kind of token against base input. Writes and output hold
-// one ratio across Anthropic's models; reads do not. Claude Code's own ledger
-// prices every cache write at 1.25×, whatever its lifetime, so the band does
-// too, to agree with the cost it shows.
-export const WRITE_MULT = 1.25
+// one ratio across Anthropic's models; reads do not. A cache write's ratio is
+// its lifetime's, as Anthropic lists it and Claude Code's ledger bills it:
+// 1.25× for five minutes, 2× for an hour (the ledger checked to the cent
+// against a session's cost record, 2026-10-26).
+export const WRITE_MULT: Readonly<Record<Ttl, number>> = { '5m': 1.25, '1h': 2 }
 const OUTPUT_MULT = 5
 /** A cache read against base input, by model; 0.1× elsewhere. Per Anthropic's
  *  list prices as of 2026-10: Opus 5.5 reads at $0.20 on $4.00 input, Sonnet
@@ -58,4 +64,8 @@ export const readMultiplier = (model: string | undefined): number =>
 /** Tokens weighted by their price against base input on `model`: the one
  *  unknown left is the base rate itself. */
 export const weightedTokens = (t: TokenCounts, model: string | undefined): number =>
-  t.uncached + WRITE_MULT * t.written + readMultiplier(model) * t.read + OUTPUT_MULT * t.output
+  t.uncached +
+  WRITE_MULT['5m'] * (t.written - t.writtenHour) +
+  WRITE_MULT['1h'] * t.writtenHour +
+  readMultiplier(model) * t.read +
+  OUTPUT_MULT * t.output

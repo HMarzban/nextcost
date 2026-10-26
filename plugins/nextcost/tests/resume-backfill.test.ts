@@ -42,8 +42,8 @@ const RECORD = {
   },
 }
 
-/** 1,000 + 1.25 × 2,000 + 0.05 × 100,000 + 5 × 1,000 = 13,500 weighted
- *  tokens: $0.135 at the record's rate. */
+/** 1,000 + 2 × 2,000 written for an hour + 0.05 × 100,000 + 5 × 1,000 =
+ *  15,000 weighted tokens: $0.15 at the record's rate. */
 const REPLY_USAGE = {
   input_tokens: 1_000,
   cache_creation_input_tokens: 2_000,
@@ -120,7 +120,8 @@ test("without the engine's idle time, the band's own memory of the last reply st
 })
 
 test("without the engine's idle time, a session named by an alias is priced at the model its remembered reply was billed under", async ($, on) => {
-  // Haiku 5.5's 151k context re-warms at its upper tier: 151k × 1.25 × $0.50 per million.
+  // Haiku 5.5's 151k context re-warms for the pinned hour at its upper tier:
+  // 151k × 2 × $0.50 per million = $0.151.
   const haiku = { ...RESUMED, context: { tokens: 151_000, window: 1_000_000, percent: 15 } }
   const store = { sessions: { s1: { lastAt: HOUR, billed: 'claude-haiku-5-5' } }, rates: { 'claude-haiku-5-5': 0.0000001 } }
   const clock = setup(on, { usage: haiku, env: ENV, store, now: 3 * HOUR })
@@ -128,7 +129,7 @@ test("without the engine's idle time, a session named by an alias is priced at t
   await $.session.start(START)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: PATH })
   await clock.settle()
-  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold · next message ~\$0\.09\b/)
+  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold · next message ~\$0\.15\b/)
 })
 
 test("a resumed session's spend and tokens start from its last cost record, each later reply counted once", async ($, on) => {
@@ -138,10 +139,10 @@ test("a resumed session's spend and tokens start from its last cost record, each
   await resume($, 10 * MIN)
   await clock.settle()
   expect(engine.ran).toContainEqual(['grep', '-a', '-b', '-F', '"type":"cost-state"', PATH])
-  // $30 + 2 × $0.135
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.27/)
+  // $30 + 2 × $0.15
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
   const tree = await mounted($, true)
-  expect(shown(cardOf(tree, 'spend'))).toMatch(/^SPEND\$30\.27/)
+  expect(shown(cardOf(tree, 'spend'))).toMatch(/^SPEND\$30\.30/)
   expect(shown(cardOf(tree, 'spend'))).not.toMatch(/Breakdown counts/)
   // 1M + 400k sent, 100k back and 20M read, then 3k, 1k and 100k for each reply
   expect(fact(tree, 'input')).toBe('1.4M')
@@ -173,10 +174,10 @@ test('a ledger that counts less than the transcript shows the transcript, and gr
   await $.session.start(START)
   await resume($, 10 * MIN)
   await clock.settle()
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.27/)
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
   await startTurn($, 't1', 5)
   await endTurn($, 't1', 6)
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$31\.27/)
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$31\.30/)
 })
 
 test('with no transcript, a resume shows the ledger and no breakdown, as before', async ($, on) => {
@@ -194,7 +195,7 @@ test('malformed lines are passed over, a record cut short included', async ($, o
   await $.session.start(START)
   await resume($, 10 * MIN)
   await clock.settle()
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.27/)
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
 })
 
 test("a grep that gives the match's offset, not its line's, still counts the record and every reply after it", async ($, on) => {
@@ -204,7 +205,7 @@ test("a grep that gives the match's offset, not its line's, still counts the rec
   await $.session.start(START)
   await resume($, 10 * MIN)
   await clock.settle()
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.27/)
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
 })
 
 test('without grep, a transcript small enough to read is read whole', async ($, on) => {
@@ -214,7 +215,7 @@ test('without grep, a transcript small enough to read is read whole', async ($, 
   await $.session.start(START)
   await resume($, 10 * MIN)
   await clock.settle()
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.27/)
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
 })
 
 test('without grep, a transcript too big to read leaves the ledger as it is', async ($, on) => {
@@ -290,7 +291,7 @@ test('/resume inside a running session resumes the conversation it names', async
   await resume($, 48 * HOUR, { sessionId: 's2' })
   await clock.settle()
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold/)
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.27/)
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
 })
 
 test("/resume without the engine's idle time recalls the resumed session's last reply, not the one left", async ($, on) => {
@@ -353,7 +354,7 @@ test('a SessionStart that comes before session.start still resumes the conversat
   await $.session.start(START)
   await clock.settle()
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold/)
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.27/)
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
 })
 
 test('a SessionStart while session.start runs still resumes the conversation', async ($, on) => {
@@ -362,7 +363,7 @@ test('a SessionStart while session.start runs still resumes the conversation', a
   await Promise.all([resume($, 48 * HOUR), $.session.start(START)])
   await clock.settle()
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold/)
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.27/)
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
 })
 
 test('a resume of another session said before the load never counts its spend in this one', async ($, on) => {
@@ -383,10 +384,10 @@ test('a ledger the host restores after the transcript is read is never added to 
   await clock.settle()
   // The host restores the record's total only once the band has read the transcript.
   usage.current = { ...RESUMED, cost: { usd: 30 } }
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.27/)
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
   await startTurn($, 't1', 30)
   await endTurn($, 't1', 31)
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$31\.27/)
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$31\.30/)
 })
 
 test('a reply this process logs before the transcript read lands is counted once, by the ledger', async ($, on) => {
@@ -398,13 +399,13 @@ test('a reply this process logs before the transcript read lands is counted once
   })
   await $.session.start(START)
   await resume($, 10 * MIN)
-  await turn($, 't1', 0, 0.135)
+  await turn($, 't1', 0, 0.15)
   // The turn's reply is logged before the tail past the record is read.
   engine.transcript += jsonl(...reply('msg_new', 1, REPLY_USAGE).map(line => ({ ...line, timestamp: new Date(3 * HOUR).toISOString() })))
   release()
   await clock.settle()
-  // $30 + the ledger's $0.135
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.14/)
+  // $30 + the ledger's $0.15
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.15/)
   expect(fact(await mounted($, true), 'output')).toBe('100k')
 })
 
@@ -419,7 +420,7 @@ test('a fork counts its own cost record, not one its parent wrote', async ($, on
   await $.session.start(START)
   await resume($, 10 * MIN, { source: 'fork' })
   await clock.settle()
-  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.27/)
+  expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
 })
 
 /** No TTL pinned, so the band has only the transcript to go by. */

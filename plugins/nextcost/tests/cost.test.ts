@@ -76,9 +76,10 @@ test('spend before a /clear does not inflate the re-warm estimate', LONG, async 
   await respond($, BUILD_100K)
   await clock.advance(61 * 60_000)
 
-  // rate = 0.59 / (10k + 1.25*100k + 5*2k) ; re-warm = 1.25 * 112k * rate = 0.57
+  // writes for the pinned hour at 2×: rate = 0.59 / (10k + 2*100k + 5*2k);
+  // re-warm = 2 * 112k * rate = 0.60
   const ui = await mountBand($, 'terminal', 110)
-  expect(await ui.find({ type: 'Text', text: /~\$0\.57/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /~\$0\.60/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -93,7 +94,7 @@ test('a ledger the engine reset on /clear is used as it stands', LONG, async ($,
   await clock.advance(61 * 60_000)
 
   const ui = await mountBand($, 'terminal', 110)
-  expect(await ui.find({ type: 'Text', text: /~\$0\.57/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /~\$0\.60/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -109,9 +110,10 @@ test('a ledger reset on /clear keeps the re-warm price right after the new conve
   await respond($, resp(1_000, 112_000, 2_000, 1_000))
   await clock.advance(61 * MIN)
 
-  // all $3.00 is this conversation's, reads at Opus 5.5's 0.05×: 1.25 * 116k * 3.00 / 159.1k = 2.73
+  // all $3.00 is this conversation's, writes at 2×, reads at Opus 5.5's 0.05×:
+  // 11k + 2*102k + 0.05*112k + 5*3k = 235.6k; 2 * 116k * 3.00 / 235.6k = 2.95
   const ui = await mountBand($, 'terminal', 110)
-  expect(await ui.find({ type: 'Text', text: /~\$2\.73/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /~\$2\.95/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -124,9 +126,9 @@ test('a session resumed or reloaded with spend on the ledger prices the re-warm 
   await $.turn.complete(TURN_DONE)
   await clock.advance(61 * MIN)
 
-  // $0.30 since start: 1.25 * 112k * 0.30 / 145k = 0.29
+  // $0.30 since start, writes at 2×: 2 * 112k * 0.30 / 220k = 0.31
   const ui = await mountBand($, 'terminal', 110)
-  expect(await ui.find({ type: 'Text', text: /~\$0\.29/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /~\$0\.31/ })).toBeDefined()
   await ui.unmount()
 })
 

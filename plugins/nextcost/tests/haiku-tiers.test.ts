@@ -17,26 +17,27 @@ test("Haiku 5.5's upper tier starts past 100k prompt tokens; other models have o
 })
 
 test('a Haiku 5.5 session past 100k solves its lower-tier rate and prices the re-warm at the upper tier', LONG, async ($, on) => {
-  // At $0.10 per million: a 20k-prompt request weighs 29.5k tokens, a 150k
-  // one 171.3k at 5×, so the session costs 886k × $0.0000001 = $0.0886.
-  const clock = setup(on, { usage: { ...USAGE, cost: { usd: 0.0886 }, context: { tokens: 151_000, window: 1_000_000, percent: 15 } } })
+  // At $0.10 per million, writes for the pinned hour at 2×: a 20k-prompt
+  // request weighs 43k tokens, a 150k one 268.8k at 5×, so the session costs
+  // 1,387k × $0.0000001 = $0.1387.
+  const clock = setup(on, { usage: { ...USAGE, cost: { usd: 0.1387 }, context: { tokens: 151_000, window: 1_000_000, percent: 15 } } })
   engine.model = 'claude-haiku-5-5'
   await $.session.start(START)
   await respond($, resp(2_000, 0, 18_000, 1_000), HAIKU)
   await respond($, resp(2_000, 18_000, 130_000, 1_000), HAIKU)
   await clock.advance(61 * MIN)
 
-  // 151k written at the upper tier: 151k × 1.25 × $0.50 per million = $0.094.
-  // One rate across both tiers would say ~$0.08.
+  // 151k written for an hour at the upper tier: 151k × 2 × $0.50 per million
+  // = $0.151. One rate across both tiers would say ~$0.13.
   const ui = await mountBand($, 'terminal', 160)
-  expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/next message ~\$0\.09\b/)
+  expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/next message ~\$0\.15\b/)
   await ui.unmount()
 })
 
 test("on Haiku 5.5, what the cache saved is priced at each read's tier", LONG, async ($, on) => {
-  // Two upper-tier requests at $0.10 per million below: 192k and 23.05k
-  // weighted tokens, at 5×, cost $0.107525.
-  setup(on, { usage: { ...USAGE, cost: { usd: 0.107525 }, context: { tokens: 152_000, window: 1_000_000, percent: 15 } } })
+  // Two upper-tier requests at $0.10 per million below, writes at 2×: 303k
+  // and 23.8k weighted tokens, at 5×, cost $0.1634.
+  setup(on, { usage: { ...USAGE, cost: { usd: 0.1634 }, context: { tokens: 152_000, window: 1_000_000, percent: 15 } } })
   engine.model = 'claude-haiku-5-5'
   await $.session.start(START)
   await respond($, resp(2_000, 0, 148_000, 1_000), HAIKU)

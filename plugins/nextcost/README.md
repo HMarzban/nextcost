@@ -298,27 +298,32 @@ it names the tokens instead. With nothing to recall, it stays at `cache –`.
 
 No pricing table is reachable from a mod, so the rate is solved from the
 session's own bill. Each kind of token costs a fixed multiple of base input
-(a cache write 1.25×, output 5×, a cache read 0.1×, or 0.05× on Opus 5.5
-and Sonnet 5.5 and 0.025× on Fable 5.1 and Mythos 5.1, per
+(a cache write 1.25× for five minutes or 2× for an hour, output 5×, a cache
+read 0.1×, or 0.05× on Opus 5.5 and Sonnet 5.5 and 0.025× on Fable 5.1 and
+Mythos 5.1, per
 [Anthropic's pricing](https://platform.claude.com/docs/en/about-claude/pricing)),
 which leaves one unknown:
 
 ```
-cost = r × (uncached + 1.25×written + read share×read + 5×output)
+cost = r × (uncached + 1.25×written for 5m + 2×written for 1h + read share×read + 5×output)
 ```
 
 where read share is the cache-read multiple above.
 
 Solve for `r`, then price the re-warm as a cache write of the whole
-conversation. After a compaction, it prices the summary instead. It's
-always shown with `~`.
+conversation, at the multiple of the cache's lifetime: 2× on the hour,
+1.25× on five minutes. After a compaction, it prices the summary instead.
+It's always shown with `~`.
 
-- **Writes at 1.25×, as Claude Code counts them.** Claude Code's cost
-  ledger prices every cache write at 1.25×, so the band does too and agrees
-  with the cost it shows. Anthropic bills a 1-hour cache write at 2×, so if
-  you pay per token on a 1-hour cache, the real re-warm is up to 1.6× the
-  estimate. Paying per token usually means the 5-minute cache, where 1.25×
-  is exact.
+- **Writes by their lifetime, as Claude Code's ledger bills them.** The
+  main conversation's writes last its cache's lifetime (see
+  [Cache lifetime](#cache-lifetime)); a subagent's last five minutes unless
+  `subagentPromptCacheTtl`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` or
+  `ENABLE_PROMPT_CACHING_1H` asks an hour, read in Claude Code's order. A
+  mod isn't told each write's lifetime, so this is the band's reading of
+  it. A reopened session's cost record doesn't split its writes by
+  lifetime, so a rate solved from it counts them at 1.25×; a reply logged
+  after it counts at the split its usage logs.
 - **After `/clear`, a resume or a reload,** the rate is solved from what
   the current conversation has spent, not the session's whole ledger.
 - **Claude Haiku 5.5 has two price tiers.** A request whose prompt (every
@@ -446,18 +451,20 @@ it, each given 3 seconds, and never while the band draws:
 **It reads** the session's id, model and usage from Claude Code (cost, token
 counts, context fill and rate-limit percentages), where each prompt came
 from (never its text), the clock, the project's
-folder and repository root, two keys of your Claude Code settings
-(`promptCacheTtl` and `idleCompaction`), and these environment variables:
+folder and repository root, three keys of your Claude Code settings
+(`promptCacheTtl`, `subagentPromptCacheTtl` and `idleCompaction`), and these
+environment variables:
 `NEXTCOST_APPEARANCE` and `NEXTCOST_GLYPHS`, with their names before 0.18.0
 (`CC_BAND_APPEARANCE`, `CC_BAND_GLYPHS`), and `NO_COLOR`, for how it draws;
-`CLAUDE_CODE_PROMPT_CACHE_TTL`, `FORCE_PROMPT_CACHING_5M` and
-`ENABLE_PROMPT_CACHING_1H` for the cache's lifetime; `DISABLE_AUTO_COMPACT`,
+`CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL`,
+`FORCE_PROMPT_CACHING_5M` and `ENABLE_PROMPT_CACHING_1H` for the cache's
+lifetime; `DISABLE_AUTO_COMPACT`,
 `DISABLE_COMPACT` and `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` for
 [idle compaction](#idle-compaction); `HOME`, to find a transcript and write
 the project's path from `~`; and the locale (`LC_ALL`, `LC_CTYPE`, `LANG`)
 for the glyph tier. None of these is a key or a token, and none leaves your
 machine. Claude Code hands a mod its settings whole (`$.settings.read`), so
-the call takes those two keys where it is made and drops the rest, `env` and
+the call takes those three keys where it is made and drops the rest, `env` and
 any key or helper in it included. It never reads `~/.claude.json`, your
 login, or any credential file. The only file it reads itself is a session's
 own transcript, as above, and where `tail` or `grep` can't run, it reads
