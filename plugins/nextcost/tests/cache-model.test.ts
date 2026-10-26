@@ -422,3 +422,18 @@ test("a subagent's own TTL is read as Claude Code reads it, and an hour there pr
   expect(await ui.find({ type: 'Text', text: /~\$2\.24/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('an advisor step that bills most of the session leaves the rate exactly as the rest solve it', () => {
+  // In one long session the advisor's own rounds were 19% of a $613.84 bill,
+  // none of it in the usage the steps report. Here it is $5 of $7.30.
+  const c = pinnedTo('1h')
+  const opus = (u: ReturnType<typeof resp>) => ({ ...u, model: 'claude-opus-5-5' })
+  c.responded(opus(BUILD_100K), 0, true, { ledger: 2.2 }) // 220k weighted: r = $0.00001
+  c.responded(opus(resp(4, 200_000, 2_000, 1_000)), MIN, true, { serverTools: 1, ledger: 7.2 })
+  // 2 + 2*1k + 0.05*102k + 5*500 = 9,602 weighted at r: $0.09602.
+  c.responded(opus(resp(2, 102_000, 1_000, 500)), 2 * MIN, true, { ledger: 7.29602 })
+  // r stays $0.00001; re-warm = 2 * 103,502 * r = $2.07 (with the advisor's
+  // bill in the rate, about $6).
+  expect(near(reWarmAt(c, 63 * MIN, 7.29602), 2 * 103_502 * 0.00001)).toBe(true)
+  expect(c.view({ now: 63 * MIN, ledger: 7.29602, contextTokens: 0, autoCompactOff: false }).costUsd).toBe(7.29602)
+})
