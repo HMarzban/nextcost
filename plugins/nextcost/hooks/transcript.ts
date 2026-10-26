@@ -43,9 +43,18 @@ function* fromEnd(transcript: string, marker: string): Generator<Record<string, 
 /** What marks a reply's line. */
 const REPLY_MARKER = '"assistant"'
 
+/** The model Claude Code names a reply it wrote itself, sent to no API. */
+const SYNTHETIC_MODEL = '<synthetic>'
+
 /** Whether a transcript line is a main-loop reply: a subagent's says nothing
- *  of the main loop's cache, its model or its prompt. */
-const isMainReply = (entry: Record<string, unknown>): boolean => entry.type === 'assistant' && entry.isSidechain !== true
+ *  of the main loop's cache, its model or its prompt, and nor does one
+ *  Claude Code wrote itself, an API error's (a limit hit, no connection) or
+ *  a turn it answered without asking, which read and wrote no cache. */
+const isMainReply = (entry: Record<string, unknown>): boolean =>
+  entry.type === 'assistant' &&
+  entry.isSidechain !== true &&
+  entry.isApiErrorMessage !== true &&
+  !(isRecord(entry.message) && entry.message.model === SYNTHETIC_MODEL)
 
 /** When a transcript line was logged; undefined where it doesn't say. */
 const loggedAt = (entry: Record<string, unknown>): number | undefined => {

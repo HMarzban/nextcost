@@ -554,7 +554,9 @@ export const newCache = (): CacheModel => {
     responded: (usage, sentAt, isMain, serverTools = 0) => {
       const rounds = serverTools + 1
       billResponse(s, usage, rounds)
-      if (isMain) measureCache(s, usage, sentAt, rounds)
+      // A reply that sent no tokens made no request: it read and kept no cache.
+      const sent = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
+      if (isMain && sent > 0) measureCache(s, usage, sentAt, rounds)
     },
     ledgerRead: ledger => noteStepLedger(s, ledger),
     compacted: ({ now, sizeAfter, manual = false }) => {

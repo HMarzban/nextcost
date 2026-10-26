@@ -294,3 +294,14 @@ test("an advisor step's own bill stays out of the rate the re-warm is solved fro
   expect(await ui.find({ type: 'Text', text: /~\$2\.12/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('a reply that sent no tokens leaves the cache as it was measured', () => {
+  const c = newCache()
+  c.responded(OPUS_BUILD, 0, true)
+  c.responded({ ...resp(0, 0, 0, 0), model: '<synthetic>' }, 30 * MIN, true)
+  const { cache } = c.view({ now: 30 * MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false })
+  expect(cache.requests).toBe(1)
+  expect(cache.coldAt).toBe(HOUR)
+  expect(cache.window).toBe(208_000)
+  expect(cache.readShare).toBe(0.05) // still priced as Opus 5.5
+})

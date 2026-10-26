@@ -53,6 +53,26 @@ test('lines that are not assistant replies, even ones naming "assistant", are sk
   expect(lastReplyAt(transcript)).toBe(5_000)
 })
 
+/** A reply Claude Code wrote itself, sent nowhere: an API error such as a
+ *  limit hit, or a turn it answered without asking (`No response requested.`). */
+const syntheticLine = (ms: number, isApiErrorMessage: boolean) => ({
+  type: 'assistant',
+  timestamp: iso(ms),
+  isApiErrorMessage,
+  message: { role: 'assistant', model: '<synthetic>', content: [], usage: { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 } },
+})
+
+test("a reply Claude Code wrote itself, an error's or one it sent nowhere, is no last reply", () => {
+  const transcript = jsonl(replyLine(5_000), syntheticLine(9_000, true), syntheticLine(12_000, false))
+  expect(lastReplyAt(transcript)).toBe(5_000)
+  expect(lastReplyModel(transcript)).toBe('claude-opus-5-5')
+})
+
+test("an error that names a real model is still no last reply", () => {
+  const error = { ...syntheticLine(9_000, true), message: { ...syntheticLine(9_000, true).message, model: 'claude-opus-5-5' } }
+  expect(lastReplyAt(jsonl(replyLine(5_000), error))).toBe(5_000)
+})
+
 test('an unparseable line, or a reply with no readable time, is skipped', () => {
   const transcript = jsonl(replyLine(5_000), '{"type":"assistant", "timestamp": broken', { type: 'assistant', timestamp: 'not a time' }, { type: 'assistant', timestamp: 7_000 })
   expect(lastReplyAt(transcript)).toBe(5_000)
