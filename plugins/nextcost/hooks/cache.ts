@@ -7,9 +7,9 @@ import type { ModelUsage } from 'claude-code'
 import type { Tone } from './facts'
 import { LAST_CALL_MS, MINUTE_MS, SOON_MS, fmtEstimate, fmtTokens } from './format'
 import { NO_TOKENS, WRITE_MULT, addTokens, modelName, readMultiplier, tierFactor, weightedTokens } from './prices'
-import type { TokenCounts } from './prices'
+import type { TokenCounts, Ttl } from './prices'
 
-export type Ttl = '5m' | '1h'
+export type { Ttl }
 export const TTL_MS: Readonly<Record<Ttl, number>> = { '5m': 5 * MINUTE_MS, '1h': 60 * MINUTE_MS }
 
 // A response that read this much less than the cache held, both in tokens and
@@ -23,6 +23,36 @@ export const IDLE_COMPACT_MS = 54 * MINUTE_MS
 /** A compaction this long after the last request, with no turn under way, is
  *  an idle one: an auto-compaction comes as a turn starts, not half an hour on. */
 const IDLE_GAP_MS = 30 * MINUTE_MS
+
+/** What started a main-loop turn the user didn't type: a background task's
+ *  notification, a schedule, another session, a channel, a plugin, or Claude
+ *  Code going on by itself. */
+export type Waker = 'task' | 'schedule' | 'session' | 'channel' | 'plugin' | 'claude'
+
+const WAKERS: Readonly<Record<string, Waker>> = {
+  'task-notification': 'task',
+  observer: 'task',
+  'observer-activity': 'task',
+  'scheduled-trigger': 'schedule',
+  peer: 'session',
+  'peer-send-message': 'session',
+  'projects-relay': 'session',
+  coordinator: 'session',
+  channel: 'channel',
+  'slack-ping': 'channel',
+  plugin: 'plugin',
+  'auto-continuation': 'claude',
+}
+
+/** What woke the session, by the origin of the prompt that started its turn;
+ *  undefined for the user's own (typed at the terminal, from a phone, or
+ *  through the desktop app's SDK host), one no engine could place, and a
+ *  kind a newer engine adds. */
+export const wakerOf = (kind: string): Waker | undefined => (Object.hasOwn(WAKERS, kind) ? WAKERS[kind] : undefined)
+
+/** The last main-loop turn, when the user didn't type it: what started it,
+ *  and whether it rebuilt the cache. */
+export type Wake = Readonly<{ by: Waker; reWarm: boolean }>
 
 /** What a conversation has spent: its dollars and its tokens. */
 export type Spend = Readonly<{ usd: number; tokens: TokenCounts }>
@@ -80,12 +110,16 @@ export type CacheView = Readonly<{
   recovered: boolean
   /** Every token since the conversation began, subagents included. */
   tokens: Readonly<{ sent: number; back: number; cached: number }>
+  /** The last turn restarted the countdown though the user didn't type it. */
+  wake: Wake | undefined
 }>
 
 type CacheState = {
   ttl: Ttl
   /** Set by the environment, so never inferred. */
   ttlPinned: boolean
+  /** A subagent's TTL: five minutes, unless the environment pins an hour. */
+  subagentTtl: Ttl
   /** The TTL the transcript's last cache write was made at, until this
    *  band's first reply: it speaks for the recalled cache, never for the next
    *  request, and the environment's pin still wins. */
@@ -95,6 +129,10 @@ type CacheState = {
   idleCompactFrom: number | undefined
   /** A main-loop turn is under way: a compaction then is no idle one. */
   turnOpen: boolean
+  /** What started the turn under way, when the user didn't type it. */
+  turnWaker: Waker | undefined
+  /** The last main-loop turn, when the user didn't type it. */
+  lastWake: Wake | undefined
   /** Main-loop requests this conversation. */
   requests: number
   /** Every token since the conversation began, subagents included. */
@@ -105,6 +143,14 @@ type CacheState = {
   /** Cache reads counted at the lower tier's prices: an upper-tier request's
    *  reads count `factor` times, so what reading saved is priced as billed. */
   tieredReads: number
+  /** What steps with a server-side tool loop (the advisor) were billed, and
+   *  their weighted tokens: the tool's own round is billed but never in the
+   *  usage, so the rate is solved without them. */
+  offBookUsd: number
+  offBookWeight: number
+  /** The ledger as the last step or turn start read it, from which a step's
+   *  bill is told. A redraw's read leaves it, so it never hides a step's. */
+  ledgerSeen: number | undefined
   /** Requests that missed a cache that should have been warm. */
   misses: number
   /** When the last main-loop request was sent. */
@@ -154,13 +200,19 @@ type CacheState = {
 const INITIAL: Readonly<CacheState> = {
   ttl: '1h',
   ttlPinned: false,
+  subagentTtl: '5m',
   ttlSeen: undefined,
   idleCompactFrom: undefined,
   turnOpen: false,
+  turnWaker: undefined,
+  lastWake: undefined,
   requests: 0,
   tokens: NO_TOKENS,
   premium: 0,
   tieredReads: 0,
+  offBookUsd: 0,
+  offBookWeight: 0,
+  ledgerSeen: undefined,
   misses: 0,
   lastAt: 0,
   window: 0,
@@ -224,21 +276,24 @@ const allTokens = (s: CacheState): TokenCounts => (s.prior === undefined ? s.tok
  *    cost - costBase = r * (weightedTokens(tokens) + premium)
  *
  *  where premium weighs each upper-tier request again, so r is the lower
- *  tier's rate on a model with two.
+ *  tier's rate on a model with two, and a step with a server-side tool loop
+ *  is left out of both sides, its tool's round billed with no tokens shown.
  *
  *  It self-calibrates to whatever model and plan are in force, and it is an
  *  estimate on top of an estimate (the session cost is itself computed at list
  *  price), so what it prices is always shown with a "~". */
 const ratePerToken = (s: CacheState, sessionCost: number | undefined): number | null => {
   if (sessionCost === undefined) return null
-  const weighted = weightedTokens(s.tokens, pricedModel(s)) + s.premium
-  const billed = sessionCost - s.costBase
+  const weighted = weightedTokens(s.tokens, pricedModel(s)) + s.premium - s.offBookWeight
+  const billed = sessionCost - s.costBase - s.offBookUsd
   return weighted > 0 && billed > 0 ? billed / weighted : null
 }
 
-/** What writing `tokens` to the cache costs at a base `rate` per token: the
- *  re-warm's prompt is the whole window, which sets its tier. */
-const reWarmAt = (s: CacheState, rate: number, tokens: number): number => rate * WRITE_MULT * tokens * tierFactor(pricedModel(s), tokens)
+/** What writing `tokens` to the cache costs at a base `rate` per token, for
+ *  the lifetime the cache stands at: the re-warm's prompt is the whole
+ *  window, which sets its tier. */
+const reWarmAt = (s: CacheState, rate: number, tokens: number): number =>
+  rate * WRITE_MULT[effectiveTtl(s)] * tokens * tierFactor(pricedModel(s), tokens)
 
 /** When a measured cache goes or went cold: a lifetime after the last reply
  *  this band saw; none before one. */
@@ -306,6 +361,7 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
     idleCompacts: s.idleCompactFrom !== undefined && !autoCompactOff && contextTokens >= s.idleCompactFrom,
     recovered: s.prior !== undefined,
     tokens: { sent: tokens.uncached + tokens.written, back: tokens.output, cached: tokens.read },
+    wake: s.lastWake,
   }
 }
 
@@ -336,6 +392,21 @@ const noteLedger = (s: CacheState, costNow: number | undefined): void => {
   if (costNow !== undefined && costNow < s.costBase) s.costBase = 0
 }
 
+/** The ledger read after a response. A step with a server-side tool loop,
+ *  `offBook` its weighted tokens, is billed what the ledger grew by since
+ *  the last step, kept off the rate's books with its tokens. Only a bill
+ *  that grew is kept off: with nothing to tell it by, the step stays on. */
+const noteStepLedger = (s: CacheState, costNow: number | undefined, offBook: number | undefined): void => {
+  const before = s.ledgerSeen
+  noteLedger(s, costNow)
+  if (costNow === undefined) return
+  s.ledgerSeen = costNow
+  if (offBook !== undefined && before !== undefined && costNow > before) {
+    s.offBookUsd += costNow - before
+    s.offBookWeight += offBook
+  }
+}
+
 /** A compaction replaces the conversation with a summary: the next request
  *  rebuilds the cache on purpose, at the summary's size. */
 const noteCompaction = (s: CacheState, sizeAfter: number | undefined): void => {
@@ -348,26 +419,30 @@ const noteCompaction = (s: CacheState, sizeAfter: number | undefined): void => {
 
 /** A response's tokens toward the bill: every response's, a subagent's
  *  included, since the session's bill includes every subagent and the rate
- *  is solved from it. */
-const billResponse = (s: CacheState, usage: Response): void => {
+ *  is solved from it. Its writes last `ttl`, its bucket's. Over `rounds` of
+ *  a server-side tool loop, the usage sums every round's. Returns the
+ *  response's weighted tokens. */
+const billResponse = (s: CacheState, usage: Response, rounds: number, ttl: Ttl): number => {
   const hit = usage.cache_read_input_tokens
   const written = usage.cache_creation_input_tokens
   const uncached = usage.input_tokens
-  const request = { uncached, written, read: hit, output: usage.output_tokens }
+  const request = { uncached, written, writtenHour: ttl === '1h' ? written : 0, read: hit, output: usage.output_tokens }
   s.tokens = addTokens(s.tokens, request)
-  // A request is priced by its whole prompt, cache reads and writes included.
-  const factor = tierFactor(usage.model, uncached + hit + written)
-  s.premium += (factor - 1) * weightedTokens(request, usage.model)
+  // A request is priced by its whole prompt, cache reads and writes included:
+  // each round's, where a tool loop sums them.
+  const factor = tierFactor(usage.model, (uncached + hit + written) / rounds)
+  const weighted = factor * weightedTokens(request, usage.model)
+  s.premium += weighted - weightedTokens(request, usage.model)
   s.tieredReads += factor * hit
+  return weighted
 }
 
-/** Whether a main-loop request that read `hit` tokens, `gap` after the
- *  last, read short of a cache that should have been warm, by enough tokens
- *  and enough of what it held: within its TTL, on the same model, and with
- *  nothing rebuilding it on purpose. */
-const readShort = (s: CacheState, hit: number, gap: number, switched: boolean): boolean => {
+/** Whether a main-loop request that read `hit` tokens read short of what
+ *  the cache held, by enough tokens and enough of it; undefined with nothing
+ *  to measure it by: no prefix, one rebuilt on purpose, or another model. */
+const shortOf = (s: CacheState, hit: number, switched: boolean): boolean | undefined => {
   const prefix = s.cached
-  if (prefix <= 0 || s.rebuilding || switched || gap > TTL_MS[s.ttl]) return false
+  if (prefix <= 0 || s.rebuilding || switched) return undefined
   const shortfall = prefix - hit
   return shortfall >= MISS_MIN_TOKENS && shortfall > prefix * MISS_MIN_SHARE
 }
@@ -375,11 +450,14 @@ const readShort = (s: CacheState, hit: number, gap: number, switched: boolean): 
 /** A main-loop response, sent at `sentAt`, as a measure of the cache: a
  *  miss or a rebuild, what it leaves in the cache, and the model its reply
  *  was billed under. A subagent's prefix is its own, so it says nothing of
- *  the main conversation's cache or its countdown. */
-const measureCache = (s: CacheState, usage: Response, sentAt: number): void => {
+ *  the main conversation's cache or its countdown. Over `rounds` of a
+ *  server-side tool loop each round read the prefix again, so the cache is
+ *  measured by a round's share. */
+const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: number): void => {
   const model = usage.model
-  const hit = usage.cache_read_input_tokens
-  const written = usage.cache_creation_input_tokens
+  const perRound = (n: number): number => Math.round(n / rounds)
+  const hit = perRound(usage.cache_read_input_tokens)
+  const written = perRound(usage.cache_creation_input_tokens)
   if (model) s.billedModel = model
 
   // Read as cold already: a resume the engine called expired, or a recalled
@@ -388,11 +466,14 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number): void => {
   const gap = s.requests > 0 ? sentAt - s.lastAt : 0
   // Another model has its own cache: reading nothing after a switch is no miss.
   const switched = s.model !== undefined && model !== undefined && model !== s.model
-  const short = readShort(s, hit, gap, switched)
-  // An assumed hour that read nothing after five idle minutes was five.
-  const wasFive = short && !s.ttlPinned && s.ttl === '1h' && hit === 0 && gap > TTL_MS['5m']
-  if (wasFive) s.ttl = '5m'
-  const missed = short && !wasFive
+  const short = shortOf(s, hit, switched)
+  // Unpinned, the TTL is read off a request after five idle minutes: one that
+  // read short found only what other sessions keep warm, the system prompt,
+  // so the cache lived five minutes; one that read it all, an hour. Claude
+  // Code switches as a subscription goes onto usage credits, or back off.
+  if (!s.ttlPinned && short !== undefined && gap > TTL_MS['5m'] && gap <= TTL_MS['1h']) s.ttl = short ? '5m' : '1h'
+  // Short of a cache that should have been warm: within its TTL.
+  const missed = short === true && gap <= TTL_MS[s.ttl]
   if (missed) s.misses += 1
 
   // A rebuild of a cache that existed: its time ran out, it missed, a
@@ -403,7 +484,8 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number): void => {
   s.requests += 1
   // The next request's TTL follows the config in force, not the transcript's.
   s.ttlSeen = undefined
-  s.window = usage.input_tokens + hit + written + usage.output_tokens
+  // Every round's output stays in the conversation, so it is counted whole.
+  s.window = perRound(usage.input_tokens) + hit + written + usage.output_tokens
   s.cached = hit + written
   s.lastAt = sentAt
   s.rebuilding = false
@@ -437,19 +519,20 @@ export type CacheModel = Readonly<{
    *  reply, which speaks for itself; and what a resumed conversation's
    *  transcript shows, once read. */
   recalled: (reply: RecalledReply | undefined, transcript?: TranscriptFacts) => void
-  /** session.start, once its settings are read: the TTL they pin, and where
-   *  idle compaction runs from. */
-  configured: (o: Readonly<{ ttl: Ttl | undefined; idleCompactFrom: number | undefined }>) => void
+  /** session.start, once its settings are read: the TTL they pin, a
+   *  subagent's TTL they pin, and where idle compaction runs from. */
+  configured: (o: Readonly<{ ttl: Ttl | undefined; idleCompactFrom: number | undefined; subagentTtl?: Ttl | undefined }>) => void
   /** classic.SessionStart, a resume or fork: the engine's word on its cache,
    *  and its transcript's once read. */
   resumed: (o: Readonly<{ cache: ResumedCache | undefined; transcript: TranscriptFacts | undefined }>) => void
-  /** turn.start of a main-loop turn: the model /model names now, and the
-   *  ledger, which the conversation's first turn takes as its baseline. */
-  turnStarted: (o: Readonly<{ priceModel: string | undefined; ledger: number | undefined }>) => void
-  /** turn.step: a response's tokens, sent at `sentAt`. */
-  responded: (usage: Response, sentAt: number, isMain: boolean) => void
-  /** The ledger, as a hook read it after a response. */
-  ledgerRead: (ledger: number | undefined) => void
+  /** turn.start of a main-loop turn: the model /model names now, the
+   *  ledger, which the conversation's first turn takes as its baseline, and
+   *  what started the turn, when the user didn't type it. */
+  turnStarted: (o: Readonly<{ priceModel: string | undefined; ledger: number | undefined; wokenBy?: Waker }>) => void
+  /** turn.step: a response's tokens, sent at `sentAt`; how many tool calls
+   *  the API ran itself in it (the advisor), each starting a round whose
+   *  tokens the usage sums; and the ledger as the hook read it after. */
+  responded: (usage: Response, sentAt: number, isMain: boolean, after?: Readonly<{ serverTools?: number; ledger?: number | undefined }>) => void
   /** A compaction of the main conversation at `now`, to `sizeAfter` tokens.
    *  With no turn under way, not /compact, and long after the last request,
    *  it is Claude Code compacting the conversation before its cache ran out
@@ -490,31 +573,39 @@ export const newCache = (): CacheModel => {
       }
       if (transcript !== undefined) noteTranscript(s, transcript)
     },
-    configured: ({ ttl, idleCompactFrom }) => {
+    configured: ({ ttl, idleCompactFrom, subagentTtl }) => {
       if (ttl !== undefined) {
         s.ttl = ttl
         s.ttlPinned = true
       }
+      s.subagentTtl = subagentTtl ?? '5m'
       s.idleCompactFrom = idleCompactFrom
     },
     resumed: ({ cache, transcript }) => {
       noteResume(s, cache)
       if (transcript !== undefined) noteTranscript(s, transcript)
     },
-    turnStarted: ({ priceModel, ledger }) => {
+    turnStarted: ({ priceModel, ledger, wokenBy }) => {
       s.turnOpen = true
+      s.turnWaker = wokenBy
       s.priceModel = priceModel
+      if (ledger !== undefined) s.ledgerSeen = ledger
       // The ledger as this conversation's first turn starts: its baseline.
       if (ledger !== undefined && !s.baselined) {
         s.costBase = ledger
         s.baselined = true
       }
     },
-    responded: (usage, sentAt, isMain) => {
-      billResponse(s, usage)
-      if (isMain) measureCache(s, usage, sentAt)
+    responded: (usage, sentAt, isMain, after = {}) => {
+      const rounds = (after.serverTools ?? 0) + 1
+      // A reply that sent no tokens made no request: it read and kept no cache.
+      const sent = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
+      if (isMain && sent > 0) measureCache(s, usage, sentAt, rounds)
+      // Its writes last as long as its bucket's TTL: the main loop's as just
+      // measured, a subagent's its own.
+      const weighted = billResponse(s, usage, rounds, isMain ? effectiveTtl(s) : s.subagentTtl)
+      noteStepLedger(s, after.ledger, rounds > 1 ? weighted : undefined)
     },
-    ledgerRead: ledger => noteLedger(s, ledger),
     compacted: ({ now, sizeAfter, manual = false }) => {
       const idle = !s.turnOpen && !manual && s.requests > 0 && now - s.lastAt >= IDLE_GAP_MS
       noteCompaction(s, sizeAfter)
@@ -525,14 +616,16 @@ export const newCache = (): CacheModel => {
       s.turnOpen = false
       const rebuilt = s.lastRebuilt
       s.lastRebuilt = false
+      s.lastWake = s.turnWaker === undefined ? undefined : { by: s.turnWaker, reWarm: rebuilt }
+      s.turnWaker = undefined
       return { rebuilt, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: ratePerToken(s, ledger), billed: s.billedModel, priceModel: s.priceModel } }
     },
     conversationEnded: (ledger, resumed) => {
       // The billing mode, its TTL and the session's settings carry over;
       // everything measured starts again. The baseline is provisional until
       // the next turn starts and takes the ledger then.
-      const { ttl, ttlPinned, priceModel, billedModel, idleCompactFrom, turnOpen } = s
-      Object.assign(s, INITIAL, { ttl, ttlPinned, priceModel, billedModel, idleCompactFrom, turnOpen, costBase: ledger, knownFresh: !resumed })
+      const { ttl, ttlPinned, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen } = s
+      Object.assign(s, INITIAL, { ttl, ttlPinned, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen, costBase: ledger, ledgerSeen: ledger, knownFresh: !resumed })
     },
     view: ({ now, ledger, contextTokens, autoCompactOff }) => {
       noteLedger(s, ledger)

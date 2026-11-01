@@ -4,8 +4,8 @@
 import { atom, read, update } from 'claude-code'
 import type { ClassicEventOf, EngineInterface, ProcessRunResult, Register, Timer } from 'claude-code'
 import { drawBand } from './band'
-import { newCache } from './cache'
-import type { CacheModel, RecalledReply, Remembered, ResumedCache, Spend, TranscriptFacts } from './cache'
+import { newCache, wakerOf } from './cache'
+import type { CacheModel, RecalledReply, Remembered, ResumedCache, Spend, TranscriptFacts, Waker } from './cache'
 import { idleCompactFrom, resolveTtl } from './cache-settings'
 import { ARGUMENT_HINT, commandPlan, parseCommand } from './command'
 import { contextUsed, hostZone, paintKey, readableZone } from './format'
@@ -102,6 +102,9 @@ type Band = {
   resets: readonly number[]
   /** Each toast's level reached, so it speaks once per crossing. */
   warned: Warned
+  /** What submitted the prompt about to start a turn of its own, when the
+   *  user didn't type it, for that turn's start to take. */
+  nextWaker: Waker | undefined
   tick: Timer | undefined
 }
 
@@ -131,6 +134,7 @@ const band: Band = {
   samples: [],
   reads: 0,
   resume: undefined,
+  nextWaker: undefined,
   tick: undefined,
 }
 
@@ -429,8 +433,8 @@ const readAppearance = async ($: EngineInterface): Promise<void> => {
  *  `terminal` session or not, and hands the cache model the TTL they pin
  *  and where idle compaction runs from. */
 const readCacheSettings = async ($: EngineInterface, terminal: boolean): Promise<void> => {
-  // Only these two keys are taken; the rest, `env` included, is dropped here.
-  const { promptCacheTtl, idleCompaction } = (await $.settings.read().catch(() => undefined)) ?? {}
+  // Only these three keys are taken; the rest, `env` included, is dropped here.
+  const { promptCacheTtl, subagentPromptCacheTtl, idleCompaction } = (await $.settings.read().catch(() => undefined)) ?? {}
   const pinned = resolveTtl({
     force5m: await $.env.get('FORCE_PROMPT_CACHING_5M'),
     chosen: await $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL'),
@@ -444,7 +448,14 @@ const readCacheSettings = async ($: EngineInterface, terminal: boolean): Promise
     disableAll: await $.env.get('DISABLE_COMPACT'),
     minTokens: await $.env.get('CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS'),
   })
-  band.cache.configured({ ttl: pinned, idleCompactFrom: idleFrom })
+  // A subagent's bucket, in the same order with its own variable and setting.
+  const subagentPinned = resolveTtl({
+    force5m: await $.env.get('FORCE_PROMPT_CACHING_5M'),
+    chosen: await $.env.get('CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL'),
+    setting: subagentPromptCacheTtl,
+    enable1h: await $.env.get('ENABLE_PROMPT_CACHING_1H'),
+  })
+  band.cache.configured({ ttl: pinned, idleCompactFrom: idleFrom, subagentTtl: subagentPinned })
 }
 
 /** Recalls session `id`'s last reply into the cache model, off the store or
@@ -524,9 +535,22 @@ export const register: Register = on => {
     const priceModel = await $.session.model().catch(() => undefined)
     const cost = await ledgerUsd($)
     band.insights.noteTurnStart(e.turnId, cost)
-    band.cache.turnStarted({ priceModel, ledger: cost })
+    band.cache.turnStarted({ priceModel, ledger: cost, wokenBy: band.nextWaker })
+    band.nextWaker = undefined
     return next(e)
   })
+
+  // A prompt the user didn't type, a background task's notification or
+  // another session's message, starts a turn that restarts the countdown:
+  // noted before it is passed on, since its turn starts before `next`
+  // resolves. One delivered into a running turn (`turnId`) starts none. Only
+  // its origin is read, never its text.
+  on('prompt.submit', async ($, e, next) => {
+    if (e.turnId === undefined) band.nextWaker = wakerOf(e.origin.kind)
+    const result = await next(e)
+    if (result.drop !== undefined) band.nextWaker = undefined
+    return result
+  }).catch(($, e, next) => next(e)) // a failure here must never stop a prompt
 
   // Main-loop turns only: a subagent's run is part of the turn that spawned it.
   on('turn.complete', async ($, e, next) => {
@@ -559,8 +583,12 @@ export const register: Register = on => {
     const result = yield* next(e)
     const isMain = e.agentId === undefined
     if (result?.usage) {
-      band.cache.responded(result.usage, sentAt, isMain)
-      band.cache.ledgerRead(await ledgerUsd($))
+      // The tool calls the API ran itself (2.1.290+, read through `in`: older
+      // engines' types don't declare them), each a round the usage sums.
+      const served = 'serverToolUses' in result && Array.isArray(result.serverToolUses) ? result.serverToolUses.length : 0
+      // The ledger goes in with the response, so no other hook's step can
+      // come between them and take its bill for this one's.
+      band.cache.responded(result.usage, sentAt, isMain, { serverTools: served, ledger: await ledgerUsd($) })
       $.ui.invalidate('ui.render')
     }
     if (isMain && result?.stopReason === 'compaction') band.cache.compacted({ now: sentAt })

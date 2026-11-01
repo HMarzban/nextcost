@@ -8,7 +8,7 @@ import { readingsOf } from '../hooks/reading'
 import type { BandSnapshot } from '../hooks/snapshot'
 import { chipsView } from '../hooks/views/chips'
 import { drawView } from '../hooks/views/frame'
-import { MIN, boldOf, byKey, fakeEl, firstRow, pillKeys, shown, type Node } from './helpers'
+import { HOUR, MIN, boldOf, byKey, fakeEl, firstRow, pillKeys, shown, type Node } from './helpers'
 import { NO_ACT, snapOf } from './matrix'
 
 const rowOf = (over: Partial<BandSnapshot> = {}): Node => {
@@ -36,4 +36,21 @@ test("on the desktop a limit's reset is ↻ and its time, the glyph in label gre
     expect(byKey(pill, 'i-reset', 'Text')?.props?.color).toBe(DARK.label)
     expect(byKey(pill, 'i-reset', 'Svg')).toBeUndefined()
   }
+})
+
+// The fill a pace forecasts is never a bare span beside the reset, where it
+// reads as when the window resets: `5h 76% ~1h 15m` beside `Resets in 2h`.
+const PACING = { fiveHour: { percentUsed: 76, resetsAt: 2 * HOUR, etaMs: 75 * MIN } }
+
+test("a limit's pace, cut short, still says it is when the window fills", () => {
+  const short = byKey(rowOf({ columns: 60, ...PACING }), '5h', 'Box')
+  expect(shown(byKey(short, 'p', 'Text'))).toBe(' full ~1h 15m')
+  const long = byKey(rowOf(PACING), '5h', 'Box')
+  expect(shown(byKey(long, 'p', 'Text'))).toBe(' full in ~1h 15m')
+})
+
+test("a limit's hover says its fill is a projection at the current pace", () => {
+  expect(readingsOf(snapOf(PACING)).chips.limitHover['5h']).toBe('Resets in 2h 00m; 5-hour limit, all your Claude use; full in ~1h 15m at the current pace')
+  // With no fill forecast, the hover is as it was.
+  expect(readingsOf(snapOf()).chips.limitHover['5h']).toBe('Resets in 3h 00m; 5-hour limit, all your Claude use')
 })

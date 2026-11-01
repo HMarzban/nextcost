@@ -12,11 +12,13 @@ it:
   `NEXTCOST_APPEARANCE`, `NO_COLOR`,
   `NEXTCOST_GLYPHS` (and their names before 0.18.0, `CC_BAND_APPEARANCE`
   and `CC_BAND_GLYPHS`), `LC_ALL`, `LC_CTYPE`, `LANG`,
-  `CLAUDE_CODE_PROMPT_CACHE_TTL`, `ENABLE_PROMPT_CACHING_1H`,
+  `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL`,
+  `ENABLE_PROMPT_CACHING_1H`,
   `FORCE_PROMPT_CACHING_5M`, `DISABLE_AUTO_COMPACT`, `DISABLE_COMPACT` and
   `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS`.
 - **Reads** your merged Claude Code settings once when a session starts,
-  and keeps two keys from them, `promptCacheTtl` and `idleCompaction`.
+  and keeps three keys from them, `promptCacheTtl`, `subagentPromptCacheTtl`
+  and `idleCompaction`.
   Nothing else in them is kept, stored, drawn or logged.
 - **Runs** two read-only git commands in the project root, for the
   workspace strip, exactly:
@@ -57,6 +59,11 @@ it:
   each kind), how long the last cache write was made for, and, where Claude
   Code gives no idle time, the facts above. Nothing else is kept, shown or
   sent.
+- **Reads**, as each prompt is submitted, only where it came from (your
+  own, a background task's notification, another session, a schedule),
+  never its text, its attachments or its context, so chips' Cache card can
+  say who restarted the countdown. It passes every prompt on unchanged and keeps
+  that origin in memory alone, never in its store, until your own next turn.
 - **Writes** two values to the session's own state: whether the band is
   hidden, and whether it's expanded. In the plugin's own store it keeps,
   across sessions, the time of each session's last reply and the name of

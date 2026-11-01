@@ -24,7 +24,7 @@ import {
   severityMark,
 } from './format'
 import { IDLE_COMPACT_MS } from './cache'
-import type { CacheFacts } from './cache'
+import type { CacheFacts, Wake, Waker } from './cache'
 import type { ContextFacts, Frame, LimitFacts, SpendFacts, Tone } from './facts'
 import { lastCostOf, warmAverageOf } from './insights'
 import type { CostEntry, Trails } from './insights'
@@ -134,6 +134,13 @@ export type CacheWords = Readonly<{
   rebuildsText: string | undefined
   /** How long a recalled cache sat idle, `2h 05m`; undefined unless recalled. */
   idleText: string | undefined
+  /** Who started the last turn, when the user didn't: `re-warmed by
+   *  background task`, or within the TTL `kept warm by another session`;
+   *  once the cache has gone again, `last turn by background task`. */
+  wakeRow: Fact | undefined
+  /** The same, after the card's headline where the row has no room: ` · by
+   *  background task`. */
+  wakeHead: Say | undefined
   /** The cache card's headline: its countdown, `59m left`, else its mood. */
   cardHead: Say
   /** The cache card's line while there is nothing to count. */
@@ -213,6 +220,9 @@ export type LimitWords = Readonly<{
   line: string
   /** A measured fill, `~40m`. */
   fullIn: string | undefined
+  /** The measured fill as a chip says it short, `full ~40m`: never the span
+   *  alone, which beside a reset reads as one. */
+  fullShort: string | undefined
   /** `! 5h 82%`, or with a measured fill, `! 5h full in ~40m` / `! 5h ~40m`. */
   amber: Amber | undefined
   /** Pulse's limits card, under its chart: `5h resets` and `16:40`; with a
@@ -308,6 +318,34 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
   }
 }
 
+/** What woke a session, as a card's value names it and as a sentence's subject. */
+const WAKER_WORDS: Readonly<Record<Waker, Readonly<{ noun: string; subject: string }>>> = {
+  task: { noun: 'background task', subject: 'a background task' },
+  schedule: { noun: 'schedule', subject: 'a schedule' },
+  session: { noun: 'another session', subject: 'another session' },
+  channel: { noun: 'channel message', subject: 'a channel message' },
+  plugin: { noun: 'plugin', subject: 'a plugin' },
+  claude: { noun: 'Claude Code', subject: 'Claude Code' },
+}
+
+/** Whether the cache has gone since: what the last turn did no longer holds. */
+const goneMoods: ReadonlySet<CacheFacts['mood']> = new Set(['cold', 'compacted'])
+
+/** A turn the user didn't type, as a hover says it: `a background task
+ *  re-warmed it`, `another session kept it warm`; the cache gone since,
+ *  `last turn by a background task`. */
+export const wakeSaid = (wake: Wake, mood: CacheFacts['mood']): string => {
+  const { subject } = WAKER_WORDS[wake.by]
+  return goneMoods.has(mood) ? `last turn by ${subject}` : `${subject} ${wake.reWarm ? 're-warmed it' : 'kept it warm'}`
+}
+
+/** The Cache card's row for a turn the user didn't type: what it did, while
+ *  that still holds, and who started it. */
+const wakeRowOf = (wake: Wake, mood: CacheFacts['mood']): Fact => ({
+  label: goneMoods.has(mood) ? 'last turn by' : wake.reWarm ? 're-warmed by' : 'kept warm by',
+  value: WAKER_WORDS[wake.by].noun,
+})
+
 /** The cache in words, from its facts: its mood's, and the measures every
  *  mood says alike. It counts down only while `coldInMs` is set. */
 export const cacheWords = (f: CacheFacts): CacheWords => {
@@ -325,10 +363,12 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     amber: m.amber,
     savedText: f.measured && f.savedUsd !== null ? fmtEstimate(f.savedUsd) : undefined,
     hitText: f.hitFrac === undefined ? undefined : fmtPct(f.hitFrac),
-    // Inference only ever moves an assumed hour to 5m, so an unpinned hour is the guess.
+    // Unpinned, an hour is assumed until a pin or the transcript says it.
     lastsText: `${f.ttl} idle${!f.ttlPinned && f.ttl === '1h' ? ' · assumed' : ''}`,
     rebuildsText: f.misses > 0 ? String(f.misses) : undefined,
     idleText: f.recalled && f.idleMs !== null ? fmtAgo(f.idleMs) : undefined,
+    wakeRow: f.wake === undefined ? undefined : wakeRowOf(f.wake, f.mood),
+    wakeHead: f.wake === undefined ? undefined : [[` · by ${WAKER_WORDS[f.wake.by].noun}`, 'label']],
     cardHead: m.cardHead,
     cardNote: m.cardNote,
     estimateLabel: m.estimateLabel,
@@ -425,6 +465,7 @@ export const limitWords = (f: LimitFacts, frame: Frame): LimitWords => {
     bandName: f.name,
     line: amber?.long ?? joined(say),
     fullIn,
+    fullShort: fullIn === undefined ? undefined : `full ${fullIn}`,
     amber,
     fact,
     alt: altOf(

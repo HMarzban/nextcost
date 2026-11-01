@@ -9,24 +9,25 @@ import { BUILD_155K, FRESH, HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE
 
 const ENV = { ENABLE_PROMPT_CACHING_1H: '1', HOME: '/Users/me' }
 const MODEL = 'claude-opus-5-5'
-/** $2.41 over 76k of context at 1.25× a write: what USAGE implies for the rate. */
+/** A round rate on Opus 5.5: $0.00001 a token. */
 const RATE = 0.00001
 /** Claude Haiku 5.5, whose prompts over 100k pay 5× every price, and the
  *  lower tier's rate, $0.10 per million. */
 const HAIKU = 'claude-haiku-5-5'
 const HAIKU_RATE = 0.0000001
-/** A Haiku 5.5 session past 100k: 151k of context, and $0.0886 spent on two
- *  requests, a 20k prompt and a 150k one at 5×, 886k weighted tokens. */
-const HAIKU_USAGE = { ...USAGE, cost: { usd: 0.0886 }, context: { tokens: 151_000, window: 1_000_000, percent: 15 } }
+/** A Haiku 5.5 session past 100k: 151k of context, and $0.1387 spent on two
+ *  requests, writing for the pinned hour at 2×: a 20k prompt, 43k weighted,
+ *  and a 150k one at 5×, 1,344k. */
+const HAIKU_USAGE = { ...USAGE, cost: { usd: 0.1387 }, context: { tokens: 151_000, window: 1_000_000, percent: 15 } }
 /** Its two requests, billed on Haiku 5.5. */
 const haikuTurn = async ($: Engine) => {
   await respond($, resp(2_000, 0, 18_000, 1_000), { model: HAIKU })
   await respond($, resp(2_000, 18_000, 130_000, 1_000), { model: HAIKU })
   await $.turn.complete(TURN_DONE)
 }
-/** 151k written at the upper tier: 151k × 1.25 × $0.50 per million = $0.094.
- *  At the lower tier it would say ~$0.02. */
-const HAIKU_COLD = /cache cold · next message ~\$0\.09\b/
+/** 151k written for an hour at the upper tier: 151k × 2 × $0.50 per million
+ *  = $0.151. At the lower tier it would say ~$0.03. */
+const HAIKU_COLD = /cache cold · next message ~\$0\.15\b/
 
 const mounted = async ($: Engine, open = false) => {
   const ui = await mountBand($, 'terminal', 140)
@@ -45,12 +46,12 @@ test('reloaded ten minutes after a reply, the band counts down from that reply',
 test('reopened two days later, the cache is cold and the next message has a price', async ($, on) => {
   setup(on, { env: ENV, store: { sessions: { s1: { lastAt: 0 } }, rates: { [MODEL]: RATE } }, now: 48 * HOUR })
   await $.session.start(START)
-  // 1.25 × 76k tokens × the rate
-  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold · next message ~\$0\.95/)
+  // an hour's write, at 2×: 2 × 76k tokens × the rate
+  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold · next message ~\$1\.52/)
   const tree = await mounted($, true)
   expect(shown(cardOf(tree, 'cache'))).toMatch(/^CACHEcold/)
   expect(fact(tree, 'idle for')).toBe('2d 0h')
-  expect(fact(tree, 'next message')).toBe('~$0.95')
+  expect(fact(tree, 'next message')).toBe('~$1.52')
 })
 
 test('with no rate known for the model yet, it names the tokens instead of guessing a price', async ($, on) => {
@@ -70,13 +71,14 @@ test('a session from before the band reads its last reply off its transcript, ne
 test("its price comes from the transcript's own cost record, per model", async ($, on) => {
   setup(on, { env: ENV, now: 3 * HOUR })
   // Opus 5.5 reads its cache at 0.05× input: $20 over 1M input + 1.25 × 400k
-  // written + 0.05 × 20M read + 5 × 100k output = 3M weighted tokens
+  // written (the record doesn't split its writes by lifetime) + 0.05 × 20M
+  // read + 5 × 100k output = 3M weighted tokens
   engine.transcript = transcriptOf(0, {
     'claude-opus-5-5': { inputTokens: 1_000_000, cacheCreationInputTokens: 400_000, cacheReadInputTokens: 20_000_000, outputTokens: 100_000, costUSD: 20 },
   })
   await $.session.start(START)
-  // 1.25 × 76k × $20 / 3M
-  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/next message ~\$0\.63/)
+  // an hour's re-warm, at 2×: 2 × 76k × $20 / 3M
+  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/next message ~\$1\.01/)
 })
 
 test("reopened under an alias, the price is read for the model the last reply was billed under", async ($, on) => {
@@ -86,7 +88,7 @@ test("reopened under an alias, the price is read for the model the last reply wa
     'claude-opus-5-5': { inputTokens: 1_000_000, cacheCreationInputTokens: 400_000, cacheReadInputTokens: 20_000_000, outputTokens: 100_000, costUSD: 20 },
   })
   await $.session.start(START)
-  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/next message ~\$0\.63/)
+  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/next message ~\$1\.01/)
 })
 
 test('a transcript of any size is read from its end, the last megabyte alone', async ($, on) => {
