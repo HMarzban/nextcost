@@ -82,8 +82,12 @@ export const makeKit = (el: ElementTable, snap: BandSnapshot) => {
     )
   }
 
-  /** The props that make a keyed Box reveal the hover card drawn for `key`. */
-  const hoverable = (key: string) => (palette.filled ? { hover: { scope: scopeOf(key) } } : {})
+  /** The props that make a keyed Box reveal the hover card drawn for `key`.
+   *  The desktop joins a Box to a hover group only when its hover also styles
+   *  it, so a bare scope would never light: `ground` is that style, a piece's
+   *  own ground so nothing changes, else a tint on a bare piece. */
+  const hoverable = (key: string, ground: string = palette.surface) =>
+    palette.filled ? { hover: { scope: scopeOf(key), backgroundColor: ground } } : {}
 
   /** The one-line explanation `key`'s piece reveals, for after the pieces of
    *  its row, placed as `place` says. It has no key: a keyed Box is its own

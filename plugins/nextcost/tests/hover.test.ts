@@ -19,6 +19,7 @@ import {
   firstRow,
   isCard,
   byKey,
+  walk,
   widthOf,
   turn,
   type Node,
@@ -323,4 +324,27 @@ test("a desktop card is sized by the surface's measure, about 0.8 columns a char
   const card = kit.hoverCard('7d', text, { left: 10, room: 200, pieces: [] }) as Node
   expect(card.props).toMatchObject({ left: 9, width: Math.ceil(text.length * 0.8) + 2 })
   expect(Number(card.props?.width) * DESKTOP.pxPerCell).toBeGreaterThanOrEqual(453)
+})
+
+// The desktop joins a Box to its hover group only when the hover also styles
+// it: a bare `{ scope }` never lights, so the card it names never shows.
+test('every piece that reveals a card carries a style beside its scope, its own ground where it has one', LONG, async ($, on) => {
+  setup(on)
+  await $.session.start(DESKTOP_START)
+  await respond($, BUILD_155K)
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await mountBand($, surface, 160)
+    for (const tree of [await ui.drawn(), await ui.press({ key: 'more' }).then(() => ui.drawn())]) {
+      let pieces = 0
+      walk(tree, n => {
+        const scope = n.hover?.scope
+        if (scope === undefined || isCard(n)) return
+        pieces += 1
+        expect(typeof n.hover?.backgroundColor).toBe('string')
+        if (n.props?.backgroundColor !== undefined) expect(n.hover?.backgroundColor).toBe(n.props.backgroundColor)
+      })
+      expect(pieces).toBeGreaterThan(0)
+    }
+    await ui.unmount()
+  }
 })
