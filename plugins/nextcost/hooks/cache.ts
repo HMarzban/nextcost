@@ -132,7 +132,10 @@ export type CacheState = {
   turnOpen: boolean
   /** What started the turn under way, when the user didn't type it. */
   turnWaker: Waker | undefined
-  /** The last main-loop turn, when the user didn't type it. */
+  /** The turn under way has made a request of its own, in the main loop. */
+  turnMeasured: boolean
+  /** Who started the last main-loop turn that made a request, when the user
+   *  didn't type it. */
   lastWake: Wake | undefined
   /** Main-loop requests this conversation. */
   requests: number
@@ -206,6 +209,7 @@ const INITIAL: Readonly<CacheState> = {
   idleCompactFrom: undefined,
   turnOpen: false,
   turnWaker: undefined,
+  turnMeasured: false,
   lastWake: undefined,
   requests: 0,
   tokens: NO_TOKENS,
@@ -597,6 +601,7 @@ export const newCache = (kept?: CacheState): CacheModel => {
     turnStarted: ({ priceModel, ledger, wokenBy }) => {
       s.turnOpen = true
       s.turnWaker = wokenBy
+      s.turnMeasured = false
       s.priceModel = priceModel
       if (ledger !== undefined) s.ledgerSeen = ledger
       // The ledger as this conversation's first turn starts: its baseline.
@@ -609,7 +614,10 @@ export const newCache = (kept?: CacheState): CacheModel => {
       const rounds = (after.serverTools ?? 0) + 1
       // A reply that sent no tokens made no request: it read and kept no cache.
       const sent = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
-      if (isMain && sent > 0) measureCache(s, usage, sentAt, rounds)
+      if (isMain && sent > 0) {
+        measureCache(s, usage, sentAt, rounds)
+        s.turnMeasured = true
+      }
       // Its writes last as long as its bucket's TTL: the main loop's as just
       // measured, a subagent's its own.
       const weighted = billResponse(s, usage, rounds, isMain ? effectiveTtl(s) : s.subagentTtl)
@@ -625,8 +633,11 @@ export const newCache = (kept?: CacheState): CacheModel => {
       s.turnOpen = false
       const rebuilt = s.lastRebuilt
       s.lastRebuilt = false
-      s.lastWake = s.turnWaker === undefined ? undefined : { by: s.turnWaker, reWarm: rebuilt }
+      // A turn that made no request (a limit hit, a lost connection) left the
+      // countdown where it was, so what it says stays too.
+      if (s.turnMeasured) s.lastWake = s.turnWaker === undefined ? undefined : { by: s.turnWaker, reWarm: rebuilt }
       s.turnWaker = undefined
+      s.turnMeasured = false
       return { rebuilt, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: ratePerToken(s, ledger), billed: s.billedModel, priceModel: s.priceModel } }
     },
     conversationEnded: (ledger, resumed) => {

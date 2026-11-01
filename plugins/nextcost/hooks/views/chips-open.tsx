@@ -12,7 +12,7 @@ import type { LimitReading, Readings } from '../reading'
 import type { BandActions } from '../snapshot'
 import { SPLIT_LABELS, type Say } from '../words'
 import { bodyRowsFor, footer, topStrip } from './frame'
-import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, factRow, headline, limitAccent, linesOf } from './shell'
+import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, factRow, headHolds, headline, limitAccent, linesOf } from './shell'
 import type { CardName } from './shell'
 
 const SPLIT_ALT = `token split: ${SPLIT_LABELS.join(', ')}`
@@ -101,14 +101,15 @@ const card = (kit: Kit, fit: Fit, name: CardName, head: Readonly<{ say: Say; ton
 const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
   const { cache } = read
   // The rows the facts ahead of who woke the session take: past them, it has
-  // no row of its own, and the headline says it instead.
+  // no row of its own, and the headline says it instead, where the card holds
+  // it whole.
   const ahead = (cache.cardNote === undefined ? 0 : 1) + (cache.known ? 1 : 0)
-  const inHead = fit.bodyRows <= ahead ? cache.wakeHead : undefined
+  const woken = fit.bodyRows <= ahead && cache.wakeHead !== undefined ? [...cache.cardHead, ...cache.wakeHead] : undefined
   return card(
     kit,
     fit,
     'cache',
-    { say: inHead === undefined ? cache.cardHead : [...cache.cardHead, ...inHead], tone: cache.tone },
+    { say: woken !== undefined && headHolds(kit, 'cache', woken, cache.tone, fit.inner) ? woken : cache.cardHead, tone: cache.tone },
     cache.known ? meter(kit, { label: 'cache', frac: cache.charge, tone: cache.tone, accent: kit.palette.warm, size: fit.bar, stretch: true, reads: 'left' }) : null,
     [
       cache.cardNote === undefined ? null : wrappedNote(kit, cache.cardNote),
