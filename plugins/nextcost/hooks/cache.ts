@@ -50,8 +50,8 @@ const WAKERS: Readonly<Record<string, Waker>> = {
  *  kind a newer engine adds. */
 export const wakerOf = (kind: string): Waker | undefined => (Object.hasOwn(WAKERS, kind) ? WAKERS[kind] : undefined)
 
-/** The last main-loop turn, when the user didn't type it: what started it,
- *  and whether it rebuilt the cache. */
+/** The last main-loop turn that made a request, when the user didn't type
+ *  it: what started it, and whether it rebuilt the cache. */
 export type Wake = Readonly<{ by: Waker; reWarm: boolean }>
 
 /** What a conversation has spent: its dollars and its tokens. */
@@ -110,7 +110,8 @@ export type CacheView = Readonly<{
   recovered: boolean
   /** Every token since the conversation began, subagents included. */
   tokens: Readonly<{ sent: number; back: number; cached: number }>
-  /** The last turn restarted the countdown though the user didn't type it. */
+  /** The last turn that made a request restarted the countdown though the
+   *  user didn't type it. */
   wake: Wake | undefined
 }>
 
@@ -131,7 +132,10 @@ type CacheState = {
   turnOpen: boolean
   /** What started the turn under way, when the user didn't type it. */
   turnWaker: Waker | undefined
-  /** The last main-loop turn, when the user didn't type it. */
+  /** A request of the turn under way reached the API: a turn that made none
+   *  (a limit hit, no connection) touched no cache, and restarted nothing. */
+  turnRequested: boolean
+  /** The last main-loop turn that made a request, when the user didn't type it. */
   lastWake: Wake | undefined
   /** Main-loop requests this conversation. */
   requests: number
@@ -205,6 +209,7 @@ const INITIAL: Readonly<CacheState> = {
   idleCompactFrom: undefined,
   turnOpen: false,
   turnWaker: undefined,
+  turnRequested: false,
   lastWake: undefined,
   requests: 0,
   tokens: NO_TOKENS,
@@ -588,6 +593,7 @@ export const newCache = (): CacheModel => {
     turnStarted: ({ priceModel, ledger, wokenBy }) => {
       s.turnOpen = true
       s.turnWaker = wokenBy
+      s.turnRequested = false
       s.priceModel = priceModel
       if (ledger !== undefined) s.ledgerSeen = ledger
       // The ledger as this conversation's first turn starts: its baseline.
@@ -600,7 +606,10 @@ export const newCache = (): CacheModel => {
       const rounds = (after.serverTools ?? 0) + 1
       // A reply that sent no tokens made no request: it read and kept no cache.
       const sent = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
-      if (isMain && sent > 0) measureCache(s, usage, sentAt, rounds)
+      if (isMain && sent > 0) {
+        measureCache(s, usage, sentAt, rounds)
+        s.turnRequested = true
+      }
       // Its writes last as long as its bucket's TTL: the main loop's as just
       // measured, a subagent's its own.
       const weighted = billResponse(s, usage, rounds, isMain ? effectiveTtl(s) : s.subagentTtl)
@@ -616,7 +625,7 @@ export const newCache = (): CacheModel => {
       s.turnOpen = false
       const rebuilt = s.lastRebuilt
       s.lastRebuilt = false
-      s.lastWake = s.turnWaker === undefined ? undefined : { by: s.turnWaker, reWarm: rebuilt }
+      if (s.turnRequested) s.lastWake = s.turnWaker === undefined ? undefined : { by: s.turnWaker, reWarm: rebuilt }
       s.turnWaker = undefined
       return { rebuilt, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: ratePerToken(s, ledger), billed: s.billedModel, priceModel: s.priceModel } }
     },

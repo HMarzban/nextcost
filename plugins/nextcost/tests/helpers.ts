@@ -328,6 +328,17 @@ export const respond = async ($: Engine, u: ModelUsage, over: Partial<TurnStepIn
   await stream.result
 }
 
+/** One step of a main-loop turn on `$` that got no response: no usage, as
+ *  when a limit is hit or the connection is lost. */
+export const noReply = async ($: Engine, over: Partial<TurnStepInput> = {}): Promise<void> => {
+  nextUsage = null
+  const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 1, ...over })
+  for await (const _chunk of stream) {
+    // drain so the hook's result settles
+  }
+  await stream.result
+}
+
 export type Node = {
   type?: string
   props?: Record<string, unknown>

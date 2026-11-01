@@ -8,7 +8,7 @@ import type { ModelUsage, PromptOrigin } from 'claude-code'
 import { newCache, wakerOf } from '../hooks/cache'
 import { readingsOf } from '../hooks/reading'
 import { cacheWith, snapOf } from './matrix'
-import { BUILD_100K, DESKTOP_START, LONG, MIN, READ_100K, START, cardHead, endTurn, fact, mountBand, respond, setup, shown, startTurn } from './helpers'
+import { BUILD_100K, DESKTOP_START, LONG, MIN, READ_100K, START, cardHead, endTurn, fact, mountBand, noReply, resp, respond, setup, shown, startTurn } from './helpers'
 
 /** One main-loop turn started by a prompt from `origin`, its one step
  *  billed as `u`, the ledger moving from `from` to `to`. */
@@ -136,4 +136,46 @@ test('a head says nothing of a turn the user typed', LONG, async ($, on) => {
   await $.session.start(DESKTOP_START)
   await turnFrom($, 't1', { kind: 'sdk' }, BUILD_100K, 0, 1)
   expect((await desktopCard($, 13)).head).not.toMatch(/ · by /)
+})
+
+// A turn that never reached the API (a limit hit, no connection) reports no
+// usage: it read and kept no cache, so it says nothing of who restarted it.
+
+/** One main-loop turn from `origin` whose step got no response. */
+const unanswered = async ($: Engine, id: string, origin: PromptOrigin, at: number): Promise<void> => {
+  await $.prompt.submit({ text: 'x', wait: false, origin })
+  await startTurn($, id, at)
+  await noReply($, { turnId: id })
+  await endTurn($, id, at)
+}
+
+test('a notification whose turn reached no API names nothing: the cache was never touched', LONG, async ($, on) => {
+  const clock = setup(on)
+  await $.session.start(START)
+  await turnFrom($, 't1', { kind: 'composer' }, BUILD_100K, 0, 1)
+  await clock.advance(20 * MIN)
+  await unanswered($, 't2', { kind: 'task-notification' }, 1)
+  expect(await wakeRows($)).toEqual({ reWarmed: undefined, keptWarm: undefined })
+})
+
+test('a failed turn, typed or not, leaves standing the label of the turn that did restart it', LONG, async ($, on) => {
+  const clock = setup(on)
+  await $.session.start(START)
+  await turnFrom($, 't1', { kind: 'composer' }, BUILD_100K, 0, 1)
+  await clock.advance(20 * MIN)
+  await turnFrom($, 't2', { kind: 'peer' }, READ_100K, 1, 1.1)
+  await clock.advance(MIN)
+  await unanswered($, 't3', { kind: 'task-notification' }, 1.1)
+  await unanswered($, 't4', { kind: 'composer' }, 1.1)
+  expect(await wakeRows($)).toEqual({ reWarmed: undefined, keptWarm: 'another session' })
+})
+
+test('a reply that sent no tokens is no request either', () => {
+  const c = newCache()
+  c.responded(BUILD_100K, 0, true)
+  c.turnEnded(undefined)
+  c.turnStarted({ priceModel: undefined, ledger: undefined, wokenBy: 'task' })
+  c.responded(resp(0, 0, 0, 0), MIN, true)
+  c.turnEnded(undefined)
+  expect(c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.wake).toBeUndefined()
 })

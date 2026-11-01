@@ -5,6 +5,11 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/). Before
 1.0.0, a minor version may change how the band reads.
 
+## [0.20.2] - 2026-11-01
+
+### Fixed
+- A turn that never reached the API no longer says it kept the cache warm. If a background task's notification hit a limit or lost its connection, the turn read and kept no cache and left the countdown alone, yet the Cache card and hover still said `kept warm by · background task` until your next turn. A turn that makes no request now changes nothing, typed or not: the label of the turn that last restarted the countdown stands.
+
 ## [0.20.0] - 2026-11-01
 
 ### Added
