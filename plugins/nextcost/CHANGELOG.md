@@ -12,7 +12,8 @@ and versions follow [Semantic Versioning](https://semver.org/). Before
 
 ### Fixed
 - Pulse's 5-hour tile no longer shows its fill forecast as a bare time. Cut short, `! 5h ~40m` read as a reset; it now says `! 5h full ~40m`. That is five columns wider, so past every other step the forecast gives way to the value, `! 5h 85%`, before the tiles drop their padding. With every reading amber at 40 columns, the row now fits, where it ran a column over. Departures never drew this form: its long and short forms are `! FULL ~20:30` and `! 84%`.
-- In chips' headline, a cache gone cold no longer reads `cold · by background task`, which blamed the task for the cold. It reads `cold · last turn by background task`, as the row does.
+- In chips' headline, a cache gone cold no longer reads `cold · by background task`, which blamed the task for the cold. It reads `cold · last turn by background task`, as the row does. Chips' headline now measures the phrase first, as pulse's does: where a narrow card, as on a desktop around 65 to 80 columns, can't hold it whole, it says nothing rather than cut a word.
+- A turn nobody typed that made no request no longer names who restarted the countdown. A task notification arriving during a rate limit or a lost connection sends no tokens, so the cache and the countdown stay as they were, yet the card said `kept warm by · background task` until your next turn. Only a turn that reached the API changes the line now; one that didn't leaves it as it was.
 
 ## [0.20.0] - 2026-11-01
 
