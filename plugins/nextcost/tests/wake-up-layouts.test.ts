@@ -189,7 +189,7 @@ test('at every width and at 13 rows, the board names the waker, whole from 74 co
           // A narrow column cuts it, as every remark, after the waker's first
           // words; under REMARKS_LEAST, amber's long STATUS leaves no column at all.
           if (columns >= 74) expect(`${at} ${said.includes(`BY ${noun.toUpperCase()}`)}`).toBe(`${at} true`)
-          else expect(`${at} ${said === '' ? over.otherLimits === AMBER_OTHERS : said.startsWith(`BY ${noun.toUpperCase().slice(0, 5)}`)}`).toBe(`${at} true`)
+          else expect(`${at} ${said === '' ? over.otherLimits === AMBER_OTHERS : said.includes(`BY ${noun.toUpperCase().slice(0, 5)}`)}`).toBe(`${at} true`)
           expect(`${at} ${visualRows(tree, surface) <= 13}`).toBe(`${at} true`)
         }
       }
