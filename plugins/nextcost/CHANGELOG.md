@@ -5,7 +5,7 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/). Before
 1.0.0, a minor version may change how the band reads.
 
-## [0.20.0] - 2026-10-26
+## [0.20.0] - 2026-11-01
 
 ### Added
 - Chips' open Cache card says who restarted the countdown when you didn't: `kept warm by · background task` when a background task's notification, another Claude session's message, a schedule or a channel message started a turn within the cache's lifetime, `re-warmed by · background task` when that turn rebuilt a cold cache, and once the cache has gone cold again, `last turn by · background task`. Where the card has no row to spare, as in the desktop's two lines of cards, its headline says it: `59m left · by background task`. The cache pill's hover ends the same way: `; a background task re-warmed it`. Your own next turn takes the line away. Pulse and departures don't show it yet. In two long sessions checked, turns nobody typed came to $20.87 of the $37.26, at list price, spent rebuilding cold caches, while the countdown seemed to restart by itself. The band learns where each prompt came from through a new `prompt.submit` hook, which reads only its origin, never its text, and passes every prompt on unchanged; the README and SECURITY.md say so.
