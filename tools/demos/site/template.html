@@ -35,12 +35,12 @@
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="2560">
 <meta property="og:image:height" content="1280">
-<meta property="og:image:alt" content="See the cold-cache bill before you send it. The band's amber chip reads: 0:40 left, re-warm ~$1.57.">
+<meta property="og:image:alt" content="See the cold-cache bill before you send it. The band's amber chip reads: 0:40 left, re-warm ~$2.11.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="nextcost: see the cold-cache bill before you send it">
 <meta name="twitter:description" content="nextcost, a free Claude Code plugin: the prompt-cache countdown, the re-warm price, cost, context and 5-hour/weekly limits, above the prompt.">
 <meta name="twitter:image" content="https://hmarzban.github.io/nextcost/social-preview.png">
-<meta name="twitter:image:alt" content="See the cold-cache bill before you send it. The band's amber chip reads: 0:40 left, re-warm ~$1.57.">
+<meta name="twitter:image:alt" content="See the cold-cache bill before you send it. The band's amber chip reads: 0:40 left, re-warm ~$2.11.">
 
 <script type="application/ld+json">
 {
@@ -81,7 +81,7 @@
    "name": "Why did one message cost so much more than the others?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "Most likely the prompt cache went cold. Claude Code caches your conversation for 5 minutes or an hour after each request; after that, the next message writes all of it again at 1.25× the input price, as Claude Code counts it. On Opus 5.5 that's 25× the warm read, for the context part."
+    "text": "Most likely the prompt cache went cold. Claude Code caches your conversation for 5 minutes or an hour after each request; after that, the next message writes all of it again, at 2× the input price on the hour's cache and 1.25× on five minutes. On Opus 5.5, on the hour, that's 40× the warm read, for the context part."
    }
   },
   {
@@ -89,7 +89,7 @@
    "name": "Is the re-warm price exact?",
    "acceptedAnswer": {
     "@type": "Answer",
-    "text": "It's an estimate, always shown with ~. The band solves the per-token rate from the session's own bill, counting as Claude Code's ledger does: every cache write at 1.25×. The API bills a 1-hour write at 2×, so an API key on the hour's cache may pay up to 1.6× the estimate."
+    "text": "It's an estimate, always shown with ~. The band solves the per-token rate from the session's own bill, weighing each cache write as Claude Code's ledger bills it: 2× on the hour's cache, 1.25× on five minutes. Until the cache shows its lifetime, the band assumes the hour."
    }
   },
   {
@@ -510,9 +510,9 @@
         <p class="swipe" aria-hidden="true">Scroll sideways for the whole band →</p>
         <div id="tip" role="tooltip" hidden></div>
       </div>
-      <p class="note" id="note"><b>Last minute.</b> The cache expires in <span class="cd" data-f="m">0:40</span>; miss it and the next message costs ~$1.57 to re&#8209;warm.</p>
+      <p class="note" id="note"><b>Last minute.</b> The cache expires in <span class="cd" data-f="m">0:40</span>; miss it and the next message costs ~$2.11 to re&#8209;warm.</p>
       <ul class="legend" id="legend" aria-label="What each reading says">
-        <li class="ln" data-k="cache"><span class="k">cache</span><span class="lead" aria-hidden="true"></span><span class="v"><span class="flap">LAST CALL · <span class="cd" data-f="m">0:40</span> · re&#8209;warm ~$1.57</span></span></li>
+        <li class="ln" data-k="cache"><span class="k">cache</span><span class="lead" aria-hidden="true"></span><span class="v"><span class="flap">LAST CALL · <span class="cd" data-f="m">0:40</span> · re&#8209;warm ~$2.11</span></span></li>
         <li class="ln" data-k="spend"><span class="k">spend</span><span class="lead" aria-hidden="true"></span><span class="v">$4.75 so far · last message $0.33</span></li>
         <li class="ln" data-k="context"><span class="k">context</span><span class="lead" aria-hidden="true"></span><span class="v">303k of 1.0M · 30%</span></li>
         <li class="ln" data-k="5h"><span class="k">5h</span><span class="lead" aria-hidden="true"></span><span class="v">27% used · resets in 1h 30m</span></li>
@@ -529,7 +529,7 @@
 
   <section id="cost" aria-labelledby="cost-h">
     <p class="item"><span class="no">02</span>Prompt cache cost · Opus 5.5, 340k</p>
-    <h2 id="cost-h">~$0.07 back in time. ~$1.70 back late.</h2>
+    <h2 id="cost-h">~$0.07 back in time. ~$2.72 back late.</h2>
     <p class="sub">Claude Code keeps your conversation in a prompt cache for 5 minutes or an hour after each request. Back in time, the next message re&#8209;reads it for a fraction of the price; back late, it writes the whole conversation again. Try your own model and size.</p>
     <div class="inputs js-only">
       <div class="f"><label for="model">Model</label>
@@ -555,13 +555,13 @@
         <h3>Back after lunch <span>cold</span></h3>
         <ul>
           <li class="ln print-row"><span>Context</span><span class="lead" aria-hidden="true"></span><span class="v" data-c="tok">340k tokens</span></li>
-          <li class="ln print-row"><span>Written again at</span><span class="lead" aria-hidden="true"></span><span class="v" data-c="write">1.25 × $4.00/M</span></li>
+          <li class="ln print-row"><span>Written again at</span><span class="lead" aria-hidden="true"></span><span class="v" data-c="write">2 × $4.00/M</span></li>
           <li class="ln print-row"><span>Your words and the reply</span><span class="lead" aria-hidden="true"></span><span class="v">same either way</span></li>
         </ul>
-        <p class="tot ln print-row"><span>Context part</span><span class="lead" aria-hidden="true"></span><span class="v" id="cold">~$1.70</span></p>
+        <p class="tot ln print-row"><span>Context part</span><span class="lead" aria-hidden="true"></span><span class="v" id="cold">~$2.72</span></p>
       </div>
       <div class="diff print-row" id="diff">
-        <p class="tot ln"><span>Difference</span><span class="lead" aria-hidden="true"></span><span class="v"><span id="gap">~$1.63</span> · <span class="x" id="ratio">25×</span></span></p>
+        <p class="tot ln"><span>Difference</span><span class="lead" aria-hidden="true"></span><span class="v"><span id="gap">~$2.65</span> · <span class="x" id="ratio">40×</span></span></p>
         <p class="sub2">the warm read, on the context part</p>
       </div>
     </div>
@@ -569,8 +569,8 @@
     <details class="how">
       <summary>How the price is worked out</summary>
       <p>A mod can't reach a pricing table, so the band solves the per&#8209;token rate from the session's own bill: each kind of token is a fixed multiple of base input, which leaves one unknown.</p>
-      <p class="formula">cost = rate × (uncached + 1.25 × written + read share × read + 5 × output)</p>
-      <p>A re&#8209;warm is the whole context written again. List prices per million input tokens: Opus 5.5 $4, Sonnet 5.5 $2, Fable 5.1 $10, Haiku 5.5 $0.10 up to 100k prompt tokens and $0.50 over. A warm read costs 0.05× of that on Opus 5.5 and Sonnet 5.5, 0.025× on Fable 5.1 and 0.1× on Haiku 5.5. A cache write is 1.25× here, as Claude Code's own ledger counts it; the API bills a 1-hour write at 2×. On a subscription these tokens come out of your plan's usage limits rather than your card. Prices from <a href="https://platform.claude.com/docs/en/about-claude/pricing">Anthropic's pricing page</a>, checked 2026-10-19.</p>
+      <p class="formula">cost = rate × (uncached + write share × written + read share × read + 5 × output)</p>
+      <p>A re&#8209;warm is the whole context written again. List prices per million input tokens: Opus 5.5 $4, Sonnet 5.5 $2, Fable 5.1 $10, Haiku 5.5 $0.10 up to 100k prompt tokens and $0.50 over. A warm read costs 0.05× of that on Opus 5.5 and Sonnet 5.5, 0.025× on Fable 5.1 and 0.1× on Haiku 5.5. A cache write is 2× on the hour's cache, as priced here, and 1.25× on five minutes, as Claude Code's own ledger bills it. On a subscription these tokens come out of your plan's usage limits rather than your card. Prices from <a href="https://platform.claude.com/docs/en/about-claude/pricing">Anthropic's pricing page</a>, checked 2026-11-01.</p>
     </details>
   </section>
 
@@ -584,7 +584,8 @@
           <li class="ln"><span>Cost, tokens, context, limits</span><span class="lead" aria-hidden="true"></span><span class="v">from Claude Code</span></li>
           <li class="ln"><span>Two read-only git commands</span><span class="lead" aria-hidden="true"></span><span class="v">3 s timeout</span></li>
           <li class="ln"><span>A reopened session's transcript</span><span class="lead" aria-hidden="true"></span><span class="v">once: its cost records and last 1 MB (grep, tail)</span></li>
-          <li class="ln"><span>Settings</span><span class="lead" aria-hidden="true"></span><span class="v">2 keys</span></li>
+          <li class="ln"><span>Settings</span><span class="lead" aria-hidden="true"></span><span class="v">3 keys</span></li>
+          <li class="ln"><span>Where each prompt came from</span><span class="lead" aria-hidden="true"></span><span class="v">its origin, never its text</span></li>
           <li class="ln"><span>Layout, last replies, a week of limits</span><span class="lead" aria-hidden="true"></span><span class="v">its own store</span></li>
         </ul>
       </div>
@@ -605,8 +606,8 @@
     <p class="item"><span class="no">04</span>Notes on the prompt cache, the price and usage limits</p>
     <h2 id="notes-h">The fine print</h2>
     <div class="notes">
-      <div class="q"><h3>Why did one message cost so much more than the others?</h3><p>Most likely the prompt cache went cold. Claude Code caches your conversation for 5 minutes or an hour after each request; after that, the next message writes all of it again at 1.25× the input price, as Claude Code counts it. On Opus 5.5 that's 25× the warm read, for the context part.</p></div>
-      <div class="q"><h3>Is the re-warm price exact?</h3><p>It's an estimate, always shown with <code>~</code>. The band solves the per&#8209;token rate from the session's own bill, counting as Claude Code's ledger does: every cache write at 1.25×. The API bills a 1-hour write at 2×, so an API key on the hour's cache may pay up to 1.6× the estimate.</p></div>
+      <div class="q"><h3>Why did one message cost so much more than the others?</h3><p>Most likely the prompt cache went cold. Claude Code caches your conversation for 5 minutes or an hour after each request; after that, the next message writes all of it again, at 2× the input price on the hour's cache and 1.25× on five minutes. On Opus 5.5, on the hour, that's 40× the warm read, for the context part.</p></div>
+      <div class="q"><h3>Is the re-warm price exact?</h3><p>It's an estimate, always shown with <code>~</code>. The band solves the per&#8209;token rate from the session's own bill, weighing each cache write as Claude Code's ledger bills it: 2× on the hour's cache, 1.25× on five minutes. Until the cache shows its lifetime, the band assumes the hour.</p></div>
       <div class="q"><h3>How does it know whether my cache lasts 5 minutes or an hour?</h3><p>Claude Code uses the hour on a subscription within plan usage, and 5 minutes on an API key, usage credits or a cloud provider. The band assumes an hour and corrects itself if the cache rebuilds sooner. Set <code>CLAUDE_CODE_PROMPT_CACHE_TTL</code> or <code>promptCacheTtl</code> to remove the guess.</p></div>
       <div class="q"><h3>Does it work in the Claude desktop app?</h3><p>Yes. It draws in the desktop app's Code tab with icons and meters, and in the terminal as text. The one-line install needs Claude Code 2.1.292 or later.</p></div>
       <div class="q"><h3>What happens when Claude Code compacts an idle session, or I resume one?</h3><p>In the terminal, on the hour's cache, Claude Code can compact a conversation over 200k tokens (by default) left idle about 54 minutes; the band then reads <code>compacted</code>, with what the summary will cost. A resumed session keeps its idle time and its spend, from Claude Code and one read of the transcript.</p></div>
@@ -731,21 +732,21 @@
   // each state's readings in words: every figure, whether or not its chip is on the row
   const SPEND = '$4.75 so far · last message $0.33'
   const LEGEND = {
-    calm: { cache: `54m left · re${NBH}warm if cold ~$1.57`, spend: SPEND, context: '303k of 1.0M · 30%', '5h': '27% used · resets in 2h 24m', '7d': '41% used · resets in 2d 18h' },
-    amber: { cache: `<span class="flap">LAST CALL · <span class="cd" data-f="m">0:40</span> · re${NBH}warm ~$1.57</span>`, spend: SPEND, context: '303k of 1.0M · 30%', '5h': '27% used · resets in 1h 30m', '7d': '41% used · resets in 2d 18h' },
-    cold: { cache: 'cold · ~$1.57 to rebuild 315k', spend: SPEND, context: '303k of 1.0M · 30%', '5h': '27% used · resets in 1h 29m', '7d': '41% used · resets in 2d 18h' },
-    limit: { cache: `54m left · re${NBH}warm if cold ~$4.46`, spend: '$9.37 so far · last message $0.45', context: '92% · 880k of 957k · compacts in ~77k', '5h': '70% used · full in ~1h · resets in 2h 24m', '7d': '85% used ! · resets in 2d 18h' },
+    calm: { cache: `54m left · re${NBH}warm if cold ~$2.11`, spend: SPEND, context: '303k of 1.0M · 30%', '5h': '27% used · resets in 2h 24m', '7d': '41% used · resets in 2d 18h' },
+    amber: { cache: `<span class="flap">LAST CALL · <span class="cd" data-f="m">0:40</span> · re${NBH}warm ~$2.11</span>`, spend: SPEND, context: '303k of 1.0M · 30%', '5h': '27% used · resets in 1h 30m', '7d': '41% used · resets in 2d 18h' },
+    cold: { cache: 'cold · ~$2.11 to rebuild 315k', spend: SPEND, context: '303k of 1.0M · 30%', '5h': '27% used · resets in 1h 29m', '7d': '41% used · resets in 2d 18h' },
+    limit: { cache: `54m left · re${NBH}warm if cold ~$5.56`, spend: '$9.37 so far · last message $0.45', context: '92% · 880k of 957k · compacts in ~77k', '5h': '70% used · full in ~1h · resets in 2h 24m', '7d': '85% used ! · resets in 2d 18h' },
   }
   const NOTE = {
     calm: '<b>Calm.</b> You just got a reply: nothing is amber and nothing needs you.',
-    amber: `<b>Last minute.</b> The cache expires in <span class="cd" data-f="m">0:40</span>; miss it and the next message costs ~$1.57 to re${NBH}warm.`,
-    cold: '<b>Gone cold.</b> The next message rebuilds 315k tokens of cache: ~$1.57, shown before you send it.',
+    amber: `<b>Last minute.</b> The cache expires in <span class="cd" data-f="m">0:40</span>; miss it and the next message costs ~$2.11 to re${NBH}warm.`,
+    cold: '<b>Gone cold.</b> The next message rebuilds 315k tokens of cache: ~$2.11, shown before you send it.',
     limit: '<b>Near a limit.</b> Context close to auto-compaction, a 5-hour pace that fills before its reset, and the week past 80%.',
   }
   const SAY = {
     calm: 'Calm: nothing needs you.',
-    amber: 'Last minute: the cache expires in 40 seconds; re-warm about $1.57.',
-    cold: 'Gone cold: the next message costs about $1.57.',
+    amber: 'Last minute: the cache expires in 40 seconds; re-warm about $2.11.',
+    cold: 'Gone cold: the next message costs about $2.11.',
     limit: 'Near a limit: context 92%, the 5-hour limit full in about an hour, the week at 85%.',
   }
   // the chips each state is about, and each legend line's chip in each layout
@@ -918,14 +919,14 @@
   for (const ev of ['pointerdown', 'keydown']) demo.addEventListener(ev, () => { touched = true }, { once: true })
 
   // ---- the bill for a lunch break ----
-  // per million input tokens, and a warm read's share of that (Anthropic's pricing page, 2026-10-19)
+  // per million input tokens, and a warm read's share of that (Anthropic's pricing page, 2026-11-01)
   const MODELS = {
     opus: { name: 'Opus 5.5', price: () => 4, read: 0.05 },
     sonnet: { name: 'Sonnet 5.5', price: () => 2, read: 0.05 },
     fable: { name: 'Fable 5.1', price: () => 10, read: 0.025 },
     haiku: { name: 'Haiku 5.5', price: k => k > 100000 ? 0.5 : 0.1, read: 0.1 },
   }
-  const WRITE = 1.25
+  const WRITE = 2
   const modelSel = $('#model'), size = $('#size'), out = $('#calc-out')
   const money = v => v < 0.005 ? 'under $0.01' : '~$' + v.toFixed(2)
   const tokens = k => k >= 1e6 ? '1M' : Math.round(k / 1000) + 'k'
