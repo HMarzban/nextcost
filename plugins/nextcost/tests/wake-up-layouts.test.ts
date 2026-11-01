@@ -12,7 +12,7 @@ import { PLAIN } from '../hooks/palette'
 import { readingsOf } from '../hooks/reading'
 import type { BandSnapshot } from '../hooks/snapshot'
 import { BUILD_100K, DESKTOP_START, LONG, MIN, READ_100K, byKey, endTurn, fact, mountBand, respond, runCommand, setup, shown, startTurn, svgsOf, type Node } from './helpers'
-import { ASCII_TIER, CALM_LIMITS, COLD_CACHE, HISTORY, LAST_MINUTE_CACHE, bandOf, cacheWith, limitAt, otherLimits, snapOf, visualRows } from './matrix'
+import { ASCII_TIER, CALM_LIMITS, COLD_CACHE, HISTORY, LAST_MINUTE_CACHE, NEAR_COMPACTION, bandOf, cacheWith, limitAt, otherLimits, snapOf, visualRows } from './matrix'
 
 const turnFrom = async ($: Engine, id: string, origin: PromptOrigin, u: ModelUsage, from: number, to: number): Promise<void> => {
   await $.prompt.submit({ text: 'x', wait: false, origin })
@@ -198,6 +198,46 @@ test('at every width and at 13 rows, the board names the waker, whole from 74 co
 test('the board draws the wake plain and in the ascii tier', () => {
   expect(remarkOf(departures({ surface: 'desktop', palette: PLAIN }))).toMatch(/BY BACKGROUND TASK/)
   expect(shown(byKey(departures({ surface: 'terminal', glyphs: 'ascii' }), 'board', 'Box'))).toMatch(ASCII_TIER)
+})
+
+// ---- a wake at every height ---------------------------------------------------
+
+/** The amber states the layouts' give-way guards. */
+const AMBER_STATES: ReadonlyArray<Partial<BandSnapshot>> = [
+  { cache: { ...LAST_MINUTE_CACHE, wake: TASK_KEPT } },
+  { cache: WARM, sevenDay: limitAt(85, 67, 0) },
+  { cache: WARM, context: NEAR_COMPACTION },
+  { cache: { ...LAST_MINUTE_CACHE, wake: TASK_KEPT }, context: NEAR_COMPACTION, sevenDay: limitAt(85, 67, 0), otherLimits: AMBER_OTHERS },
+]
+/** The same state with its turn typed. */
+const typedOf = (state: Partial<BandSnapshot>): Partial<BandSnapshot> => ({ ...state, cache: { ...(state.cache as BandSnapshot['cache']), wake: undefined } })
+
+test('at every height, the wake costs the board no line a typed turn keeps', LONG, () => {
+  const lines = (tree: Node) => ((byKey(tree, 'board', 'Box')?.children ?? []) as Node[]).filter(Boolean).map(l => String(l.props?.key))
+  for (const surface of SURFACES)
+    for (const columns of [60, 94, 120])
+      for (const state of [{ cache: WARM }, { cache: WARM, otherLimits: OTHER }, { cache: WARM, isWorking: true }, ...AMBER_STATES])
+        for (let maxRows = 16; maxRows >= 4; maxRows--) {
+          const at = `${surface} ${columns} ${maxRows}`
+          const [woken, typed] = [departures({ surface, columns, maxRows, ...state }), departures({ surface, columns, maxRows, ...typedOf(state) })]
+          expect(`${at} ${visualRows(woken, surface) <= maxRows}`).toBe(`${at} true`)
+          expect(`${at} ${lines(woken)}`).toBe(`${at} ${lines(typed)}`)
+        }
+})
+
+test('at every height, the wake costs pulse no card and no chart a typed turn keeps', LONG, () => {
+  const kept = (tree: Node) => ['cache', 'spend', 'context', 'limits'].filter(c => byKey(tree, `pulse:${c}`, 'Box') !== undefined)
+  const charts = (tree: Node) => svgsOf(byKey(tree, 'cards', 'Box')).filter(s => s.props?.key === 'chart').map(s => String(s.props?.height))
+  for (const surface of SURFACES)
+    for (const columns of [50, 94, 133, 160])
+      for (const state of [{ cache: WARM }, { cache: { ...COLD_CACHE, wake: TASK_KEPT } }, ...AMBER_STATES])
+        for (let maxRows = 16; maxRows >= 4; maxRows--) {
+          const at = `${surface} ${columns} ${maxRows}`
+          const [woken, typed] = [pulse({ surface, columns, maxRows, ...state }), pulse({ surface, columns, maxRows, ...typedOf(state) })]
+          expect(`${at} ${visualRows(woken, surface) <= maxRows}`).toBe(`${at} true`)
+          expect(`${at} ${kept(woken)}`).toBe(`${at} ${kept(typed)}`)
+          expect(`${at} ${charts(woken)}`).toBe(`${at} ${charts(typed)}`)
+        }
 })
 
 // ---- chips' words, which pulse's share ---------------------------------------

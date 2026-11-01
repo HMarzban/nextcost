@@ -416,7 +416,7 @@ in its headline the same way, or on a row of its own where the card is too
 narrow and the band has a row to spare. The departures board's CACHE line
 says it in REMARKS, as much as the column holds: `KEPT WARM BY BACKGROUND
 TASK`, `BY BACKGROUND TASK`, and it stays when the board's height drops
-every other remark. Your own next turn takes the line away. The band learns it from where
+every other remark, wherever it costs no line. Your own next turn takes the line away. The band learns it from where
 Claude Code says each prompt came from (`prompt.submit`'s origin); a
 message delivered into a turn already running starts none.
 
