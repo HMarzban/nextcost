@@ -582,6 +582,10 @@ export const newCache = (kept?: CacheState): CacheModel => {
       if (ttl !== undefined) {
         s.ttl = ttl
         s.ttlPinned = true
+      } else if (s.ttlPinned) {
+        // Pinned before a reload and no longer: assumed again, as a new session's is.
+        s.ttl = INITIAL.ttl
+        s.ttlPinned = false
       }
       s.subagentTtl = subagentTtl ?? '5m'
       s.idleCompactFrom = idleCompactFrom

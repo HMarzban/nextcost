@@ -437,3 +437,24 @@ test('an advisor step that bills most of the session leaves the rate exactly as 
   expect(near(reWarmAt(c, 63 * MIN, 7.29602), 2 * 103_502 * 0.00001)).toBe(true)
   expect(c.view({ now: 63 * MIN, ledger: 7.29602, contextTokens: 0, autoCompactOff: false }).costUsd).toBe(7.29602)
 })
+
+test('a lifetime pinned before a reload and no longer set stands unpinned, assumed again', () => {
+  const before = newCache()
+  before.configured({ ttl: '5m', idleCompactFrom: undefined })
+  const reloaded = newCache(before.kept())
+  reloaded.configured({ ttl: undefined, idleCompactFrom: undefined })
+  const { cache } = reloaded.view({ now: 0, ledger: undefined, contextTokens: 0, autoCompactOff: false })
+  expect(cache.ttlPinned).toBe(false)
+  expect(cache.ttl).toBe('1h')
+})
+
+test('a lifetime inferred before a reload stands, with nothing pinned on either side', () => {
+  const before = newCache()
+  before.responded(resp(1_000, 0, 100_000, 100), 0, true)
+  before.responded(resp(1_000, 0, 100_000, 100), 6 * 60_000, true)
+  const inferred = before.view({ now: 6 * 60_000, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.ttl
+  expect(inferred).toBe('5m')
+  const reloaded = newCache(before.kept())
+  reloaded.configured({ ttl: undefined, idleCompactFrom: undefined })
+  expect(reloaded.view({ now: 6 * 60_000, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.ttl).toBe('5m')
+})
