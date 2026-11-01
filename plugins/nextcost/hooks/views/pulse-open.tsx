@@ -5,7 +5,8 @@
 // message's cost as a beat over their average, the context's trail under
 // its compaction line, the 5h window and the 7d by day. Short of rows, the
 // charts step down first, two rows to one to none; then the calm cards give
-// way in pulse's order, an amber one never.
+// way in pulse's order, an amber one never. Who restarted the countdown, when
+// the user didn't, takes the cache's headline and gives way to all of these.
 
 import type { RenderChildren, RenderElement } from 'claude-code'
 import { dayCellsFit, sparkline, track } from '../charts'
@@ -17,7 +18,7 @@ import type { BandActions } from '../snapshot'
 import { EMPTY, limitsHead, markedHead, type Say } from '../words'
 import { bodyRowsFor, footer } from './frame'
 import { beatsChart, chartsDraw, weekCells, windowTrail } from './pulse-charts'
-import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, factRow, headline, linesOf } from './shell'
+import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardTitle, cardsPresent, factRow, headline, linesOf } from './shell'
 import type { CardLine, CardName } from './shell'
 
 const DOT = ' · '
@@ -103,8 +104,9 @@ const factsOf = (kit: Kit, read: Readings): Facts => {
   }
 }
 
-/** What a step keeps: its units, and its charts' rows. */
-type Plan = Readonly<{ kept: ReadonlySet<Unit>; chart: ChartRows }>
+/** What a step keeps: its units, and its charts' rows; `wakeRow`, a row in
+ *  the cache's card for who restarted the countdown. */
+type Plan = Readonly<{ kept: ReadonlySet<Unit>; chart: ChartRows; wakeRow?: boolean }>
 
 /** The cards a plan's units draw, in the one order. */
 const cardsOf = (f: Facts, kept: ReadonlySet<Unit>): CardName[] => {
@@ -121,7 +123,7 @@ const halvesAcross = (kit: Kit, f: Facts, room: number): boolean => {
 /** The rows a card on `line` takes at a plan: its edge, its head, its chart and its facts. */
 const cardRows = (kit: Kit, f: Facts, card: CardName, p: Plan, line: CardLine): number => {
   const chartRows = p.chart === 0 || !f.charted[card] ? 0 : kit.Svg ? p.chart : 1
-  if (card !== 'limits') return line.edgeRows + 1 + chartRows + 1
+  if (card !== 'limits') return line.edgeRows + 1 + chartRows + 1 + (card === 'cache' && p.wakeRow === true ? 1 : 0)
   const halves = p.kept.has('limits') ? f.windows.length : 0
   const across = halvesAcross(kit, f, line.inner)
   // Side by side, one chart and one fact row; else one over the other.
@@ -157,6 +159,26 @@ const planFor = (kit: Kit, f: Facts, body: number): Plan | undefined => {
     }
   }
   return undefined
+}
+
+/** The cache's headline with who restarted the countdown, where its card of
+ *  `inner` columns holds it whole; undefined where it doesn't, or the user
+ *  typed the turn. */
+const wokenHead = (kit: Kit, read: Readings, inner: number): Say | undefined => {
+  const { cache } = read
+  if (cache.wakeHead === undefined) return undefined
+  const woken = [...markedHead(cache.cardHead, cache.tone), ...cache.wakeHead]
+  const room = inner - cellsOf(cardTitle(kit, 'cache'), kit.measure) - 1
+  return cellsOf(headline(kit, woken, cache.tone), kit.measure) <= room ? woken : undefined
+}
+
+/** Who restarted the countdown costs no chart or card: the headline says it,
+ *  and where it can't, a row of its own only if `body` has one to spare. */
+const withWake = (kit: Kit, read: Readings, f: Facts, p: Plan, body: number): Plan => {
+  const line = planLines(kit, f, p).lines.find(cards => cards.includes('cache'))
+  if (line === undefined || read.cache.wakeRow === undefined || wokenHead(kit, read, cardLine(kit, line.length).inner) !== undefined) return p
+  const roomy = { ...p, wakeRow: true }
+  return planLines(kit, f, roomy).rows <= body ? roomy : p
 }
 
 /** What a card on a line is built at: the facts and the plan; the columns
@@ -215,7 +237,9 @@ const cacheCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
   const ink = onTone(cache.tone, cache.mood === 'warm' ? palette.warm : palette.label)
   const chart = at.size === undefined || !at.f.charted.cache ? null : track(kit, { key: 'chart', alt: cache.alt, frac: 1 - cache.charge, color: ink, px: at.px, ...at.size, cells: at.inner })
   const said = cache.untimed && cache.cardNote !== undefined ? clippedNote(kit, 'fact', cache.cardNote) : fact(kit, at, cache.estimateLabel, [cache.estimate])
-  return card(kit, 'cache', markedHead(cache.cardHead, cache.tone), cache.tone, [plot(kit, chart), fill(kit), said])
+  const head = wokenHead(kit, read, at.inner) ?? markedHead(cache.cardHead, cache.tone)
+  const woken = at.p.wakeRow === true && cache.wakeRow !== undefined ? factRow(kit, cache.wakeRow.label, cache.wakeRow.value) : null
+  return card(kit, 'cache', head, cache.tone, [plot(kit, chart), fill(kit), woken, said])
 }
 
 const spendCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
@@ -314,7 +338,8 @@ const drawCards = (kit: Kit, read: Readings, f: Facts, p: Plan): RenderElement =
 export const pulseOpen = (kit: Kit, read: Readings, act: BandActions, collapsedRows: number): RenderElement[] => {
   const body = bodyRowsFor(read.frame.maxRows, collapsedRows, 0)
   const f = factsOf(kit, read)
-  const p = planFor(kit, f, body)
+  const planned = planFor(kit, f, body)
+  const p = planned === undefined ? undefined : withWake(kit, read, f, planned, body)
   const cards = p !== undefined ? drawCards(kit, read, f, p) : body < 1 ? null : alertLine(kit, read)
   return [cards, footer(kit, act, read.workspace)].filter(e => e !== null)
 }

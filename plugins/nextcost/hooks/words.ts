@@ -138,6 +138,10 @@ export type CacheWords = Readonly<{
    *  background task`, or within the TTL `kept warm by another session`;
    *  once the cache has gone again, `last turn by background task`. */
   wakeRow: Fact | undefined
+  /** Who alone, in the fewest words that stay true: `by background task`;
+   *  once the cache has gone, `last turn by background task`, since a bare
+   *  `by` beside `cold` would blame it for the cold. */
+  wakeShort: string | undefined
   /** The same, after the card's headline where the row has no room: ` · by
    *  background task`. */
   wakeHead: Say | undefined
@@ -350,6 +354,10 @@ const wakeRowOf = (wake: Wake, mood: CacheFacts['mood']): Fact => ({
   value: WAKER_WORDS[wake.by].noun,
 })
 
+/** Who started a turn the user didn't type, in the fewest words that stay true. */
+const wakeShortOf = (wake: Wake, mood: CacheFacts['mood']): string =>
+  `${goneMoods.has(mood) ? 'last turn by' : 'by'} ${WAKER_WORDS[wake.by].noun}`
+
 /** The cache in words, from its facts: its mood's, and the measures every
  *  mood says alike. It counts down only while `coldInMs` is set. */
 export const cacheWords = (f: CacheFacts): CacheWords => {
@@ -361,6 +369,7 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
   // Spoken, a price is never marked ~: the alt says "about".
   const price = f.reWarmUsd !== null ? fmtSmallCost(f.reWarmUsd) : `${fmtTokens(f.window)} tokens`
   const m = moodWords(f, left, leftShort, price)
+  const wakeShort = f.wake === undefined ? undefined : wakeShortOf(f.wake, f.mood)
   return {
     heartAlt: MOOD_ALT[f.mood],
     bandName: 'cache',
@@ -372,7 +381,8 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     rebuildsText: f.misses > 0 ? String(f.misses) : undefined,
     idleText: f.recalled && f.idleMs !== null ? fmtAgo(f.idleMs) : undefined,
     wakeRow: f.wake === undefined ? undefined : wakeRowOf(f.wake, f.mood),
-    wakeHead: f.wake === undefined ? undefined : [[` · by ${WAKER_WORDS[f.wake.by].noun}`, 'label']],
+    wakeShort,
+    wakeHead: wakeShort === undefined ? undefined : [[` · ${wakeShort}`, 'label']],
     cardHead: m.cardHead,
     cardNote: m.cardNote,
     estimateLabel: m.estimateLabel,

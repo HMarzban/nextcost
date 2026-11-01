@@ -90,9 +90,16 @@ const columnsOf = (kit: Kit, rows: readonly BoardRow[], room: number): Columns =
 }
 
 /** A line's remark as drawn: cut to its column, none where it has none or
- *  the plan leaves them out. A column holds a capital a cell. */
-const remarkOf = (row: BoardRow, cols: Columns, plan: Plan): string =>
-  !plan.remarks || cols.remarks === 0 ? '' : clipToTiles(row.remarks, cols.remarks)
+ *  the plan leaves them out. A column holds a capital a cell. After a turn
+ *  the user didn't type, the widest form the column holds, and with the
+ *  plan's remarks gone its last: who restarted the countdown says nowhere
+ *  else on the board. */
+const remarkOf = (row: BoardRow, cols: Columns, plan: Plan): string => {
+  if (cols.remarks === 0) return ''
+  const forms = plan.remarks ? row.woken : row.woken?.slice(-1)
+  if (forms === undefined) return plan.remarks ? clipToTiles(row.remarks, cols.remarks) : ''
+  return clipToTiles(forms.find(form => textCells(form) <= cols.remarks) ?? forms.at(-1) ?? '', cols.remarks)
+}
 
 /** The plan's height in the board's units, a rule under each line but the
  *  last on the desktop. */
@@ -193,7 +200,7 @@ const board = (kit: Kit, read: Readings, collapsedRows: number): RenderElement |
   const cols = columnsOf(kit, read.board().rows, inner)
   const plan = fitPlan(kit, boardLines(read), cols, boardBudget(kit, bodyRowsFor(read.frame.maxRows, collapsedRows, 0)))
   if (plan.lines.length === 0) return null
-  const remarks = plan.remarks && cols.remarks > 0
+  const remarks = cols.remarks > 0 && (plan.remarks || plan.lines.some(l => l.row !== undefined && remarkOf(l.row, cols, plan) !== ''))
   return (
     <Box
       key="board"

@@ -172,6 +172,19 @@ export const headline = (kit: Kit, say: Say, tone: Tone): RenderElement => {
   )
 }
 
+/** A card's title: on the desktop its mark, then its name. */
+export const cardTitle = (kit: Kit, name: CardName): RenderElement => {
+  const { Box, Text, Svg, palette, icon } = kit
+  const [mark, ink] = CARD_ICONS[name]
+  return (
+    <Box key="title" flexDirection="row" flexShrink={0}>
+      {/* Desktop alone: a terminal title stays plain text. */}
+      {Svg ? icon(mark, palette[ink]) : null}
+      <Text color={palette.label}>{CARD_TITLES[name].toUpperCase()}</Text>
+    </Box>
+  )
+}
+
 type CardSpec = Readonly<{
   /** The card's key, `card:cache`. */
   key: string
@@ -186,16 +199,7 @@ type CardSpec = Readonly<{
 /** A card: its title and headline on one line, then its body. Each grows
  *  alike from no width, so the cards of a line share it equally. */
 export const cardShell = (kit: Kit, { key, name, head, body }: CardSpec): RenderElement => {
-  const { Box, Text, Svg, palette, icon } = kit
-  const title = CARD_TITLES[name]
-  const [mark, ink] = CARD_ICONS[name]
-  const titled = (
-    <Box key="title" flexDirection="row" flexShrink={0}>
-      {/* Desktop alone: a terminal title stays plain text. */}
-      {Svg ? icon(mark, palette[ink]) : null}
-      <Text color={palette.label}>{title.toUpperCase()}</Text>
-    </Box>
-  )
+  const { Box, palette } = kit
   return (
     <Box
       key={key}
@@ -208,7 +212,7 @@ export const cardShell = (kit: Kit, { key, name, head, body }: CardSpec): Render
       {...(cardBordered(kit) ? { borderStyle: 'round', borderColor: palette.cardBorder } : {})}
     >
       <Box key="head" flexDirection="row" justifyContent="space-between" columnGap={1}>
-        {titled}
+        {cardTitle(kit, name)}
         {head}
       </Box>
       {body}

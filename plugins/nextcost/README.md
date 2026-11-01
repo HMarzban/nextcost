@@ -113,7 +113,7 @@ Then come four cards with every fact labelled:
 
 | Card | Shows |
 | --- | --- |
-| Cache | Time left on a bar, what a re-warm would cost if it went cold, who restarted it when you didn't (chips), what the cache has saved, the hit rate, how long it lasts idle, unexpected rebuilds |
+| Cache | Time left on a bar, what a re-warm would cost if it went cold, who restarted it when you didn't, what the cache has saved, the hit rate, how long it lasts idle, unexpected rebuilds |
 | Spend | The session total, a bar of the token split with its legend (input, output, cache reads), your last message |
 | Context | How full toward auto-compaction, tokens in context, where compaction runs, room left, the model window |
 | Limits | The window closest to its limit, led by its reset and pace where the row doesn't say them, `resets Sat 13:30 · full before reset` (a countdown in departures); then each window (5h, 7d, a gateway's spend limit) with its bar and value, and each of the others named on a line of its own with its reset and pace in words: `5h resets 3h 00m · on pace for ~10%` |
@@ -351,7 +351,8 @@ minutes and a 2-point rise to go on, it projects when you'd hit 100%,
 using the last 30 minutes. If that's before the limit resets, the chip
 says so: `5h 76% full in ~1h 15m`, or cut short `5h 76% full ~1h 15m`,
 never the time alone, which beside Claude Code's `Resets in 2h` would read
-as a reset. Its hover says it is a projection at the current pace: a burst
+as a reset. Pulse's tile says `! 5h full in ~40m`, `! 5h full ~40m`, and at
+its narrowest the value, `! 5h 85%`. Its hover says it is a projection at the current pace: a burst
 of work, such as a workflow fanning out, fills the window sooner. The limit is shared across all your Claude use, so the pace
 includes your other sessions and devices, and `/clear` keeps it. The
 projection hides once its newest reading is more than 15 minutes old.
@@ -409,8 +410,13 @@ lifetime, or `re-warmed by · background task` when the turn rebuilt a cold
 cache, with its cost as the Spend card's last message; once the cache has
 gone cold again, `last turn by · background task`. Where the card has no
 row to spare, as in the desktop's two lines of cards, its headline says it
-instead: `59m left · by background task`. The cache pill's hover says it too. Pulse and departures don't show it yet. Your own next turn
-takes the line away. The band learns it from where
+instead: `59m left · by background task`, or `cold · last turn by background
+task`. The cache pill's hover says it too. Pulse's open Cache card says it
+in its headline the same way, or on a row of its own where the card is too
+narrow and the band has a row to spare. The departures board's CACHE line
+says it in REMARKS, as much as the column holds: `KEPT WARM BY BACKGROUND
+TASK`, `BY BACKGROUND TASK`, and it stays when the board's height drops
+every other remark. Your own next turn takes the line away. The band learns it from where
 Claude Code says each prompt came from (`prompt.submit`'s origin); a
 message delivered into a turn already running starts none.
 
@@ -492,7 +498,7 @@ none edits a message, a setting, a tool call or a result.
 | `session.end` | On `/clear` or a resume, starts the next conversation's count and reads git again. |
 | `classic.SessionStart` | On a resume or fork, notes that the conversation isn't new and reads its transcript as above. |
 | `turn.start`, `turn.complete` | Note the session's cost as each main turn starts and ends, the turn's cost, the context, and a limit reading; then read the layout and git again. A subagent's turn is left alone. |
-| `prompt.submit` | Notes where a prompt that starts a turn came from (your own, a background task, another session, a schedule), never its text, so chips' Cache card can say who restarted the countdown. |
+| `prompt.submit` | Notes where a prompt that starts a turn came from (your own, a background task, another session, a schedule), never its text, so each layout's open view can say who restarted the countdown. |
 | `turn.step` | Reads each response's token counts, and how many tool calls Anthropic ran in it (the advisor), for the cache model and the price per token. |
 | `session.compact` | Notes that the conversation was compacted, so the cache counts as rebuilt at the summary's size. |
 | `session.measure` | Reads where auto-compaction runs, and shows a toast as the context or the 5-hour limit crosses its warning levels. |

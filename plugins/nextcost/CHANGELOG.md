@@ -5,6 +5,15 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/). Before
 1.0.0, a minor version may change how the band reads.
 
+## [0.21.0] - 2026-11-01
+
+### Added
+- Pulse and departures say who restarted the countdown when you didn't, as chips has since 0.20.0. Pulse's open Cache card says it in its headline, `59m left · by background task`, which costs no chart and no card at the desktop's 13 rows; where the card is too narrow for it whole, a row of its own says `kept warm by · background task` if the band has one to spare, else nothing, never a cut word. The departures board's CACHE line says it in REMARKS, `KEPT WARM BY BACKGROUND TASK · IN 52 MIN · RE-WARM ~$1.66 IF MISSED`, then as the column narrows `BY BACKGROUND TASK · RE-WARM ~$1.66`, then `BY BACKGROUND TASK`; where the board's height drops every remark, this one stays.
+
+### Fixed
+- Pulse's 5-hour tile no longer shows its fill forecast as a bare time. Cut short, `! 5h ~40m` read as a reset; it now says `! 5h full ~40m`. That is five columns wider, so past every other step the forecast gives way to the value, `! 5h 85%`, before the tiles drop their padding. With every reading amber at 40 columns, the row now fits, where it ran a column over. Departures never drew this form: its long and short forms are `! FULL ~20:30` and `! 84%`.
+- In chips' headline, a cache gone cold no longer reads `cold · by background task`, which blamed the task for the cold. It reads `cold · last turn by background task`, as the row does.
+
 ## [0.20.0] - 2026-11-01
 
 ### Added
