@@ -8,7 +8,7 @@ import type { RenderChildren, RenderElement } from 'claude-code'
 import type { SplitPart } from '../charts'
 import type { Icon } from '../icons'
 import type { Kit } from '../kit'
-import { CARD_TEXT, DESKTOP } from '../layout'
+import { CARD_TEXT, DESKTOP, cellsOf } from '../layout'
 import type { LimitKey, Tone } from '../facts'
 import type { Readings } from '../reading'
 import type { Palette } from '../palette'
@@ -184,6 +184,11 @@ export const cardTitle = (kit: Kit, name: CardName): RenderElement => {
     </Box>
   )
 }
+
+/** Whether a card of `inner` columns holds `say` whole beside its title: a
+ *  phrase that may not fit is measured first, since the line would cut it. */
+export const headHolds = (kit: Kit, name: CardName, say: Say, tone: Tone, inner: number): boolean =>
+  cellsOf(cardTitle(kit, name), kit.measure) + 1 + cellsOf(headline(kit, say, tone), kit.measure) <= inner
 
 type CardSpec = Readonly<{
   /** The card's key, `card:cache`. */

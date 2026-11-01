@@ -240,6 +240,33 @@ test('at every height, the wake costs pulse no card and no chart a typed turn ke
         }
 })
 
+// ---- chips' headline ---------------------------------------------------------
+
+test("at every width and at 13 rows, chips' Cache head says the waker whole or leaves it out, and fits its card", LONG, () => {
+  let said = 0
+  let left = 0
+  for (const surface of SURFACES)
+    for (const [by, noun] of NOUNS)
+      for (const cache of [cacheWith({ wake: { by, reWarm: false } }), { ...COLD_CACHE, wake: { by, reWarm: false } }])
+        for (let columns = 40; columns <= 200; columns++) {
+          const tree = bandOf({ layout: 'chips', surface, columns, maxRows: 13, expanded: true, ...CALM_LIMITS, cache })
+          const card = byKey(tree, 'card:cache', 'Box')
+          if (card === undefined) continue
+          const head = byKey(card, 'head', 'Box')
+          const perLine = ((byKey(tree, 'cards', 'Box')?.children ?? []) as Node[]).find(l => byKey(l, 'card:cache', 'Box') !== undefined)?.children?.length ?? 1
+          const inner = Math.floor((columns - (perLine - 1)) / perLine) - 2 - (card.props?.borderStyle === undefined ? 0 : 2)
+          const at = `${surface} ${by} ${columns}`
+          expect(`${at} ${cellsOf(head as unknown as RenderChildren, measureOf(surface)) <= inner}`).toBe(`${at} true`)
+          const words = shown(head)
+          if (/ · /.test(words)) {
+            expect(`${at} ${words.endsWith(noun)}`).toBe(`${at} true`)
+            said++
+          } else left++
+        }
+  // Both happen, so neither branch above is empty.
+  expect([said > 0, left > 0]).toEqual([true, true])
+})
+
 // ---- chips' words, which pulse's share ---------------------------------------
 
 test('once gone, the head chips draws says the same: `cold · last turn by`', () => {

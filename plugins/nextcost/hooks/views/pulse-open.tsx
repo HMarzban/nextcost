@@ -18,7 +18,7 @@ import type { BandActions } from '../snapshot'
 import { EMPTY, limitsHead, markedHead, type Say } from '../words'
 import { bodyRowsFor, footer } from './frame'
 import { beatsChart, chartsDraw, weekCells, windowTrail } from './pulse-charts'
-import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardTitle, cardsPresent, factRow, headline, linesOf } from './shell'
+import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, factRow, headHolds, headline, linesOf } from './shell'
 import type { CardLine, CardName } from './shell'
 
 const DOT = ' · '
@@ -168,8 +168,7 @@ const wokenHead = (kit: Kit, read: Readings, inner: number): Say | undefined => 
   const { cache } = read
   if (cache.wakeHead === undefined) return undefined
   const woken = [...markedHead(cache.cardHead, cache.tone), ...cache.wakeHead]
-  const room = inner - cellsOf(cardTitle(kit, 'cache'), kit.measure) - 1
-  return cellsOf(headline(kit, woken, cache.tone), kit.measure) <= room ? woken : undefined
+  return headHolds(kit, 'cache', woken, cache.tone, inner) ? woken : undefined
 }
 
 /** Who restarted the countdown costs no chart or card: the headline says it,
