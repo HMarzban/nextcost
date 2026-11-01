@@ -407,8 +407,9 @@ so the countdown restarts though you sent nothing. In chips, the open Cache
 card then says who did: `kept warm by · background task` within the
 lifetime, or `re-warmed by · background task` when the turn rebuilt a cold
 cache, with its cost as the Spend card's last message; once the cache has
-gone cold again, `last turn by · background task`. The cache pill's hover
-says it too. Pulse and departures don't show it yet. Your own next turn
+gone cold again, `last turn by · background task`. Where the card has no
+row to spare, as in the desktop's two lines of cards, its headline says it
+instead: `59m left · by background task`. The cache pill's hover says it too. Pulse and departures don't show it yet. Your own next turn
 takes the line away. The band learns it from where
 Claude Code says each prompt came from (`prompt.submit`'s origin); a
 message delivered into a turn already running starts none.

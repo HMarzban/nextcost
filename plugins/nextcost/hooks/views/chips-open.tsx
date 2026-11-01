@@ -100,11 +100,15 @@ const card = (kit: Kit, fit: Fit, name: CardName, head: Readonly<{ say: Say; ton
 
 const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
   const { cache } = read
+  // The rows the facts ahead of who woke the session take: past them, it has
+  // no row of its own, and the headline says it instead.
+  const ahead = (cache.cardNote === undefined ? 0 : 1) + (cache.known ? 1 : 0)
+  const inHead = fit.bodyRows <= ahead ? cache.wakeHead : undefined
   return card(
     kit,
     fit,
     'cache',
-    { say: cache.cardHead, tone: cache.tone },
+    { say: inHead === undefined ? cache.cardHead : [...cache.cardHead, ...inHead], tone: cache.tone },
     cache.known ? meter(kit, { label: 'cache', frac: cache.charge, tone: cache.tone, accent: kit.palette.warm, size: fit.bar, stretch: true, reads: 'left' }) : null,
     [
       cache.cardNote === undefined ? null : wrappedNote(kit, cache.cardNote),

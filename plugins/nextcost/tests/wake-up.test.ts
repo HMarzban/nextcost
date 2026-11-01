@@ -8,7 +8,7 @@ import type { ModelUsage, PromptOrigin } from 'claude-code'
 import { newCache, wakerOf } from '../hooks/cache'
 import { readingsOf } from '../hooks/reading'
 import { cacheWith, snapOf } from './matrix'
-import { BUILD_100K, LONG, MIN, READ_100K, START, endTurn, fact, mountBand, respond, setup, startTurn } from './helpers'
+import { BUILD_100K, DESKTOP_START, LONG, MIN, READ_100K, START, cardHead, endTurn, fact, mountBand, respond, setup, shown, startTurn } from './helpers'
 
 /** One main-loop turn started by a prompt from `origin`, its one step
  *  billed as `u`, the ledger moving from `from` to `to`. */
@@ -103,4 +103,37 @@ test('once the cache has gone cold again, the card and hover say only whose turn
   expect(r.cache.mood).toBe('cold')
   expect(r.cache.wakeRow).toEqual({ label: 'last turn by', value: 'another session' })
   expect(r.chips.cache.hover).toMatch(/; last turn by another session$/)
+})
+
+/** The open Cache card on the desktop at `maxRows`, 95 columns, after a turn
+ *  from a background task: its head as it reads, and its two facts. */
+const desktopCard = async ($: Engine, maxRows: number, open = true) => {
+  const ui = await mountBand($, 'desktop', 95, { maxRows })
+  if (open) await ui.press({ key: 'more' })
+  const tree = await ui.drawn()
+  await ui.unmount()
+  return { head: shown(cardHead(tree, 'cache')), reWarm: fact(tree, 're-warm if cold'), kept: fact(tree, 'kept warm by') }
+}
+
+test("at the desktop's height the card has room for one fact, so the head says who kept it warm", LONG, async ($, on) => {
+  const clock = setup(on)
+  await $.session.start(DESKTOP_START)
+  await turnFrom($, 't1', { kind: 'composer' }, BUILD_100K, 0, 1)
+  await clock.advance(20 * MIN)
+  await turnFrom($, 't2', { kind: 'task-notification' }, READ_100K, 1, 1.1)
+  const short = await desktopCard($, 13)
+  expect(short.head).toMatch(/1h 00m left · by background task/)
+  expect(short.reWarm).toBeDefined() // the price keeps its row
+  expect(short.kept).toBeUndefined()
+  // With room for the row, it is said once, there.
+  const tall = await desktopCard($, 40, false) // the cards are open from above
+  expect(tall.head).not.toMatch(/background task/)
+  expect(tall.kept).toBe('background task')
+})
+
+test('a head says nothing of a turn the user typed', LONG, async ($, on) => {
+  setup(on)
+  await $.session.start(DESKTOP_START)
+  await turnFrom($, 't1', { kind: 'sdk' }, BUILD_100K, 0, 1)
+  expect((await desktopCard($, 13)).head).not.toMatch(/ · by /)
 })

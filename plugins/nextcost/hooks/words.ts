@@ -138,6 +138,9 @@ export type CacheWords = Readonly<{
    *  background task`, or within the TTL `kept warm by another session`;
    *  once the cache has gone again, `last turn by background task`. */
   wakeRow: Fact | undefined
+  /** The same, after the card's headline where the row has no room: ` · by
+   *  background task`. */
+  wakeHead: Say | undefined
   /** The cache card's headline: its countdown, `59m left`, else its mood. */
   cardHead: Say
   /** The cache card's line while there is nothing to count. */
@@ -365,6 +368,7 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     rebuildsText: f.misses > 0 ? String(f.misses) : undefined,
     idleText: f.recalled && f.idleMs !== null ? fmtAgo(f.idleMs) : undefined,
     wakeRow: f.wake === undefined ? undefined : wakeRowOf(f.wake, f.mood),
+    wakeHead: f.wake === undefined ? undefined : [[` · by ${WAKER_WORDS[f.wake.by].noun}`, 'label']],
     cardHead: m.cardHead,
     cardNote: m.cardNote,
     estimateLabel: m.estimateLabel,
