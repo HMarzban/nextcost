@@ -4,3 +4,4 @@ node_modules/
 .superpowers/
 .claude/worktrees/
 tools/demos/out/
+__pycache__/
