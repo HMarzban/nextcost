@@ -241,10 +241,11 @@ less, depending on the model (a twentieth on Opus 5.5 and Sonnet 5.5, a
 fortieth on Fable 5.1 and Mythos 5.1). It
 stays warm for a lifetime (5 minutes or an hour) counted from the last
 request. Go idle past that, and the next message rebuilds the whole
-conversation at the cache-write price, 1.25× input as Claude Code's ledger
-counts it. The context part of that message then costs ~25× the warm read
-on Opus 5.5 and Sonnet 5.5, ~50× on Fable 5.1 and ~12.5× on Haiku 5.5;
-output and new input cost the same either way. In a terminal session on
+conversation at the cache-write price: 2× base input on the hour's cache,
+1.25× on five minutes. On the hour, the context part of that message then
+costs ~40× the warm read on Opus 5.5 and Sonnet 5.5, ~80× on Fable 5.1 and
+~20× on Haiku 5.5; on five minutes, ~25×, ~50× and ~12.5×. Output and new
+input cost the same either way. In a terminal session on
 the hour's cache, Claude Code may compact the conversation first; see
 [Idle compaction](#idle-compaction).
 
