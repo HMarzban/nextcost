@@ -752,3 +752,37 @@ test('a toast spoken before a reload is not spoken again at the same level', asy
   await measure()
   expect(toasts.length).toBe(1)
 })
+
+test('a write of the counts held up by the host never lands on a newer one', async ($, on) => {
+  setup(on, { usage: { ...USAGE, cost: { usd: 2 } }, env: ENV, now: 3 * HOUR })
+  let release = (): void => undefined
+  const held = new Promise<void>(resolve => {
+    release = resolve
+  })
+  let hold = false
+  let writing = 0
+  let overlapped = false
+  on('state.set', async ($, e, next) => {
+    if (e.key !== 'kept') return next(e)
+    overlapped ||= writing > 0
+    writing++
+    if (hold) {
+      hold = false
+      await held
+    }
+    const result = await next(e)
+    writing--
+    return result
+  })
+  await $.session.start(START)
+  hold = true
+  const started = startTurn($, 't1', 2)
+  const replied = respond($, BUILD_80K)
+  // A whole draw through the engine: time for a second write to start, if it would.
+  await mounted($)
+  release()
+  await Promise.all([started, replied])
+  expect(overlapped).toBe(false)
+  await $.session.start(START)
+  expect(fact(await mounted($, true), 'input')).toBeDefined()
+})

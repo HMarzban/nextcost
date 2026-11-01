@@ -145,15 +145,22 @@ const band: Band = {
   tick: undefined,
 }
 
-/** Hands the host what the band has counted, as it stands, under the
- *  conversation it counts: the one a resume names, else the session's. Never
- *  throws: a write that fails leaves the last, and a reload after it starts
- *  from there. */
-const keepCounts = async ($: EngineInterface): Promise<void> => {
-  const sessionId = band.resume?.sessionId ?? (await $.session.id().catch(() => undefined))
-  // Through JSON, the host's own form of it: an unknown fact is simply absent.
-  const value = JSON.parse(JSON.stringify({ sessionId, cache: band.cache.kept(), insights: band.insights.kept(), warned: [...band.warned] }))
-  await $.state.set({ plugin: 'nextcost', key: 'kept' } as const, value).catch(() => undefined)
+/** The write of what was counted still under way, if any. */
+let keeping: Promise<void> = Promise.resolve()
+
+/** Hands the host what the band has counted, as it stands when its turn comes,
+ *  under the conversation it counts: the one a resume names, else the
+ *  session's. One write at a time, so an older count never lands on a newer.
+ *  Never throws: a write that fails leaves the last, and a reload after it
+ *  starts from there. */
+const keepCounts = ($: EngineInterface): Promise<void> => {
+  keeping = keeping.then(async () => {
+    const sessionId = band.resume?.sessionId ?? (await $.session.id().catch(() => undefined))
+    // Through JSON, the host's own form of it: an unknown fact is simply absent.
+    const value = JSON.parse(JSON.stringify({ sessionId, cache: band.cache.kept(), insights: band.insights.kept(), warned: [...band.warned] }))
+    await $.state.set({ plugin: 'nextcost', key: 'kept' } as const, value)
+  }).catch(() => undefined)
+  return keeping
 }
 
 /** Where `sessionId`'s transcript is: where the engine says, else where
