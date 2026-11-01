@@ -256,8 +256,10 @@ counts as an unexpected rebuild.
 
 ## Reopening an old session
 
-A session the band hasn't seen a reply in yet, because you reopened it or
-the band reloaded, still says what the cache is doing and what it has cost.
+A session the band hasn't seen a reply in yet, because you reopened it,
+still says what the cache is doing and what it has cost. A `/reload-plugins`
+in a running session changes nothing you can see: Claude Code holds what the
+band has counted, so its tokens, hit rate, price and trails carry on.
 
 When you resume a session (`claude --resume`, `/resume`, or a past session
 opened in the desktop app) or fork one, Claude Code says how long it has
@@ -279,7 +281,8 @@ facts:
   first reply, the Cache card says `1h idle` or `5m idle` with no
   `· assumed`. A lifetime set in the environment still wins.
 
-Where Claude Code doesn't say, or the band reloaded, it recalls when the
+Where Claude Code doesn't say, or the band loads into a session already under
+way (you just installed it), it recalls when the
 session's last reply was and what a token costs on its model:
 
 - from its own memory, which keeps each session's last reply and the model
@@ -324,7 +327,7 @@ It's always shown with `~`.
   it. A reopened session's cost record doesn't split its writes by
   lifetime, so a rate solved from it counts them at 1.25×; a reply logged
   after it counts at the split its usage logs.
-- **After `/clear`, a resume or a reload,** the rate is solved from what
+- **After `/clear` or a resume,** the rate is solved from what
   the current conversation has spent, not the session's whole ledger.
 - **Claude Haiku 5.5 has two price tiers.** A request whose prompt (every
   input token, cache reads and writes included) is over 100,000 tokens pays
@@ -479,16 +482,19 @@ only names the listing's links: none of them reads a credential.
 **It keeps**, on your machine in the plugin's own store: each session's last
 reply time and the name of the model it was billed under (the newest 50),
 the price per token it solved for each model, the layout you chose, and a
-week of your 5-hour and weekly limit readings, at most one per 15 minutes. In the session's own state it keeps whether the band is
-hidden or open. [SECURITY.md](https://github.com/HMarzban/nextcost/blob/main/SECURITY.md)
+week of your 5-hour and weekly limit readings, at most one per 15 minutes. In the session's own state, which Claude Code holds in memory for that run,
+it keeps whether the band is hidden or open, and what it has counted of the
+conversation, so a `/reload-plugins` carries on from it. [SECURITY.md](https://github.com/HMarzban/nextcost/blob/main/SECURITY.md)
 lists the same.
 
 **What each hook does.** Every hook passes Claude Code's event on unchanged;
-none edits a message, a setting, a tool call or a result.
+none edits a message, a setting, a tool call or a result. Those that change
+what the band has counted hand it to the session's own state, for a reload to
+carry on from.
 
 | Hook | What it does |
 | --- | --- |
-| `session.start` | Starts a once-a-second timer that repaints only when the drawing would change and registers `/nextcost` (and its old name, `/usage-band`), then resets the band, reads its stored limit readings and layout, then its settings, and git. Loaded into a conversation it can't tell is new, it recalls the last reply, from its store or the transcript's end as above. |
+| `session.start` | Starts a once-a-second timer that repaints only when the drawing would change and registers `/nextcost` (and its old name, `/usage-band`), then resets the band, or after a reload carries on from the session's own state, reads its stored limit readings and layout, then its settings, and git. Loaded into a conversation it can't tell is new, it recalls the last reply, from its store or the transcript's end as above. |
 | `session.end` | On `/clear` or a resume, starts the next conversation's count and reads git again. |
 | `classic.SessionStart` | On a resume or fork, notes that the conversation isn't new and reads its transcript as above. |
 | `turn.start`, `turn.complete` | Note the session's cost as each main turn starts and ends, the turn's cost, the context, and a limit reading; then read the layout and git again. A subagent's turn is left alone. |

@@ -5,13 +5,13 @@ import { atom, read, update } from 'claude-code'
 import type { ClassicEventOf, EngineInterface, ProcessRunResult, Register, Timer } from 'claude-code'
 import { drawBand } from './band'
 import { newCache, wakerOf } from './cache'
-import type { CacheModel, RecalledReply, Remembered, ResumedCache, Spend, TranscriptFacts, Waker } from './cache'
+import type { CacheModel, CacheState, RecalledReply, Remembered, ResumedCache, Spend, TranscriptFacts, Waker } from './cache'
 import { idleCompactFrom, resolveTtl } from './cache-settings'
 import { ARGUMENT_HINT, commandPlan, parseCommand } from './command'
 import { contextUsed, hostZone, paintKey, readableZone } from './format'
 import { resolveGlyphs } from './glyphs'
 import { newInsights } from './insights'
-import type { Insights } from './insights'
+import type { InsightState, Insights } from './insights'
 import { DARK, resolvePalette } from './palette'
 import type { Palette } from './palette'
 import {
@@ -43,6 +43,11 @@ import type { Workspace } from './workspace'
 
 const isHidden = atom({ plugin: 'nextcost', key: 'isHidden' } as const, false)
 const isExpanded = atom({ plugin: 'nextcost', key: 'isExpanded' } as const, false)
+/** What the band has counted of this conversation, held by the host because a
+ *  reload of this module (/reload-plugins, a worker respawn) starts `band` over
+ *  in the same process, under the same ledger: it carries on from here, so no
+ *  count restarts and none is counted twice. A new process starts without it. */
+const kept = atom({ plugin: 'nextcost', key: 'kept' } as const, null)
 
 /** Long enough for a large repository's status or a transcript's tail,
  *  short enough that a hung command never holds a read open for long. */
@@ -108,13 +113,14 @@ type Band = {
   tick: Timer | undefined
 }
 
-/** What each session.start begins the band from: a new session's cache
- *  model and insights, no warning spoken, nothing drawn or read yet, and
- *  the default layout until the store is read. */
-const freshSession = (): Pick<Band, 'cache' | 'insights' | 'warned' | 'lastPaintKey' | 'resets' | 'workspace' | 'layout'> => ({
-  cache: newCache(),
-  insights: newInsights(),
-  warned: NO_WARNINGS,
+/** What each session.start begins the band from: its cache model, insights
+ *  and warnings spoken, new or carrying on after a reload, nothing drawn or
+ *  read yet, and the default layout until the store is read. */
+const freshSession = (from?: Readonly<{ cache: unknown; insights: unknown; warned: ReadonlyArray<readonly [string, number]> }> | null): Pick<Band, 'cache' | 'insights' | 'warned' | 'lastPaintKey' | 'resets' | 'workspace' | 'layout'> => ({
+  // Only this band writes them, as keepCounts wrote them.
+  cache: newCache(from?.cache as CacheState | undefined),
+  insights: newInsights(from?.insights as InsightState | undefined),
+  warned: from ? new Map(from.warned) : NO_WARNINGS,
   lastPaintKey: '',
   resets: [],
   workspace: undefined,
@@ -122,8 +128,9 @@ const freshSession = (): Pick<Band, 'cache' | 'insights' | 'warned' | 'lastPaint
 })
 
 /** The band. A reload starts it over with the module; session.start starts
- *  a session over with freshSession, and what it reads at once (the
- *  palette, the glyphs, the samples) it reads again; the rest carries on. */
+ *  a session over with freshSession, from what was kept, and what it reads at
+ *  once (the palette, the glyphs, the samples) it reads again; the rest
+ *  carries on. */
 const band: Band = {
   ...freshSession(),
   palette: DARK,
@@ -136,6 +143,17 @@ const band: Band = {
   resume: undefined,
   nextWaker: undefined,
   tick: undefined,
+}
+
+/** Hands the host what the band has counted, as it stands, under the
+ *  conversation it counts: the one a resume names, else the session's. Never
+ *  throws: a write that fails leaves the last, and a reload after it starts
+ *  from there. */
+const keepCounts = async ($: EngineInterface): Promise<void> => {
+  const sessionId = band.resume?.sessionId ?? (await $.session.id().catch(() => undefined))
+  // Through JSON, the host's own form of it: an unknown fact is simply absent.
+  const value = JSON.parse(JSON.stringify({ sessionId, cache: band.cache.kept(), insights: band.insights.kept(), warned: [...band.warned] }))
+  await $.state.set({ plugin: 'nextcost', key: 'kept' } as const, value).catch(() => undefined)
 }
 
 /** Where `sessionId`'s transcript is: where the engine says, else where
@@ -230,6 +248,7 @@ const readResumed = async ($: EngineInterface, mine: Resume): Promise<void> => {
     const transcript = { spend, ttl: tail === undefined ? undefined : lastWriteTtl(tail) }
     band.resume = { ...mine, transcript }
     band.cache.recalled(recalled, transcript)
+    await keepCounts($)
     $.ui.invalidate('ui.render')
   } catch {
     // the ledger and the TTL stand
@@ -257,6 +276,7 @@ const resumeConversation = async ($: EngineInterface, e: ClassicEventOf['classic
   }
   band.resume = resume
   band.cache.resumed(resume)
+  await keepCounts($)
   void readResumed($, resume)
   $.ui.invalidate('ui.render')
 }
@@ -478,7 +498,9 @@ export const register: Register = on => {
     registerCommands($)
 
     const id = await $.session.id().catch(() => undefined)
-    Object.assign(band, freshSession())
+    // Read first: nothing may be counted between the reset and what it restores.
+    const from = await read($, kept).catch(() => null)
+    Object.assign(band, freshSession(id !== undefined && from?.sessionId === id ? from : null))
     // A resume of another session is no longer news. It is dropped in the
     // same step as the reset, so no read of it can land in between.
     if (band.resume?.sessionId !== id) band.resume = undefined
@@ -500,6 +522,7 @@ export const register: Register = on => {
     // Loaded mid-conversation, the band has seen no reply: recall the last,
     // unless the engine said when it was.
     if (id !== undefined && band.cache.wantsRecall()) await recallOnLoad($, id)
+    await keepCounts($)
     return next(e)
   }).catch(($, e, next) => next(e)) // a failure here must never stop a session starting
 
@@ -512,6 +535,7 @@ export const register: Register = on => {
     band.cache.conversationEnded(costNow, e.reason === 'resume')
     band.insights.conversationEnded()
     band.warned = forgetConversation(band.warned)
+    await keepCounts($)
     band.lastPaintKey = ''
     // A resume may be another project.
     void readWorkspace($)
@@ -537,6 +561,7 @@ export const register: Register = on => {
     band.insights.noteTurnStart(e.turnId, cost)
     band.cache.turnStarted({ priceModel, ledger: cost, wokenBy: band.nextWaker })
     band.nextWaker = undefined
+    await keepCounts($)
     return next(e)
   })
 
@@ -564,6 +589,7 @@ export const register: Register = on => {
       if (spent !== null) band.insights.pushCost(spent, ended.rebuilt)
       const used = usage === undefined ? undefined : contextUsed(usage.context)
       if (used !== undefined) band.insights.pushContext(used)
+      await keepCounts($)
       if (ended.remember !== undefined) void rememberTurn($, ended.remember)
       const now = await $.clock.now()
       const sample = usage === undefined ? undefined : sampleOf(now, usage.rateLimits.map(limitOf))
@@ -592,6 +618,7 @@ export const register: Register = on => {
       $.ui.invalidate('ui.render')
     }
     if (isMain && result?.stopReason === 'compaction') band.cache.compacted({ now: sentAt })
+    if (result?.usage || isMain) await keepCounts($)
     return result
   })
 
@@ -600,6 +627,7 @@ export const register: Register = on => {
     const result = await next(e)
     if (e.agentId === undefined && e.trigger !== 'precompute' && result.skip === undefined) {
       band.cache.compacted({ now: await $.clock.now(), sizeAfter: result.tokensAfter, manual: e.trigger === 'manual' })
+      await keepCounts($)
       $.ui.invalidate('ui.render')
     }
     return result
@@ -627,6 +655,7 @@ export const register: Register = on => {
     const context = contextToasts(band.warned, { used: contextUsed(e.context), window: e.context.window, compactAt: band.compactAt, autoCompactOff: band.autoCompactOff })
     band.warned = context.warned
     for (const text of context.say) $.ui.toast(text)
+    await keepCounts($)
 
     $.ui.invalidate('ui.render')
     return next(e)

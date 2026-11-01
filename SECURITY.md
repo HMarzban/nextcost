@@ -64,8 +64,11 @@ it:
   never its text, its attachments or its context, so chips' Cache card can
   say who restarted the countdown. It passes every prompt on unchanged and keeps
   that origin in memory alone, never in its store, until your own next turn.
-- **Writes** two values to the session's own state: whether the band is
-  hidden, and whether it's expanded. In the plugin's own store it keeps,
+- **Writes** three values to the session's own state, which Claude Code holds
+  in memory for that run and drops when it exits: whether the band is hidden,
+  whether it's expanded, and what it has counted of the conversation (token
+  counts, dollars, times, model names, the limit readings it draws and the warnings already shown), so a
+  `/reload-plugins` carries on from them. In the plugin's own store it keeps,
   across sessions, the time of each session's last reply and the name of
   the model it was billed under (the newest 50), the price per token it
   solved for each model, the layout you chose, and a week of your 5-hour

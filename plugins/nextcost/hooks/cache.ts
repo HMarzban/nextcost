@@ -114,7 +114,8 @@ export type CacheView = Readonly<{
   wake: Wake | undefined
 }>
 
-type CacheState = {
+/** A cache model's facts, plain data, for a reload to carry on from. */
+export type CacheState = {
   ttl: Ttl
   /** Set by the environment, so never inferred. */
   ttlPinned: boolean
@@ -507,13 +508,15 @@ export type Remembered = Readonly<{ lastAt: number; rate: number | null; billed:
 /** One session's cache model. Each entry is a hook's facts, in its shape,
  *  and each that is handed the ledger notes it before it reads it. */
 export type CacheModel = Readonly<{
+  /** Everything it holds, for the next model after a reload to start from. */
+  kept: () => CacheState
   /** session.start, after a resume of this session is noted: the model
    *  /model names, and the ledger. A ledger that has spent nothing is a new
    *  conversation, unless the engine said it resumed one; one that can't be
    *  read says neither, so the band recalls the last reply. */
   loaded: (o: Readonly<{ priceModel: string | undefined; ledger: number | undefined }>) => void
-  /** Whether to recall the last reply: the engine said neither that the
-   *  conversation starts here nor when its last reply was. */
+  /** Whether to recall the last reply: none seen, and the engine said neither
+   *  that the conversation starts here nor when its last reply was. */
   wantsRecall: () => boolean
   /** What the band recalls of the last reply, noted until this band's first
    *  reply, which speaks for itself; and what a resumed conversation's
@@ -557,15 +560,17 @@ export type CacheModel = Readonly<{
   idleMs: (now: number) => number | null
 }>
 
-/** A session's cache model, before anything is known of it. */
-export const newCache = (): CacheModel => {
-  const s: CacheState = { ...INITIAL }
+/** A session's cache model: before anything is known of it, or carrying on
+ *  from what the model before a reload `kept`. */
+export const newCache = (kept?: CacheState): CacheModel => {
+  const s: CacheState = { ...INITIAL, ...kept }
   return {
+    kept: () => ({ ...s }),
     loaded: ({ priceModel, ledger }) => {
       s.priceModel = priceModel
-      if (!s.resumed) s.knownFresh = ledger === 0
+      if (!s.resumed && kept === undefined) s.knownFresh = ledger === 0
     },
-    wantsRecall: () => !s.knownFresh && s.resumedCache === undefined,
+    wantsRecall: () => s.requests === 0 && !s.knownFresh && s.resumedCache === undefined,
     recalled: (reply, transcript) => {
       if (s.requests === 0) {
         if (reply?.billed !== undefined) s.billedModel = reply.billed

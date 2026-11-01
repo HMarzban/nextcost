@@ -5,6 +5,11 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/). Before
 1.0.0, a minor version may change how the band reads.
 
+## [0.20.1] - 2026-11-01
+
+### Fixed
+- `/reload-plugins` no longer restarts the band's counts. A reload starts its module over in the same conversation, so the tokens chip fell from about 71M to 1.1M while the cost, read from Claude Code's ledger, stayed right. The hit rate and "saved by cache" read the same counts, and the unexpected-rebuild count, pulse's and departures' trails, the last message's cost and the 5-hour forecast's pace started over too, and toasts spoke again at levels already announced. The band now keeps all of this in the session's own state, which Claude Code holds through a reload, and carries on from it: nothing is read again, so nothing is counted twice, and subagents' tokens, which a transcript keeps in other files, stay counted. The price per token carries on too. A reload mid-turn used to solve it from the whole ledger over that turn's few tokens, which overpriced the re-warm; it now stays solved from the same bill and tokens as before the reload. `SECURITY.md` and the README say what is kept.
+
 ## [0.20.0] - 2026-11-01
 
 ### Added
