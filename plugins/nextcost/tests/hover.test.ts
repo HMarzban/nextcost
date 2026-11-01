@@ -338,7 +338,7 @@ test('every piece that reveals a card carries a style beside its scope, its own 
       let pieces = 0
       walk(tree, n => {
         const scope = n.hover?.scope
-        if (scope === undefined || isCard(n)) return
+        if (scope === undefined || n.props?.position === 'absolute') return
         pieces += 1
         expect(typeof n.hover?.backgroundColor).toBe('string')
         if (n.props?.backgroundColor !== undefined) expect(n.hover?.backgroundColor).toBe(n.props.backgroundColor)
