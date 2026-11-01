@@ -87,6 +87,8 @@ On the desktop (not in `plain`), hover any chip for a one-line
 explanation that covers it, so it leads with the chip's figure (`Resets in
 3h 00m; 5-hour limit, all your Claude use`). `▵` opens the expanded view.
 It starts with a line that says where you are:
+Claude Code's VS Code and Cursor panels draw the band but don't show a
+mod's hover cards yet.
 
 ```
 ~/workspace/nextcost · on main                                3 changed · ↑2 ↓1
