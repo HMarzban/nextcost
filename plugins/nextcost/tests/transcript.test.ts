@@ -10,7 +10,6 @@ import {
   lastRequestAt,
   lastReplyModel,
   lastWrite,
-  lastWriteTtl,
   rateFromTranscript,
   sessionCostRecord,
   transcriptPath,
@@ -187,18 +186,18 @@ const wrote = (oneHour: number, fiveMinutes: number, sidechain = false) => ({
 })
 
 test("the cache's last write says its TTL: an hour if it wrote any for an hour, else five minutes", () => {
-  expect(lastWriteTtl(jsonl(wrote(100, 0)))).toBe('1h')
-  expect(lastWriteTtl(jsonl(wrote(100, 50)))).toBe('1h')
-  expect(lastWriteTtl(jsonl(wrote(0, 50)))).toBe('5m')
+  expect(lastWrite(jsonl(wrote(100, 0)))?.ttl).toBe('1h')
+  expect(lastWrite(jsonl(wrote(100, 50)))?.ttl).toBe('1h')
+  expect(lastWrite(jsonl(wrote(0, 50)))?.ttl).toBe('5m')
   // The last write that wrote anything is the one read.
-  expect(lastWriteTtl(jsonl(wrote(100, 0), wrote(0, 50)))).toBe('5m')
-  expect(lastWriteTtl(jsonl(wrote(0, 50), wrote(0, 0)))).toBe('5m')
+  expect(lastWrite(jsonl(wrote(100, 0), wrote(0, 50)))?.ttl).toBe('5m')
+  expect(lastWrite(jsonl(wrote(0, 50), wrote(0, 0)))?.ttl).toBe('5m')
 })
 
 test("a subagent's write says nothing of the main loop's cache, and no write is no TTL", () => {
-  expect(lastWriteTtl(jsonl(wrote(0, 50), wrote(100, 0, true)))).toBe('5m')
-  expect(lastWriteTtl(jsonl(replyLine(1_000), promptLine(2_000)))).toBeUndefined()
-  expect(lastWriteTtl('')).toBeUndefined()
+  expect(lastWrite(jsonl(wrote(0, 50), wrote(100, 0, true)))?.ttl).toBe('5m')
+  expect(lastWrite(jsonl(replyLine(1_000), promptLine(2_000)))?.ttl).toBeUndefined()
+  expect(lastWrite('')?.ttl).toBeUndefined()
 })
 
 // ── a transcript with the request's blobs in it ─────────────────────────

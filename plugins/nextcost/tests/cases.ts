@@ -4,7 +4,8 @@
 
 import type { On, SessionUsage } from 'claude-code'
 import type { Engine, MockClock } from 'claude-code/testing'
-import { TTL_MS, type Ttl } from '../hooks/cache'
+import { TTL_MS } from '../hooks/cache'
+import type { Ttl } from '../hooks/prices'
 import {
   BUILD_155K, DEFAULT_MAX_ROWS, HOUR, HOUR_1, MIN, SPEND_LIMIT, START, SUMMARY, USAGE, FRESH, breakdown, engine, mountBand, pacing, respond, setup,  usageAt, type Node,
   startTurn,

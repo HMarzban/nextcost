@@ -3,7 +3,7 @@
 // sits idle. Pure: register.tsx reads each variable and setting by name and
 // hands them here.
 
-import type { Ttl } from './cache'
+import type { Ttl } from './prices'
 
 const IDLE_COMPACT_TOKENS = 200_000
 const IDLE_COMPACT_FLOOR = 100_000

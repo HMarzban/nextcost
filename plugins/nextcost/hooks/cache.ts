@@ -11,7 +11,6 @@ import { NO_TOKENS, WRITE_MULT, addTokens, modelName, readMultiplier, tierFactor
 import type { TokenCounts, Ttl } from './prices'
 
 export type { CacheFacts } from './cache-facts'
-export type { Ttl }
 export const TTL_MS: Readonly<Record<Ttl, number>> = { '5m': 5 * MINUTE_MS, '1h': 60 * MINUTE_MS }
 
 // A response that read this much less than the cache held, both in tokens and
@@ -303,7 +302,7 @@ const coldAtOf = (s: CacheState, now: number): number | null => {
   if (s.compaction !== undefined) return s.compaction.at
   if (s.notCaching) return null
   // A reply dated after now cools a lifetime from now at the latest.
-  if (s.requests > 0) return Math.min(s.lastAt + lifetimeOf(s), now + lifetimeOf(s))
+  if (s.requests > 0) return Math.min(s.lastAt, now) + lifetimeOf(s)
   if (s.resumedCache?.expired === true) return null
   const recalled = recalledAt(s, now)
   return recalled === undefined ? null : recalled + lifetimeOf(s)
@@ -474,7 +473,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   const rebuilt = !uncached && !s.notCaching && (coldBefore || (s.requests > 0 && (gap > TTL_MS[s.ttl] || missed || s.compaction !== undefined || switched)))
 
   s.requests += 1
-  // The next request's TTL follows the config in force, not the transcript's.
+  // What the transcript's last write said spoke for the recalled cache alone.
   s.ttlSeen = undefined
   // Every round's output stays in the conversation, so it is counted whole.
   s.window = perRound(usage.input_tokens) + hit + written + usage.output_tokens
@@ -502,8 +501,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
  *  model that reply was billed under, and the model /model names. */
 export type Remembered = Readonly<{ lastAt: number; rate: number | null; billed: string | undefined; priceModel: string | undefined }>
 
-/** One session's cache model. Each entry is a hook's facts, in its shape,
- *  and each that is handed the ledger notes it before it reads it. */
+/** One session's cache model. Each entry is a hook's facts, in its shape. */
 export type CacheModel = Readonly<{
   /** Everything it holds, for the next model after a reload to start from. */
   kept: () => CacheState

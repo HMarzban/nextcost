@@ -37,7 +37,7 @@ import { DEFAULT_LAYOUT, FIVE_HOUR, asLayoutName, limitOf, removedLayoutOf, rese
 import type { Glyphs, LayoutName } from './snapshot'
 import { NO_WARNINGS, contextToasts, forgetConversation, limitToasts } from './toast'
 import type { Warned } from './toast'
-import { READ_LIMIT, countOf, lastWrite, lastWriteTtl, sessionCostRecord, transcriptPath, transcriptSpend } from './transcript'
+import { READ_LIMIT, countOf, lastWrite, sessionCostRecord, transcriptPath, transcriptSpend } from './transcript'
 import { homeRelative, parseGitState, printable, splitPath } from './workspace'
 import type { Workspace } from './workspace'
 
@@ -300,7 +300,7 @@ const readResumed = async ($: EngineInterface, mine: Resume): Promise<void> => {
       end,
     ])
     if (band.resume !== mine) return
-    const transcript = { spend, ttl: tail === undefined ? undefined : lastWriteTtl(tail) }
+    const transcript = { spend, ttl: tail === undefined ? undefined : lastWrite(tail)?.ttl }
     band.resume = { ...mine, transcript }
     band.cache.recalled(recalled, transcript)
     await keepCounts($)
