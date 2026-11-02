@@ -4,7 +4,7 @@
 
 import { test, expect } from 'claude-code/testing'
 import { newCache, type CacheModel } from '../hooks/cache'
-import { HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, engine, ledgerGrows, listBill, mountBand, resp, respond, setup, shown, pillOf, usage } from './helpers'
+import { HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, engine, expectNear, ledgerGrows, listBill, mountBand, resp, respond, setup, shown, pillOf, usage } from './helpers'
 import { cacheView } from './matrix'
 
 const OPUS = 'claude-opus-5-5'
@@ -35,8 +35,6 @@ const session = () => {
   }
 }
 
-const near = (a: number | null | undefined, b: number, within = 0.005): boolean => a !== null && a !== undefined && Math.abs(a - b) < within
-
 /** Turns on `model`, each reading the window so far and adding to it; the
  *  first reads nothing, its cache its own. Returns the clock and the window. */
 const turns = (s: ReturnType<typeof session>, model: string, count: number, from: Readonly<{ at: number; prefix: number }>): Readonly<{ at: number; prefix: number }> => {
@@ -59,13 +57,13 @@ test('after a switch the re-warm is priced at the new model alone, and it rememb
   let at = turns(s, OPUS, 40, { at: 0, prefix: 100_000 })
   at = turns(s, SONNET, 3, at)
   const sonnet = cacheView(s.c, at.at, { ledger: s.ledger() })
-  expect(near(sonnet.reWarmUsd, trueReWarm(SONNET, sonnet.window))).toBe(true)
+  expectNear(sonnet.reWarmUsd, trueReWarm(SONNET, sonnet.window), 0.005)
   at = turns(s, HAIKU, 3, at)
   const haiku = cacheView(s.c, at.at, { ledger: s.ledger() })
-  expect(near(haiku.reWarmUsd, trueReWarm(HAIKU, haiku.window))).toBe(true)
+  expectNear(haiku.reWarmUsd, trueReWarm(HAIKU, haiku.window), 0.005)
   // What a reopened session recalls under Haiku's name: its lower tier's rate.
   const rate = s.c.turnEnded(s.ledger()).remember?.rate ?? 0
-  expect(Math.abs(rate - 1e-7) < 1e-9).toBe(true)
+  expectNear(rate, 1e-7, 1e-9)
 })
 
 test('a switch before the new model has a bill of its own remembers no blended rate', () => {
@@ -89,7 +87,7 @@ test('a step whose ledger read failed leaves the rest told: its model solves fro
   c.responded({ ...opus, model: OPUS }, 0, true, { ledger: opusBill, ledgerBefore: 0 })
   c.responded({ ...sonnet, model: SONNET }, MIN, true, { ledger: undefined, ledgerBefore: undefined })
   const cache = cacheView(c, 2 * MIN, { ledger: whole })
-  expect(near(cache.reWarmUsd, trueReWarm(SONNET, cache.window))).toBe(true)
+  expectNear(cache.reWarmUsd, trueReWarm(SONNET, cache.window), 0.005)
 })
 
 test("subagents on another model neither move the main model's rate nor book its price on their reads", () => {
@@ -101,9 +99,9 @@ test("subagents on another model neither move the main model's rate nor book its
 
   const without = cacheView(plain.c, end.at, { ledger: plain.ledger() })
   const beside = cacheView(withAgents.c, end.at, { ledger: withAgents.ledger() })
-  expect(near(beside.reWarmUsd, trueReWarm(OPUS, without.window))).toBe(true)
+  expectNear(beside.reWarmUsd, trueReWarm(OPUS, without.window), 0.005)
   // 1.8M reads at $0.01 per million rather than $0.10: 1.8M × 0.9 × $0.10 per million.
-  expect(near((beside.savedUsd ?? 0) - (without.savedUsd ?? 0), 0.162)).toBe(true)
+  expectNear((beside.savedUsd ?? 0) - (without.savedUsd ?? 0), 0.162, 0.005)
 })
 
 test('what the cache saved never falls at a switch to a cheaper model', () => {
@@ -111,7 +109,7 @@ test('what the cache saved never falls at a switch to a cheaper model', () => {
   const at = turns(s, OPUS, 10, { at: 0, prefix: 100_000 })
   const before = cacheView(s.c, at.at, { ledger: s.ledger() }).savedUsd ?? 0
   turns(s, HAIKU, 2, at)
-  expect((cacheView(s.c, at.at + MIN, { ledger: s.ledger() }).savedUsd ?? 0) >= before).toBe(true)
+  expect(cacheView(s.c, at.at + MIN, { ledger: s.ledger() }).savedUsd ?? 0).toBeGreaterThanOrEqual(before)
 })
 
 /** Keeps `c`'s counts as a reload does: through JSON. */
@@ -134,7 +132,7 @@ test('/clear starts the books again: the conversation after it solves from its o
   s.c.turnStarted({ priceModel: undefined, ledger: s.ledger() })
   const end = turns(s, HAIKU, 2, { at: HOUR, prefix: 20_000 })
   const { reWarmUsd, window } = cacheView(s.c, end.at, { ledger: s.ledger() })
-  expect(near(reWarmUsd, trueReWarm(HAIKU, window), 0.0005)).toBe(true)
+  expectNear(reWarmUsd, trueReWarm(HAIKU, window), 0.0005)
   expect(Object.keys(s.c.kept().books)).toEqual([HAIKU])
 })
 
@@ -144,12 +142,12 @@ test("a resumed conversation's earlier spend stays out of the books; its reads c
   const at = turns(s, OPUS, 2, { at: 0, prefix: 100_000 })
   const end = turns(s, SONNET, 2, at)
   const look = cacheView(s.c, end.at, { ledger: s.ledger() })
-  expect(near(look.reWarmUsd, trueReWarm(SONNET, look.window))).toBe(true)
+  expectNear(look.reWarmUsd, trueReWarm(SONNET, look.window), 0.005)
   // 1M reads of the record's at the rate in force, Sonnet's: 1M × 0.95 × $2 per million.
   const unresumed = session()
   const a2 = turns(unresumed, OPUS, 2, { at: 0, prefix: 100_000 })
   const e2 = turns(unresumed, SONNET, 2, a2)
-  expect(near((look.savedUsd ?? 0) - (cacheView(unresumed.c, e2.at, { ledger: unresumed.ledger() }).savedUsd ?? 0), 1.9)).toBe(true)
+  expectNear((look.savedUsd ?? 0) - (cacheView(unresumed.c, e2.at, { ledger: unresumed.ledger() }).savedUsd ?? 0), 1.9, 0.005)
 })
 
 test("Haiku's upper tier holds in its own book: the rate stays the lower tier's beside another model", () => {
@@ -157,8 +155,8 @@ test("Haiku's upper tier holds in its own book: the rate stays the lower tier's 
   const at = turns(s, OPUS, 3, { at: 0, prefix: 100_000 })
   const end = turns(s, HAIKU, 3, { at: at.at, prefix: 150_000 })
   const rate = s.c.turnEnded(s.ledger()).remember?.rate ?? 0
-  expect(Math.abs(rate - 1e-7) < 1e-9).toBe(true)
-  expect(near(cacheView(s.c, end.at, { ledger: s.ledger() }).reWarmUsd, trueReWarm(HAIKU, cacheView(s.c, end.at, { ledger: s.ledger() }).window))).toBe(true)
+  expectNear(rate, 1e-7, 1e-9)
+  expectNear(cacheView(s.c, end.at, { ledger: s.ledger() }).reWarmUsd, trueReWarm(HAIKU, cacheView(s.c, end.at, { ledger: s.ledger() }).window), 0.005)
 })
 
 test("what a turn's end reads of the lifetime moves a model's own writes", () => {
@@ -176,7 +174,7 @@ test("what a turn's end reads of the lifetime moves a model's own writes", () =>
   c.turnEnded(whole)
   c.wroteFor('5m')
   const rate = c.turnEnded(whole).remember?.rate ?? 0
-  expect(Math.abs(rate - 2e-6) < 1e-9).toBe(true)
+  expectNear(rate, 2e-6, 1e-9)
 })
 
 // ---- growth outside a step --------------------------------------------------
@@ -187,19 +185,19 @@ test("growth between steps, a compaction's request or a fee, stays off a one-mod
   s.grows(0.002) // the compaction's own request, which raises no step
   s.step(HAIKU, resp(500, 0, 20_000, 800), MIN)
   const rate = s.c.turnEnded(s.ledger()).remember?.rate ?? 0
-  expect(Math.abs(rate - 1e-7) < 1e-10).toBe(true)
+  expectNear(rate, 1e-7, 1e-10)
 })
 
 test('growth since the last step, at a redraw, a turn\'s end or the next turn\'s start, stays off the rate', () => {
   const s = session()
   s.step(HAIKU, resp(500, 0, 50_000, 800), 0)
   s.grows(0.002)
-  expect(Math.abs((s.c.turnEnded(s.ledger()).remember?.rate ?? 0) - 1e-7) < 1e-10).toBe(true)
+  expectNear(s.c.turnEnded(s.ledger()).remember?.rate, 1e-7, 1e-10)
   const cache = cacheView(s.c, MIN, { ledger: s.ledger() })
-  expect(near(cache.reWarmUsd, trueReWarm(HAIKU, cache.window), 1e-6)).toBe(true)
+  expectNear(cache.reWarmUsd, trueReWarm(HAIKU, cache.window), 1e-6)
   s.c.turnStarted({ priceModel: undefined, ledger: s.ledger() })
   s.step(HAIKU, resp(500, 50_000, 1_000, 800), 2 * MIN)
-  expect(Math.abs((s.c.turnEnded(s.ledger()).remember?.rate ?? 0) - 1e-7) < 1e-10).toBe(true)
+  expectNear(s.c.turnEnded(s.ledger()).remember?.rate, 1e-7, 1e-10)
 })
 
 test('what the session has cost still counts every dollar, off the rate or on it', () => {
@@ -222,7 +220,7 @@ test('two steps under way at once each take their own bill', () => {
   c.responded({ ...agent, model: HAIKU }, MIN, false, { ledger: agentBill, ledgerBefore: 0 })
   c.responded({ ...main, model: OPUS }, 0, true, { ledger: agentBill + mainBill, ledgerBefore: 0 })
   const rate = c.turnEnded(agentBill + mainBill).remember?.rate ?? 0
-  expect(Math.abs(rate - 4e-6) < 1e-9).toBe(true)
+  expectNear(rate, 4e-6, 1e-9)
 })
 
 // ---- through the hooks ------------------------------------------------------
@@ -243,7 +241,7 @@ test('through the hooks: a ledger that moves inside a step and between steps sol
   await $.turn.complete(TURN_DONE)
   await clock.settle()
   const rate = (engine.store.rates as Record<string, number>)[HAIKU] ?? 0
-  expect(Math.abs(rate - 1e-7) < 1e-10).toBe(true)
+  expectNear(rate, 1e-7, 1e-10)
 })
 
 test('through the hooks: after a switch the store keeps the new model its own rate, and a reopened session recalls it', LONG, async ($, on) => {
@@ -261,8 +259,8 @@ test('through the hooks: after a switch the store keeps the new model its own ra
   await $.turn.complete(TURN_DONE)
   await clock.settle()
   const rates = engine.store.rates as Record<string, number>
-  expect(Math.abs((rates[OPUS] ?? 0) - 4e-6) < 1e-9).toBe(true)
-  expect(Math.abs((rates[SONNET] ?? 0) - 2e-6) < 1e-9).toBe(true)
+  expectNear(rates[OPUS], 4e-6, 1e-9)
+  expectNear(rates[SONNET], 2e-6, 1e-9)
 
   await clock.advance(2 * HOUR)
   await $.session.start(START)

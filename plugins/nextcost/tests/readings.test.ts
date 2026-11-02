@@ -2,7 +2,7 @@ import { test, expect } from 'claude-code/testing'
 import { fixedZone, fmtClock } from '../hooks/format'
 import { cappedMarks } from '../hooks/calendar'
 import { readingsOf } from '../hooks/reading'
-import { HOUR, MIN, SAMPLES } from './helpers'
+import { HOUR, MIN, SAMPLES, expectNear } from './helpers'
 import { NO_HISTORY, snapOf } from './matrix'
 
 const cacheAt = (leftMs: number) => ({ ...snapOf().cache, leftMs })
@@ -12,7 +12,7 @@ test('readings name every limit with its tone, value, reset and projection', () 
   expect(r.fiveHour?.tone).toBe('calm')
   expect(r.fiveHour?.value).toBe('4%')
   expect(r.fiveHour?.reset).toEqual({ kind: 'in', text: '3h 00m' })
-  expect(Math.abs((r.sevenDay?.projectedPct ?? 0) - 30 / (1 - 67 / 168))).toBeLessThan(1e-5)
+  expectNear(r.sevenDay?.projectedPct, 30 / (1 - 67 / 168), 1e-5)
   expect(r.worstLimit?.name).toBe('7d')
   expect(r.limits.map(l => l.name)).toEqual(['5h', '7d'])
 })
@@ -29,7 +29,7 @@ test('a window that fills before its reset says when: a measured fill, else the 
   // from Sunday 20:00, Monday; from Sunday midnight, that day at 15:27.
   const sevenFrom = (now: number) => readingsOf(snapOf({ zone: fixedZone(0), now, sevenDay: { percentUsed: 66, resetsAt: now + 138 * HOUR } })).sevenDay
   const seven = sevenFrom(3 * 24 * HOUR + 20 * HOUR)
-  expect(Math.abs((seven?.fillInMs ?? 0) - (30 * HOUR * 34) / 66)).toBeLessThan(1e-3)
+  expectNear(seven?.fillInMs, (30 * HOUR * 34) / 66, 1e-3)
   expect(seven?.fillText).toBe('full ~Mon at avg pace')
   expect(sevenFrom(3 * 24 * HOUR)?.fillText).toBe('full ~15:30 at avg pace')
   expect(readingsOf(snapOf({ sevenDay: { percentUsed: 66, resetsAt: 138 * HOUR } })).sevenDay?.fillText).toBe('full in ~15h 30m at avg pace')
@@ -140,7 +140,7 @@ test('the cache facts carry its mood, tone, charge and price', () => {
   const r = readingsOf(snapOf())
   expect(r.cache.mood).toBe('warm')
   expect(r.cache.tone).toBe('calm')
-  expect(Math.abs(r.cache.charge - 52 / 60)).toBeLessThan(1e-5)
+  expectNear(r.cache.charge, 52 / 60, 1e-5)
   expect(r.cache.estimate).toBe('~$1.66')
   expect(r.chips.cache.pill(false)).toBe('cache 52m')
   expect(r.spend.total).toBe(225_000)
@@ -232,7 +232,7 @@ test('limits speak in words, amber with one "! "', () => {
   expect([r.fiveHour?.resetWhen, r.fiveHour?.resetInMs]).toEqual(['in 3h 00m', 3 * HOUR])
   expect(r.sevenDay?.pace).toBe('~50% at avg pace')
   expect(r.sevenDay?.alt).toBe("7d limit 30 percent used, fine, about 50 percent at its reset, at the window's average pace")
-  expect(Math.abs((r.sevenDay?.projectedPct ?? 0) - 30 / (1 - 67 / 168))).toBeLessThan(1e-3)
+  expectNear(r.sevenDay?.projectedPct, 30 / (1 - 67 / 168), 1e-3)
 })
 test('a measured fill is an estimate, with ~', () => {
   const now = Date.UTC(2026, 9, 9, 13, 40)
@@ -282,7 +282,7 @@ test('spend splits its tokens, each with its share', () => {
   const s = readingsOf(snapOf({ history: { costs: [{ usd: 0.21, reWarm: false }], context: [] } })).spend
   expect([s.totalText, s.lastText, s.tokensText]).toEqual(['$3.19', '$0.21', '225k'])
   expect(s.split.map(p => p.label)).toEqual(['input', 'output', 'cache reads'])
-  expect(Math.abs((s.split[2]?.frac ?? 0) - 198 / 225)).toBeLessThan(1e-5)
+  expectNear(s.split[2]?.frac, 198 / 225, 1e-5)
 })
 test('the history speaks its numbers and its trend', () => {
   const history = { costs: [{ usd: 0.2, reWarm: false }, { usd: 0.2, reWarm: false }, { usd: 0.84, reWarm: true }], context: [] }
@@ -374,7 +374,7 @@ test('a limit fills in its measured time, else on its average once it lands at 1
   expect(fullIn({ fiveHour: { percentUsed: 40, resetsAt: 3 * HOUR, etaMs: 40 * MIN } })[0]).toBe(40 * MIN)
   // 79% in the 118h gone of 168: the 21% left takes 118h × 21 / 79.
   const seven = fullIn({ sevenDay: { percentUsed: 79, resetsAt: 50 * HOUR } })[1] ?? 0
-  expect(Math.abs(seven - (118 * HOUR * 21) / 79)).toBeLessThan(1)
+  expectNear(seven, (118 * HOUR * 21) / 79, 1)
   expect(fullIn({ now: 4 * HOUR, fiveHour: { percentUsed: 84, resetsAt: 3 * HOUR, etaMs: 0 } })[0]).toBeUndefined()
   // A full window has nothing left to fill, measured or not.
   for (const etaMs of [null, 5 * MIN]) expect(fullIn({ fiveHour: { percentUsed: 100, resetsAt: 2 * HOUR, etaMs } })[0]).toBeUndefined()
@@ -431,7 +431,9 @@ test("fiveHourWindow's level now is the window's percentUsed, so the line and it
   expect(w.nowAt).toBe(3)
   expect(w.values[w.nowAt ?? -1]).toBe(26)
   // The dashed run lands where the words' pace does.
-  expect(Math.abs((w.values.at(-1) ?? 0) - (r.fiveHour?.projectedPct ?? 0))).toBeLessThan(1e-9)
+  const projected = r.fiveHour?.projectedPct
+  expect(projected).toBeDefined()
+  expectNear(w.values.at(-1), projected ?? NaN, 1e-9)
 })
 test('fiveHourWindow leaves the hours before its first sample undrawn: their level is not known', () => {
   // The first sample in hour 3, at 26%; then 30% in hour 4. Hours 0 to 2

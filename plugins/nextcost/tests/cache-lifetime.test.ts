@@ -3,7 +3,7 @@
 
 import { test, expect } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
-import { BUILD_80K, LONG, MIN, START, TURN_DONE, engine, fact, jsonl, mountBand, pillOf, replyLine, requestLines, resp, respond, setup, shown } from './helpers'
+import { BUILD_80K, LONG, MIN, START, TURN_DONE, engine, expectNear, fact, jsonl, mountBand, pillOf, replyLine, requestLines, resp, respond, setup, shown } from './helpers'
 import { cacheView } from './matrix'
 
 /** Past the band's first look for a turn's line. */
@@ -185,7 +185,7 @@ test('a read of five minutes moves the turn\'s writes, so the re-warm is priced 
   c.wroteFor('5m')
   const cache = cacheView(c, 2 * MIN, { ledger: 2, contextTokens: 400_000 })
   expect(cache.ttl).toBe('5m')
-  expect(Math.abs((cache.reWarmUsd ?? 0) - 2)).toBeLessThan(1e-9)
+  expectNear(cache.reWarmUsd, 2, 1e-9)
 })
 
 test('a read of an hour leaves the rate as billed at 2x', () => {
@@ -194,7 +194,7 @@ test('a read of an hour leaves the rate as billed at 2x', () => {
   c.turnEnded(3.2)
   c.wroteFor('1h')
   const cache = cacheView(c, 2 * MIN, { ledger: 3.2, contextTokens: 400_000 })
-  expect(Math.abs((cache.reWarmUsd ?? 0) - 3.2)).toBeLessThan(1e-9)
+  expectNear(cache.reWarmUsd, 3.2, 1e-9)
 })
 
 test('a read made while the next turn is under way waits for that turn\'s', () => {

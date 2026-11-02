@@ -12,7 +12,7 @@ import type {
   TurnStepInput,
   TurnStopReason,
 } from 'claude-code'
-import { mock, type Engine, type MockClock } from 'claude-code/testing'
+import { expect, mock, type Engine, type MockClock } from 'claude-code/testing'
 import type { Sample } from '../hooks/memory'
 import { CHIP_BAR } from '../hooks/views/chips'
 import { textCells } from '../hooks/layout'
@@ -779,8 +779,11 @@ export const costRecord = (...models: string[]) => ({
   ),
   hasUnknownModelCost: false,
 })
-/** Whether a rate solved from a transcript is `b`, to within float error. */
-export const rateNear = (a: number | null, b: number): boolean => a !== null && Math.abs(a - b) < 1e-15
+/** `actual` is a number within `within` of `expected`; a miss, or no number
+ *  at all, fails showing what was read against what was meant. */
+export const expectNear = (actual: number | null | undefined, expected: number, within: number): void => {
+  expect(typeof actual === 'number' && Math.abs(actual - expected) < within ? expected : actual).toBe(expected)
+}
 
 /** A transcript as Claude Code writes one: a user line, an assistant reply at
  *  `replyAt`, and the cost-state line it adds when the session exits. */

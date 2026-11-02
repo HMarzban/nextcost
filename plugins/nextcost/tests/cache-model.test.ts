@@ -21,6 +21,7 @@ import {
   shown,
   rebuilds,
   engine,
+  expectNear,
   fact,
   cardOf,
   setup,
@@ -400,7 +401,7 @@ test("a redraw that reads the ledger while an advisor step runs leaves its bill 
   }
   expect(rewarm(true)).toBe(rewarm(false))
   // r = 2.41/220k, its 1h writes at 2x; window 202,004/2 + 1,000 = 102,002: 2 * 102,002 * r = $2.2346
-  expect(Math.abs((rewarm(false) ?? 0) - (2 * 102_002 * 2.41) / 220_000) < 1e-9).toBe(true)
+  expectNear(rewarm(false), (2 * 102_002 * 2.41) / 220_000, 1e-9)
 })
 
 // Claude Code's ledger bills a cache write by its lifetime, as Anthropic lists
@@ -410,7 +411,6 @@ test("a redraw that reads the ledger while an advisor step runs leaves its bill 
 /** The re-warm a model prices at `now`, its ledger at `ledger`. */
 const reWarmAt = (c: CacheModel, now: number, ledger: number): number | null =>
   cacheView(c, now, { ledger }).reWarmUsd
-const near = (a: number | null, b: number): boolean => a !== null && Math.abs(a - b) < 1e-6
 const pinnedTo = (ttl: '5m' | '1h', subagentTtl?: '5m' | '1h'): CacheModel => {
   const c = newCache()
   c.configured({ ttl, idleCompactFrom: undefined, subagentTtl })
@@ -421,14 +421,14 @@ test("on the hour's cache the main loop's writes weigh 2x, and a re-warm is a 2x
   const c = pinnedTo('1h')
   c.responded(BUILD_100K, 0, true, { ledger: 2.2 })
   // weighted = 10k + 2*100k + 5*2k = 220k, so r = $0.00001; re-warm = 2 * 112k * r = $2.24
-  expect(near(reWarmAt(c, 61 * MIN, 2.2), 2.24)).toBe(true)
+  expectNear(reWarmAt(c, 61 * MIN, 2.2), 2.24, 1e-6)
 })
 
 test("on five minutes' cache a write weighs 1.25x, as before", () => {
   const c = pinnedTo('5m')
   c.responded(BUILD_100K, 0, true, { ledger: 2.2 })
   // weighted = 10k + 1.25*100k + 5*2k = 145k; re-warm = 1.25 * 112k * 2.2/145k = $2.1241
-  expect(near(reWarmAt(c, 10 * MIN, 2.2), (1.25 * 112_000 * 2.2) / 145_000)).toBe(true)
+  expectNear(reWarmAt(c, 10 * MIN, 2.2), (1.25 * 112_000 * 2.2) / 145_000, 1e-6)
 })
 
 test("a subagent's writes weigh 1.25x on the hour's main cache, unless its own TTL is an hour", () => {
@@ -438,12 +438,12 @@ test("a subagent's writes weigh 1.25x on the hour's main cache, unless its own T
   five.responded(MAIN, 0, true, { ledger: 2.2 })
   five.responded(SUB, MIN, false, { ledger: 2.565 })
   // main 220k + subagent 3k + 1.25*10k + 0.05*20k + 5*4k = 36.5k: r = 2.565/256.5k = $0.00001
-  expect(near(reWarmAt(five, 61 * MIN, 2.565), 2.24)).toBe(true)
+  expectNear(reWarmAt(five, 61 * MIN, 2.565), 2.24, 1e-6)
   const hour = pinnedTo('1h', '1h')
   hour.responded(MAIN, 0, true, { ledger: 2.2 })
   hour.responded(SUB, MIN, false, { ledger: 2.565 })
   // the subagent's 10k written for an hour weigh 20k: 44k, r = 2.565/264k
-  expect(near(reWarmAt(hour, 61 * MIN, 2.565), (2 * 112_000 * 2.565) / 264_000)).toBe(true)
+  expectNear(reWarmAt(hour, 61 * MIN, 2.565), (2 * 112_000 * 2.565) / 264_000, 1e-6)
 })
 
 test("a subagent's own TTL is read as Claude Code reads it, and an hour there prices its writes at 2x", LONG, async ($, on) => {
@@ -470,7 +470,7 @@ test('an advisor step that bills most of the session leaves the rate exactly as 
   c.responded(opus(resp(2, 102_000, 1_000, 500)), 2 * MIN, true, { ledger: 7.29602 })
   // r stays $0.00001; re-warm = 2 * 103,502 * r = $2.07 (with the advisor's
   // bill in the rate, about $6).
-  expect(near(reWarmAt(c, 63 * MIN, 7.29602), 2 * 103_502 * 0.00001)).toBe(true)
+  expectNear(reWarmAt(c, 63 * MIN, 7.29602), 2 * 103_502 * 0.00001, 1e-6)
   expect(c.view({ now: 63 * MIN, ledger: 7.29602, contextTokens: 0, autoCompactOff: false }).costUsd).toBe(7.29602)
 })
 
