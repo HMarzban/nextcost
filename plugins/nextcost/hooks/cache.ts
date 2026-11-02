@@ -4,7 +4,7 @@
 // it was billed is cache-bill.ts's, and what its view means, cache-facts.ts's.
 
 import type { RenderSurface } from 'claude-code'
-import { NO_BILL, billAtRedraw, billAtStep, billAtTurnStart, billOfNewConversation, bookResponse, ratePerToken, rememberedRate, savedUsdOf, spentUsd, weighResponse, writesReadAs } from './cache-bill'
+import { NO_BILL, rebasedOn, billAtStep, billAtTurnStart, billOfNewConversation, bookResponse, ratePerToken, rememberedRate, savedUsdOf, spentUsd, weighResponse, writesReadAs } from './cache-bill'
 import type { Bill, Pricing, Response } from './cache-bill'
 import { MINUTE_MS } from './format'
 import { NO_TOKENS, WRITE_MULT, addTokens, modelName, readMultiplier, tierFactor } from './prices'
@@ -645,7 +645,7 @@ export const newCache = (kept?: CacheState): CacheModel => {
       Object.assign(s, INITIAL, { ttl, ttlBasis, subagentTtl, namedModel, billedModel, idleCompactFrom, turn: { ...NO_TURN, open: turn.open }, bill: billOfNewConversation(ledger), origin: resumed ? 'unknown' : 'fresh' })
     },
     view: look => {
-      s.bill = billAtRedraw(s.bill, look.ledger)
+      s.bill = rebasedOn(s.bill, look.ledger)
       return { cache: viewOf(s, look), costUsd: spentUsd(s.bill, s.prior?.usd, look.ledger) }
     },
     leftMs: now => leftMsOf(s, now),

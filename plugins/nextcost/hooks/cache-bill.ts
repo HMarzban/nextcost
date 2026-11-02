@@ -72,7 +72,7 @@ export const billOfNewConversation = (ledger: number): Bill => ({ ...NO_BILL, co
 
 /** The engine may reset the ledger on /clear: once it reads below the
  *  baseline, it counts this conversation alone, so the baseline is 0. */
-export const billAtRedraw = (b: Bill, ledger: number | undefined): Bill => (ledger !== undefined && ledger < b.costBase ? { ...b, costBase: 0 } : b)
+export const rebasedOn = (b: Bill, ledger: number | undefined): Bill => (ledger !== undefined && ledger < b.costBase ? { ...b, costBase: 0 } : b)
 
 /** The ledger as a turn starts: what it grew by since the last step is no
  *  step's, once the conversation has a baseline to grow from. The conversation's
@@ -89,7 +89,7 @@ export const billAtTurnStart = (b: Bill, ledger: number | undefined): Bill => {
  *  step that came back meanwhile read its own bill off the ledger, so a step's
  *  own counts from the later of the two reads. */
 export const billAtStep = (was: Bill, sent: number | undefined, ledger: number | undefined): Readonly<{ bill: Bill; told: number | undefined }> => {
-  const b = billAtRedraw(was, ledger)
+  const b = rebasedOn(was, ledger)
   const seen = b.ledgerSeen
   if (ledger === undefined) return { bill: { ...b, ledgerSeen: undefined }, told: undefined }
   const grown = b.baselined && seen !== undefined && sent !== undefined && sent > seen ? sent - seen : 0
