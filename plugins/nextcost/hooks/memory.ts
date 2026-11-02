@@ -59,6 +59,10 @@ export const asRates = (v: unknown): Rates =>
  *  its window aside, as every released version has kept it. */
 const rateKey = (model: string): string => modelName(model)
 
+/** The rate stored for `model`; an inherited property of Object, such as a
+ *  model named `constructor`, is none. */
+const rateFor = (rates: Rates, model: string): number | undefined => (Object.hasOwn(rates, rateKey(model)) ? rates[rateKey(model)] : undefined)
+
 /** The store's rates with `rate` kept for `model`, the one billed. */
 export const rememberRate = (stored: unknown, model: string, rate: number): Rates => ({ ...asRates(stored), [rateKey(model)]: rate })
 
@@ -137,7 +141,7 @@ export const fromStore = (stored: Readonly<{ sessions: unknown; rates: unknown }
   const record = asSessions(stored.sessions, now)[sessionId]
   const billed = billedOf(record)
   const key = rateKey(model)
-  return { rates, model: key, lastAt: record?.lastAt, billed, rate: rates[billed === undefined ? key : rateKey(billed)] ?? null }
+  return { rates, model: key, lastAt: record?.lastAt, billed, rate: rateFor(rates, billed ?? key) ?? null }
 }
 
 /** Whether the store leaves a fact unknown that the transcript may give. */
@@ -155,7 +159,7 @@ export const recallOf = (r: StoreRecall, transcript: string | undefined, now: nu
   return {
     // A reply logged after now is unknown, not the time recalled.
     lastAt: r.lastAt ?? (logged !== undefined && logged <= now ? logged : undefined),
-    rate: r.rate ?? (billed === undefined ? rateFromTranscript(transcript, r.model) : (r.rates[rateKey(billed)] ?? rateFromTranscript(transcript, billed))),
+    rate: r.rate ?? (billed === undefined ? rateFromTranscript(transcript, r.model) : (rateFor(r.rates, billed) ?? rateFromTranscript(transcript, billed))),
     billed,
   }
 }

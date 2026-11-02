@@ -83,7 +83,7 @@ export const lastReplyModel = (transcript: string): string | undefined => {
 }
 
 /** A count the transcript gives, or 0 for anything that isn't one. */
-const countOf = (record: Record<string, unknown>, key: string): number => {
+export const countOf = (record: Record<string, unknown>, key: string): number => {
   const v = record[key]
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0
 }

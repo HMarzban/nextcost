@@ -2,7 +2,7 @@
 // into the pure modules, and ui.render hands drawBand a snapshot of them.
 
 import { atom, read, update } from 'claude-code'
-import type { ClassicEventOf, EngineInterface, ProcessRunResult, Register, Timer } from 'claude-code'
+import type { ClassicEventOf, EngineInterface, ModelUsage, ProcessRunResult, Register, Timer } from 'claude-code'
 import { drawBand } from './band'
 import { newCache, wakerOf } from './cache'
 import type { CacheModel, CacheState, RecalledReply, Remembered, ResumedCache, Spend, TranscriptFacts, Waker } from './cache'
@@ -37,7 +37,7 @@ import { DEFAULT_LAYOUT, FIVE_HOUR, asLayoutName, limitOf, removedLayoutOf, rese
 import type { Glyphs, LayoutName } from './snapshot'
 import { NO_WARNINGS, contextToasts, forgetConversation, limitToasts } from './toast'
 import type { Warned } from './toast'
-import { READ_LIMIT, lastWrite, lastWriteTtl, sessionCostRecord, transcriptPath, transcriptSpend } from './transcript'
+import { READ_LIMIT, countOf, lastWrite, lastWriteTtl, sessionCostRecord, transcriptPath, transcriptSpend } from './transcript'
 import { homeRelative, parseGitState, splitPath } from './workspace'
 import type { Workspace } from './workspace'
 
@@ -398,10 +398,24 @@ const noteSample = async ($: EngineInterface, sample: Sample): Promise<void> => 
   await $.store.set(LIMIT_SAMPLES_KEY, band.samples).catch(() => undefined)
 }
 
+/** A sum of dollars the host gives, or undefined for anything that isn't one
+ *  spent: below zero, infinite, not a number. */
+const dollarsOf = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined)
+
+/** A response's usage with each count taken as a count: one the host left
+ *  out, or gave as anything else, is 0, so no sum becomes NaN for good. */
+const counted = (usage: ModelUsage): ModelUsage => ({
+  ...usage,
+  input_tokens: countOf(usage, 'input_tokens'),
+  output_tokens: countOf(usage, 'output_tokens'),
+  cache_read_input_tokens: countOf(usage, 'cache_read_input_tokens'),
+  cache_creation_input_tokens: countOf(usage, 'cache_creation_input_tokens'),
+})
+
 /** What the session has cost so far, if the host keeps a ledger; undefined
  *  when it has none, or the read fails. */
 const ledgerUsd = async ($: EngineInterface): Promise<number | undefined> =>
-  (await $.session.usage().catch(() => undefined))?.cost?.usd
+  dollarsOf((await $.session.usage().catch(() => undefined))?.cost?.usd)
 
 /** The stored layout, or chips: a name this version doesn't know, or a value
  *  that isn't a name, draws chips. A read that fails keeps the layout drawn.
@@ -630,7 +644,7 @@ export const register: Register = on => {
     const result = await next(e)
     if (e.agentId === undefined) {
       const usage = await $.session.usage().catch(() => undefined)
-      const cost = usage?.cost?.usd
+      const cost = dollarsOf(usage?.cost?.usd)
       const spent = band.insights.noteTurnEnd(e.turnId, cost)
       // Taken every turn, so a rebuild never marks a later turn's cost.
       const ended = band.cache.turnEnded(cost)
@@ -663,7 +677,7 @@ export const register: Register = on => {
       const served = 'serverToolUses' in result && Array.isArray(result.serverToolUses) ? result.serverToolUses.length : 0
       // The ledger goes in with the response, so no other hook's step can
       // come between them and take its bill for this one's.
-      band.cache.responded(result.usage, sentAt, isMain, { serverTools: served, ledger: await ledgerUsd($) })
+      band.cache.responded(counted(result.usage), sentAt, isMain, { serverTools: served, ledger: await ledgerUsd($) })
       $.ui.invalidate('ui.render')
     }
     if (isMain && result?.stopReason === 'compaction') band.cache.compacted({ now: sentAt })
@@ -721,7 +735,7 @@ export const register: Register = on => {
     const usage = await $.session.usage().catch(() => undefined)
     if (usage === undefined) return next(e)
     const now = await $.clock.now()
-    const { cache, costUsd } = band.cache.view({ now, ledger: usage.cost?.usd, contextTokens: contextUsed(usage.context) ?? 0, autoCompactOff: band.autoCompactOff })
+    const { cache, costUsd } = band.cache.view({ now, ledger: dollarsOf(usage.cost?.usd), contextTokens: contextUsed(usage.context) ?? 0, autoCompactOff: band.autoCompactOff })
     const snap = snapshotOf({
       usage,
       now,
