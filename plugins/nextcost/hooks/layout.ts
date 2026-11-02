@@ -104,7 +104,7 @@ export const clipToTiles = (text: string, tiles: number): string => {
   return `${headIn([...text], tiles - 1).join('')}…`
 }
 
-export const isList = (n: RenderChildren): n is readonly RenderChildren[] => Array.isArray(n)
+const isList = (n: RenderChildren): n is readonly RenderChildren[] => Array.isArray(n)
 
 /** Whether a child draws anything: null, undefined and false draw nothing. */
 export const isDrawn = (child: unknown): boolean => child !== null && child !== undefined && child !== false

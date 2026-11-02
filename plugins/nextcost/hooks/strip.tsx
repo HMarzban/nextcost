@@ -10,7 +10,7 @@ import type { RenderChildren, RenderElement } from 'claude-code'
 import { plural } from './format'
 import { ALT } from './icons'
 import type { CardPlace, Kit } from './kit'
-import { clipMiddle, isList, spansOf, squeezeToFit } from './layout'
+import { clipMiddle, spansOf, squeezeToFit } from './layout'
 import type { Span } from './layout'
 import { BARE } from './palette'
 import { gitSummary, splitPath } from './workspace'
@@ -51,16 +51,13 @@ const aheadBehind = (kit: Kit, side: 'ahead' | 'behind', n: number): string =>
 const stripPlacement = (place: 'top' | 'footer', edge: number) =>
   place === 'top' ? { paddingX: 1 + edge / 2, marginTop: 1 } : { flexGrow: 1, flexShrink: 1, minWidth: 0 }
 
-/** The key a drawn Box goes by, if any. */
-const keyOf = (n: RenderChildren): string | undefined => {
-  const key = typeof n === 'object' && n !== null && !isList(n) && n.type === 'Box' ? n.props?.key : undefined
-  return typeof key === 'string' ? key : undefined
-}
+/** A part of a side's line: what it draws, and if it explains itself, its
+ *  key and the card text it reveals on hover. A separator takes no room of a
+ *  piece's for a card to cover whole. */
+type Part = Readonly<{ node: RenderChildren; card?: Readonly<{ key: string; text: string }>; separator?: true }>
 
-/** What the strip says at a squeeze: the path's side and the state's, each
- *  piece keyed, and by its key the card text each piece that explains
- *  itself reveals on hover. */
-type Said = Readonly<{ where: RenderChildren[]; state: RenderChildren[]; explained: ReadonlyMap<string, string> }>
+/** What the strip says at a squeeze: the path's side and the state's. */
+type Said = Readonly<{ where: Part[]; state: Part[] }>
 
 const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said => {
   const { Box, Text, Svg, oneLine, explains, icon } = kit
@@ -74,22 +71,22 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
   const parentShown = kept('parent') || shortParent.length >= parent.length ? parent : shortParent
   const clipped = parentShown !== parent || name !== fullName
 
-  // The card text each piece reveals, by its key: a text surface's cards, the
-  // kit's hoverCard, are drawn after the strip from it.
-  const explained = new Map<string, string>()
-  /** A piece keyed `key` that draws `body` and reveals `text` on hover. */
-  const explaining = (key: string, text: string, ...body: RenderChildren[]): RenderElement => {
-    explained.set(key, text)
+  /** A piece keyed `key` that draws `body` and reveals `text` on hover: a text
+   *  surface's cards, the kit's hoverCard, are drawn after the strip. */
+  const explaining = (key: string, text: string, ...body: RenderChildren[]): Part => {
     const { props, card } = explains(key, text)
-    return (
-      <Box key={key} flexDirection="row" {...props}>
-        {body}
-        {card}
-      </Box>
-    )
+    return {
+      node: (
+        <Box key={key} flexDirection="row" {...props}>
+          {body}
+          {card}
+        </Box>
+      ),
+      card: { key, text },
+    }
   }
 
-  const where: RenderChildren[] = [
+  const where: Part[] = [
     explaining(
       'ws:path',
       git === undefined ? ws.path : `${ws.path}: ${gitSummary(git)}`,
@@ -138,7 +135,7 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
     )
   }
 
-  const state: RenderChildren[] = []
+  const state: Part[] = []
   if (git !== undefined && git.changed > 0) {
     const word = kept('changedWord')
     state.push(
@@ -153,11 +150,13 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
       ),
     )
   } else if (git !== undefined && kept('clean')) {
-    state.push(
-      <Text key="ws:clean" color={BARE.label}>
-        clean
-      </Text>,
-    )
+    state.push({
+      node: (
+        <Text key="ws:clean" color={BARE.label}>
+          clean
+        </Text>
+      ),
+    })
   }
   if (git !== undefined && (git.ahead || git.behind) && kept('aheadBehind')) {
     if (Svg) {
@@ -174,7 +173,7 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
       )
     }
   }
-  return { where, state, explained }
+  return { where, state }
 }
 
 /** The strip at a squeeze, in `room` columns: the path's side, the fill,
@@ -182,11 +181,11 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
  *  at its piece. */
 const stripAt = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean, place: 'top' | 'footer', edge: number, room: number): RenderElement => {
   const { Box, Text, Svg, measure, asDrawn, hoverCard } = kit
-  const { where, state, explained } = saidOf(kit, ws, kept)
+  const { where, state } = saidOf(kit, ws, kept)
   /** A side's pieces, a text surface's ` · ` between each. */
-  const joined = (side: string, pieces: RenderChildren[]): RenderChildren[] =>
-    pieces.flatMap((piece, i) =>
-      i === 0 || Svg ? [piece] : [<Text key={`${side}-sep${i}`} color={BARE.label}>{' · '}</Text>, piece],
+  const joined = (side: string, pieces: readonly Part[]): Part[] =>
+    pieces.flatMap((piece, i): Part[] =>
+      i === 0 || Svg ? [piece] : [{ node: <Text key={`${side}-sep${i}`} color={BARE.label}>{' · '}</Text>, separator: true }, piece],
     )
 
   // Each card at its piece: on the path's side from where the piece starts,
@@ -202,8 +201,8 @@ const stripAt = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean, place
   const stateLine = joined('state', state)
   const stateFromRight = [...stateLine].reverse()
   /** The spans of `line`'s pieces, from its own end of the strip. */
-  const spansFrom = (line: readonly RenderChildren[]): Span[] =>
-    spansOf(line.map(asDrawn), spacing, measure).map(([start, end]): Span => [pad + start, pad + end])
+  const spansFrom = (line: readonly Part[]): Span[] =>
+    spansOf(line.map(part => asDrawn(part.node)), spacing, measure).map(([start, end]): Span => [pad + start, pad + end])
   const whereSpans = spansFrom(whereLine)
   const stateSpans = spansFrom(stateFromRight)
   // Where each side ends, from its own end: the state's side, if it has
@@ -216,19 +215,14 @@ const stripAt = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean, place
   const shortOf = (otherEnd: number | undefined) => (otherEnd === undefined ? room : room - otherEnd - 1)
   /** The cards of `line`'s pieces, in its order, each placed by `at` from
    *  how far into the strip its piece's first column sits, among the spans
-   *  of `pieces`, the line's own less its separators. */
-  const cardsOf = (pieces: readonly RenderChildren[], line: readonly RenderChildren[], spans: readonly Span[], at: (from: number, spans: readonly Span[]) => CardPlace) => {
-    const own = new Set(pieces)
-    const pieceSpans = spans.filter((_, i) => own.has(line[i]))
-    return line.flatMap((piece, i) => {
-      const key = keyOf(piece)
-      const text = key === undefined ? undefined : explained.get(key)
-      return key === undefined || text === undefined ? [] : [hoverCard(key, text, at(spans[i]?.[0] ?? pad, pieceSpans))]
-    })
+   *  of the line's pieces, its separators left out. */
+  const cardsOf = (line: readonly Part[], spans: readonly Span[], at: (from: number, spans: readonly Span[]) => CardPlace) => {
+    const pieceSpans = spans.filter((_, i) => line[i]?.separator !== true)
+    return line.flatMap(({ card }, i) => (card === undefined ? [] : [hoverCard(card.key, card.text, at(spans[i]?.[0] ?? pad, pieceSpans))]))
   }
   const cards = [
-    ...cardsOf(where, whereLine, whereSpans, (left, pieces) => ({ left, room: shortOf(stateEnd), pieces })),
-    ...cardsOf(state, stateFromRight, stateSpans, (right, pieces) => ({ right, room: shortOf(whereEnd), pieces })).reverse(),
+    ...cardsOf(whereLine, whereSpans, (left, pieces) => ({ left, room: shortOf(stateEnd), pieces })),
+    ...cardsOf(stateFromRight, stateSpans, (right, pieces) => ({ right, room: shortOf(whereEnd), pieces })).reverse(),
   ]
 
   return (
@@ -241,11 +235,11 @@ const stripAt = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean, place
       {...placement}
     >
       <Box key="ws:where" flexDirection="row" columnGap={spacing} flexShrink={1} minWidth={0} overflow="hidden">
-        {whereLine}
+        {whereLine.map(part => part.node)}
       </Box>
       <Box key="ws:fill" flexGrow={1} minWidth={2} />
       <Box key="ws:state" flexDirection="row" columnGap={spacing} flexShrink={0}>
-        {stateLine}
+        {stateLine.map(part => part.node)}
       </Box>
       {cards}
     </Box>
