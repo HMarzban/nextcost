@@ -469,9 +469,9 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   if (missed) s.misses += 1
 
   // A rebuild of a cache that existed: its time ran out, it missed, a
-  // compaction rebuilt it, or the model changed. The first build
-  // is warming, unless the cache it rebuilt was already read as cold. With
-  // caching off on either side, nothing was rebuilt.
+  // compaction rebuilt it, or the model changed. The first build is warming,
+  // unless the cache it rebuilt was already read as cold. With caching off on
+  // either side, nothing was rebuilt.
   const rebuilt = !uncached && !s.notCaching && (coldBefore || (s.requests > 0 && (gap > TTL_MS[s.ttl] || missed || s.compaction !== undefined || switched)))
 
   s.requests += 1
@@ -608,9 +608,7 @@ export const newCache = (kept?: CacheState): CacheModel => {
       const sent = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
       const { bill: ledgered, told } = billAtStep(s.bill, after.ledgerBefore, after.ledger)
       s.bill = ledgered
-      if (isMain && sent > 0) {
-        measureCache(s, usage, sentAt, rounds, after.messages)
-      }
+      if (isMain && sent > 0) measureCache(s, usage, sentAt, rounds, after.messages)
       // Its writes last as long as its bucket's TTL: the main loop's as just
       // measured, a subagent's its own.
       const ttl = isMain ? effectiveTtl(s) : s.subagentTtl
