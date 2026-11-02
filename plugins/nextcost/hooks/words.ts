@@ -91,16 +91,21 @@ export const EMPTY = {
 /** A landing at or over 100% is none: the window fills before it resets. */
 const fillsBeforeReset = (projectedPct: number): boolean => projectedPct >= 100
 
+/** What a pace drawn from the window's average says it rests on, in a
+ *  row's room and spoken. */
+const AVERAGE_PACE = 'at avg pace'
+const AVERAGE_PACE_SPOKEN = "at the window's average pace"
+
 /** A window's pace in words: a measured fill first, then the average's
- *  landing. */
+ *  landing, said to be the average's. */
 export const paceText = (p: Readonly<{ etaMs: number | null; projectedPct: number | undefined }>): string =>
   p.etaMs !== null
     ? `full in ${fmtEta(p.etaMs)}`
     : p.projectedPct === undefined
       ? ''
       : fillsBeforeReset(p.projectedPct)
-        ? 'full before reset'
-        : `on pace for ~${fmtPercent(p.projectedPct)}`
+        ? `full ${AVERAGE_PACE}`
+        : `~${fmtPercent(p.projectedPct)} ${AVERAGE_PACE}`
 
 /** What a screen reader hears for a drawn reading: `<name> <value>, <state>,
  *  <more>`, in words. A caller passes "about" and "resets in", never ~ or ↻. */
@@ -203,7 +208,7 @@ export type LimitWords = Readonly<{
   valueText: string
   /** `82%!`: the value with its escalation mark, colour never the only signal. */
   valueMarked: string
-  /** A card's reset and pace, `resets 3h 00m · on pace for ~10%`; undefined
+  /** A card's reset and pace, `resets 3h 00m · ~10% at avg pace`; undefined
    *  without a reset to come. */
   resetAndPace: string | undefined
   /** When it resets, after `resets`: `16:40` or `Sat 13:30` once the offset
@@ -212,11 +217,11 @@ export type LimitWords = Readonly<{
   /** `5h 4%`, or once its window has passed, `5h reset`. */
   text: string
   say: Say
-  /** `on pace for ~10%`, `full in ~40m`, `full before reset`, or empty. */
+  /** `~10% at avg pace`, `full in ~40m`, `full at avg pace`, or empty. */
   pace: string
   /** When it fills before its reset, measured or at the average's pace, as
    *  the board says it: `full ~Mon` past today, `full ~14:20` today, or with
-   *  the offset unknown `full in ~13h`. */
+   *  the offset unknown `full in ~13h`; the average's, `at avg pace` after. */
   fillText: string | undefined
   /** Pulse's row tile's name: `5h`. */
   bandName: string
@@ -450,7 +455,7 @@ export const limitWords = (f: LimitFacts, frame: Frame): LimitWords => {
   const projected = f.projectedPct
   const fills = projected !== undefined && fillsBeforeReset(projected)
   const lands = projected !== undefined && !fills
-  const landing = lands ? `about ${Math.round(projected)} percent at its reset` : undefined
+  const landing = lands ? `about ${Math.round(projected)} percent at its reset, ${AVERAGE_PACE_SPOKEN}` : undefined
   const fullIn = f.etaMs !== null ? fmtEta(f.etaMs) : undefined
   const valueText = f.passed ? 'reset' : f.value
   const say: Say = [[`${f.name} `, 'label'], [valueText, 'value']]
@@ -477,7 +482,8 @@ export const limitWords = (f: LimitFacts, frame: Frame): LimitWords => {
     text: joined(say),
     say,
     pace,
-    fillText: fillAt === undefined ? undefined : `full ${fillAt}`,
+    // The average's fill says whose it is; a measured one is the pace's own.
+    fillText: fillAt === undefined ? undefined : `full ${fillAt}${f.etaMs === null ? ` ${AVERAGE_PACE}` : ''}`,
     bandName: f.name,
     line: amber?.long ?? joined(say),
     fullIn,
@@ -492,7 +498,7 @@ export const limitWords = (f: LimitFacts, frame: Frame): LimitWords => {
       f.etaMs !== null
         ? `full in ${fmtEtaSpoken(f.etaMs)}`
         : fills
-          ? 'full before its reset'
+          ? `full before its reset, ${AVERAGE_PACE_SPOKEN}`
           : landing,
     ),
   }
@@ -582,7 +588,7 @@ export type WeekWords = Readonly<{
   /** 'weekly limit by day: Sunday 66%, Monday about 34% and fills it, Tuesday to Saturday none left' */
   daysAlt: string
   /** The 5h window whole, start to reset: '5h window from start to reset, 26%
-   *  used, on pace for about 33%'; no pace where none is known, '' with no 5h window. */
+   *  used, about 33% at the window's average pace'; no pace where none is known, '' with no 5h window. */
   windowAlt: string
 }>
 
@@ -609,5 +615,5 @@ export const weekWords = (
   windowAlt:
     five === undefined || five.passed
       ? ''
-      : `5h window from start to reset, ${five.valueText} used${five.projectedPct === undefined ? '' : `, on pace for about ${fmtPercent(five.projectedPct)}`}`,
+      : `5h window from start to reset, ${five.valueText} used${five.projectedPct === undefined ? '' : `, about ${fmtPercent(five.projectedPct)} ${AVERAGE_PACE_SPOKEN}`}`,
 })

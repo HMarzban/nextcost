@@ -119,7 +119,7 @@ Then come four cards with every fact labelled:
 | Cache | Time left on a bar, what a re-warm would cost if it went cold, who restarted it when you didn't, what the cache has saved, the hit rate, how long it lasts idle, unexpected rebuilds |
 | Spend | The session total, a bar of the token split with its legend (input, output, cache reads), your last message |
 | Context | How full toward auto-compaction, tokens in context, where compaction runs, room left, the model window |
-| Limits | The window closest to its limit, led by its reset and pace where the row doesn't say them, `resets Sat 13:30 · full before reset` (a countdown in departures); then each window (5h, 7d, a gateway's spend limit) with its bar and value, and each of the others named on a line of its own with its reset and pace in words: `5h resets 3h 00m · on pace for ~10%` |
+| Limits | The window closest to its limit, led by its reset and pace where the row doesn't say them, `resets Sat 13:30 · full at avg pace` (a countdown in departures); then each window (5h, 7d, a gateway's spend limit) with its bar and value, and each of the others named on a line of its own with its reset and pace in words: `5h resets 3h 00m · ~10% at avg pace` |
 
 The cards sit four across when they fit, else two by two, each line sharing
 its width equally; on the desktop each has a visible border. A card's title
@@ -384,7 +384,15 @@ as a reset. Pulse's tile says `! 5h full in ~40m`, `! 5h full ~40m`, and at
 its narrowest the value, `! 5h 85%`. Its hover says it is a projection at the current pace: a burst
 of work, such as a workflow fanning out, fills the window sooner. The limit is shared across all your Claude use, so the pace
 includes your other sessions and devices, and `/clear` keeps it. The
-projection hides once its newest reading is more than 15 minutes old.
+projection hides once its newest reading is more than 15 minutes old, or
+once the time it gave has passed.
+
+The cards and the week also say where the window's average pace lands it,
+`~10% at avg pace`, or `full at avg pace` when that is 100% or more. That is
+the whole window's average, not your recent pace, so it says so. The week
+says it from a day in, since its first hours are no guide; the 5-hour limit
+says it only for a landing short of the limit, never that it fills, which
+only its measured pace claims.
 
 ## Toasts
 

@@ -221,7 +221,7 @@ const SVG_BARRED = /<(linearGradient|radialGradient|pattern|clipPath)\b|\bid=/
  *  left, or a landing without its figure. */
 const MISSTATED = new RegExp(`\\b(hit rate|${SPLIT_LABELS.join('|')}) \\d+% (used|left)|(?<!\\d percent) at its reset`)
 /** A price or a fill time drawn without its `~` (the band-layouts spec §2.4). */
-const UNMARKED = /re-warm \$|next message \$|full (in |at )?\d|on pace for \d/i
+const UNMARKED = /re-warm \$|next message \$|full (in |at )?\d|(?<![~\d])\d+% at avg pace/i
 
 /** Whether a Text leaves its cut to the surface, which ends it with `…`:
  *  East-Asian-Ambiguous, so the ascii tier never may (the band-layouts spec §3.2). */
@@ -357,7 +357,7 @@ export const invariantErrors = (tree: Node, ctx: InvariantContext): string[] => 
   for (const reason of amber)
     if ((ctx.expanded || !OPEN_ONLY.has(reason)) && !AMBER_WORDS[reason].test(text)) fail('amber', `no words for ${reason}`)
   if (UNMARKED.test(text)) fail('estimate', 'an estimate without ~')
-  // A landing of 100% or more says `full before reset` (the band-layouts spec §2.1).
+  // A landing of 100% or more says `full`, at the average's pace (the band-layouts spec §2.1).
   if (/~\d{3,}%/.test(text)) fail('projection', 'a landing of 100% or more')
   // No scenario holds an empty context, so 0% is only ever an unreported one.
   if (/\b(context|ctx) 0%/i.test(text)) fail('unknown', 'context 0% where it is unknown')

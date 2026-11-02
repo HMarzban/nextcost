@@ -38,20 +38,26 @@ import type { CacheWords, ContextWords, HistoryWords, LimitWords, SpendWords, We
 const windowGone = (at: number | undefined, windowMs: number | undefined, now: number): number | undefined =>
   windowMs === undefined || at === undefined || at <= now ? undefined : clamp01(1 - (at - now) / windowMs)
 
-/** The share of a window gone before the average's landing is said: before
- *  it, the pace is too young to read. */
+/** The share of the 5-hour window gone before the average's landing is said:
+ *  before it, the pace is too young to read. */
 const PACE_MIN_GONE = 0.05
+/** The week's: a day of it. Use comes in bursts, workdays and weekends, so
+ *  an average over the first hours of a week says little of how it ends. */
+const WEEK_PACE_MIN_GONE = 1 / 7
 
 /** A window still to reset, from its `base`: where the average lands it,
  *  when it fills, its tone and the time to its reset. `etaMs` is a measured
  *  fill, set only for one that comes before the reset. */
 const paceOf = (base: LimitBase, windowMs: number | undefined, etaMs: number | null, now: number): LiveLimit => {
   const { percentUsed, gone, resetsAt: at } = base
-  // A measured fill lands it at 100, so the words and the amber agree; else
-  // the average's landing, once enough of the window has gone and any of it
+  // The average's landing, once enough of the window has gone and any of it
   // is used: with none, the window may not have begun.
-  const projectedPct =
-    etaMs !== null ? 100 : gone === undefined || gone < PACE_MIN_GONE || percentUsed <= 0 ? undefined : percentUsed / gone
+  const minGone = windowMs === SEVEN_DAY_MS ? WEEK_PACE_MIN_GONE : PACE_MIN_GONE
+  const average = gone === undefined || gone < minGone || percentUsed <= 0 ? undefined : percentUsed / gone
+  // A measured fill lands it at 100, so the words and the amber agree. The
+  // 5h's fill is claimed only by its measured pace: the window's average says
+  // nothing of an hour gone idle or flat, so it stands only as a landing short.
+  const projectedPct = etaMs !== null ? 100 : average === undefined || (base.key === '5h' && average >= 100) ? undefined : average
   // At the average's pace, what is left takes the time gone so far, scaled by what is left over what is used.
   const averageFill =
     projectedPct === undefined || projectedPct < 100 || gone === undefined || windowMs === undefined
