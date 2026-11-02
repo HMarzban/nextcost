@@ -43,6 +43,26 @@ test('reloaded ten minutes after a reply, the band counts down from that reply',
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache 50m/)
 })
 
+test('a stored reply dated after now is unknown: the transcript says when it was, and the next write drops the entry', async ($, on) => {
+  const clock = setup(on, { env: ENV, store: { sessions: { s1: { lastAt: 1e15 }, other: { lastAt: 6 * HOUR } } }, now: 10 * MIN })
+  engine.transcript = transcriptOf(5 * MIN)
+  await $.session.start(START)
+  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache 55m/)
+  await $.turn.start(TURN_START)
+  await respond($, BUILD_155K)
+  await $.turn.complete(TURN_DONE)
+  await clock.settle()
+  const kept = engine.store.sessions as Record<string, { lastAt: number }>
+  expect(kept.other).toBeUndefined()
+  expect(kept.s1?.lastAt).toBeLessThanOrEqual(10 * MIN)
+})
+
+test('a stored reply dated after now, with no transcript to say better, draws no countdown', async ($, on) => {
+  setup(on, { env: ENV, store: { sessions: { s1: { lastAt: 1e15 } } }, now: 10 * MIN })
+  await $.session.start(START)
+  expect(shown(pillOf(await mounted($), 'cache'))).not.toMatch(/\d{2,}h|cache \d/)
+})
+
 test('reopened two days later, the cache is cold and the next message has a price', async ($, on) => {
   setup(on, { env: ENV, store: { sessions: { s1: { lastAt: 0 } }, rates: { [MODEL]: RATE } }, now: 48 * HOUR })
   await $.session.start(START)

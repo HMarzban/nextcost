@@ -22,6 +22,9 @@ import { HOUR, costRecord, jsonl, rateNear, replyLine } from './helpers'
 
 // ── the store, as untrusted data ───────────────────────────────────────
 
+/** A moment after every time these tests name. */
+const NOW = 1_000_000
+
 test('remembered sessions keep only entries with a finite reply time', () => {
   const stored = {
     good: { lastAt: 5 },
@@ -34,11 +37,24 @@ test('remembered sessions keep only entries with a finite reply time', () => {
     list: [],
     bare: 7,
   }
-  expect(asSessions(stored)).toEqual({ good: { lastAt: 5 }, extra: { lastAt: 1, note: 'kept as stored' } })
+  expect(asSessions(stored, NOW)).toEqual({ good: { lastAt: 5 }, extra: { lastAt: 1, note: 'kept as stored' } })
 })
 
 test('remembered sessions that are not a record are none', () => {
-  for (const stored of [undefined, null, 'sessions', 3, [{ lastAt: 1 }]]) expect(asSessions(stored)).toEqual({})
+  for (const stored of [undefined, null, 'sessions', 3, [{ lastAt: 1 }]]) expect(asSessions(stored, 10)).toEqual({})
+})
+
+test('remembered sessions dated after now are dropped, as a clock that ran ahead wrote them', () => {
+  const stored = { past: { lastAt: 5 }, now: { lastAt: 10 }, ahead: { lastAt: 11 }, huge: { lastAt: 1e15 } }
+  expect(asSessions(stored, 10)).toEqual({ past: { lastAt: 5 }, now: { lastAt: 10 } })
+})
+
+test('a reply written back drops the sessions dated after now, so a future entry never takes a place', () => {
+  const stored = { ...fifty, ahead: { lastAt: 1e15 } }
+  const kept = rememberReply(asSessions(stored, 1_000), 'new', 100)
+  expect(kept.ahead).toBeUndefined()
+  expect(kept.s0).toBeUndefined()
+  expect(kept.new).toEqual({ lastAt: 100 })
 })
 
 test('remembered rates keep only positive finite numbers', () => {
@@ -75,7 +91,7 @@ test("a session's newer reply replaces its older one", () => {
 
 test('a stored record past the cap is written back as its newest sessions, malformed entries dropped', () => {
   const stored = { ...Object.fromEntries(Array.from({ length: 500 }, (_, i) => [`s${i}`, { lastAt: i }])), infinite: { lastAt: Infinity }, text: { lastAt: '999' } }
-  const kept = rememberReply(asSessions(stored), 'new', 1_000)
+  const kept = rememberReply(asSessions(stored, NOW), 'new', 1_000)
   expect(Object.keys(kept)).toHaveLength(MAX_SESSIONS)
   expect([kept.new, kept.s451, kept.s450, kept.infinite, kept.text]).toEqual([{ lastAt: 1_000 }, { lastAt: 451 }, undefined, undefined, undefined])
 })
@@ -144,41 +160,53 @@ test('a sample needs both windows and their resets', () => {
 const OPUS_RATE = 0.00001
 
 test('the store recalls a session\'s last reply and the rate under the model /model names, its window aside', () => {
-  const stored = fromStore({ sessions: { s1: { lastAt: 5_000 } }, rates: { 'claude-opus-5-5': OPUS_RATE } }, 's1', 'claude-opus-5-5[1m]')
+  const stored = fromStore({ sessions: { s1: { lastAt: 5_000 } }, rates: { 'claude-opus-5-5': OPUS_RATE } }, 's1', 'claude-opus-5-5[1m]', NOW)
   expect(needsTranscript(stored)).toBe(false)
-  expect(recallOf(stored, undefined)).toEqual({ lastAt: 5_000, rate: OPUS_RATE, billed: undefined })
+  expect(recallOf(stored, undefined, NOW)).toEqual({ lastAt: 5_000, rate: OPUS_RATE, billed: undefined })
 })
 
 test("a session's record names the model its reply was billed under, and the rate kept under that name", () => {
-  const stored = fromStore({ sessions: { s1: { lastAt: 5_000, billed: 'claude-haiku-5-5' } }, rates: { 'claude-haiku-5-5': OPUS_RATE, haiku: 1 } }, 's1', 'haiku')
+  const stored = fromStore({ sessions: { s1: { lastAt: 5_000, billed: 'claude-haiku-5-5' } }, rates: { 'claude-haiku-5-5': OPUS_RATE, haiku: 1 } }, 's1', 'haiku', NOW)
   expect(needsTranscript(stored)).toBe(false)
-  expect(recallOf(stored, undefined)).toEqual({ lastAt: 5_000, rate: OPUS_RATE, billed: 'claude-haiku-5-5' })
+  expect(recallOf(stored, undefined, NOW)).toEqual({ lastAt: 5_000, rate: OPUS_RATE, billed: 'claude-haiku-5-5' })
 })
 
 test("a record's billed model that isn't a name is unknown, so the transcript says it", () => {
   for (const billed of [42, '', null]) {
-    const stored = fromStore({ sessions: { s1: { lastAt: 5_000, billed } }, rates: {} }, 's1', 'opus')
+    const stored = fromStore({ sessions: { s1: { lastAt: 5_000, billed } }, rates: {} }, 's1', 'opus', NOW)
     expect(needsTranscript(stored)).toBe(true)
-    expect(recallOf(stored, jsonl(replyLine(7_000), costRecord('claude-opus-5-5'))).billed).toBe('claude-opus-5-5')
+    expect(recallOf(stored, jsonl(replyLine(7_000), costRecord('claude-opus-5-5')), NOW).billed).toBe('claude-opus-5-5')
   }
 })
 
 test('what the store leaves unknown, the transcript gives: its last reply, and the rate stored for the model it was billed under', () => {
-  const stored = fromStore({ sessions: {}, rates: { 'claude-opus-5-5': OPUS_RATE } }, 's1', 'opus')
+  const stored = fromStore({ sessions: {}, rates: { 'claude-opus-5-5': OPUS_RATE } }, 's1', 'opus', NOW)
   expect(needsTranscript(stored)).toBe(true)
-  expect(recallOf(stored, jsonl(replyLine(7_000)))).toEqual({ lastAt: 7_000, rate: OPUS_RATE, billed: 'claude-opus-5-5' })
+  expect(recallOf(stored, jsonl(replyLine(7_000)), NOW)).toEqual({ lastAt: 7_000, rate: OPUS_RATE, billed: 'claude-opus-5-5' })
 })
 
 test("with no rate stored for either, the rate is solved from the transcript's cost record", () => {
-  const stored = fromStore({ sessions: { s1: { lastAt: 5_000 } }, rates: 'not rates' }, 's1', 'claude-opus-5-5')
-  const recalled = recallOf(stored, jsonl(replyLine(7_000), costRecord('claude-opus-5-5')))
+  const stored = fromStore({ sessions: { s1: { lastAt: 5_000 } }, rates: 'not rates' }, 's1', 'claude-opus-5-5', NOW)
+  const recalled = recallOf(stored, jsonl(replyLine(7_000), costRecord('claude-opus-5-5')), NOW)
   // The store's time stands over the transcript's.
   expect(recalled.lastAt).toBe(5_000)
   expect(rateNear(recalled.rate, 20 / 3_000_000)).toBe(true)
 })
 
+test("a transcript's last reply dated after now is unknown, not the time recalled", () => {
+  const stored = fromStore({ sessions: {}, rates: {} }, 's1', 'opus', 6_000)
+  expect(recallOf(stored, jsonl(replyLine(7_000)), 6_000).lastAt).toBeUndefined()
+  expect(recallOf(stored, jsonl(replyLine(6_000)), 6_000).lastAt).toBe(6_000)
+})
+
+test('a stored time after now is read off the transcript instead', () => {
+  const stored = fromStore({ sessions: { s1: { lastAt: 1e15 } }, rates: {} }, 's1', 'opus', 6_000)
+  expect(needsTranscript(stored)).toBe(true)
+  expect(recallOf(stored, jsonl(replyLine(4_000)), 6_000).lastAt).toBe(4_000)
+})
+
 test('no transcript to read leaves unknown what the store does', () => {
-  expect(recallOf(fromStore({ sessions: undefined, rates: undefined }, 's1', 'opus'), undefined)).toEqual({ lastAt: undefined, rate: null, billed: undefined })
+  expect(recallOf(fromStore({ sessions: undefined, rates: undefined }, 's1', 'opus', NOW), undefined, NOW)).toEqual({ lastAt: undefined, rate: null, billed: undefined })
 })
 
 test('a rate is kept beside the others stored, and over its own', () => {

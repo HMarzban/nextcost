@@ -233,8 +233,9 @@ const recallLastReply = async (
     const model = await $.session.model()
     const rates = await $.store.get(RATES_KEY)
     const sessions = await $.store.get(SESSIONS_KEY)
-    const stored = fromStore({ sessions, rates }, sessionId, model)
-    return recallOf(stored, needsTranscript(stored) ? await readEnd() : undefined)
+    const now = await $.clock.now()
+    const stored = fromStore({ sessions, rates }, sessionId, model, now)
+    return recallOf(stored, needsTranscript(stored) ? await readEnd() : undefined, now)
   } catch {
     return undefined // nothing to recall
   }
@@ -300,8 +301,10 @@ const readResumed = async ($: EngineInterface, mine: Resume): Promise<void> => {
  *  judges it, or as the band recalls it where the engine doesn't say; then,
  *  off the hook, what its transcript shows. */
 const resumeConversation = async ($: EngineInterface, e: ClassicEventOf['classic.SessionStart']): Promise<void> => {
-  const idleSec = e.seconds_since_last_response
   const now = await $.clock.now()
+  // An idle time below zero isn't one: the engine said nothing, and the last reply is recalled.
+  const said = e.seconds_since_last_response
+  const idleSec = said !== undefined && Number.isFinite(said) && said >= 0 ? said : undefined
   const resume: Resume = {
     // The engine names the conversation it resumes; on a /resume, the
     // process switches to it only after this hook.
@@ -328,7 +331,8 @@ const resumeConversation = async ($: EngineInterface, e: ClassicEventOf['classic
 const rememberTurn = async ($: EngineInterface, cache: Remembered): Promise<void> => {
   try {
     const id = await $.session.id()
-    await $.store.set(SESSIONS_KEY, rememberReply(asSessions(await $.store.get(SESSIONS_KEY)), id, cache.lastAt, cache.billed))
+    // Entries dated after now are dropped here, so one never stays in the store.
+    await $.store.set(SESSIONS_KEY, rememberReply(asSessions(await $.store.get(SESSIONS_KEY), await $.clock.now()), id, cache.lastAt, cache.billed))
     const rate = cache.rate
     if (rate !== null) await $.store.set(RATES_KEY, rememberRate(await $.store.get(RATES_KEY), cache.billed ?? cache.priceModel ?? (await $.session.model()), rate))
   } catch {
