@@ -108,17 +108,15 @@ export type CacheView = Readonly<{
   /** The conversation is known to start here; else, before its first
    *  reply, the band has not measured the cache yet. */
   fresh: boolean
-  /** Claude Code compacted the conversation while it sat idle: the cache
-   *  is gone, and the next message writes the summary. */
-  compacted: boolean
+  /** What stands in the way of the countdown, first to speak first. Compacted:
+   *  the cache is gone, and the next message writes the summary. Uncached: the
+   *  last response had a prompt too large for the minimum and read and wrote no
+   *  cache, so nothing counts down or re-warms. Switched: /model names another
+   *  model than the last turn ran under; each has its own cache, so the next
+   *  message rebuilds. */
+  interrupted: 'compacted' | 'uncached' | 'switched' | undefined
   /** It was compacted while idle, rather than by /compact or in a turn. */
   compactedIdle: boolean
-  /** The last response had a prompt too large for the minimum and read and
-   *  wrote no cache: nothing is cached, so nothing counts down or re-warms. */
-  notCaching: boolean
-  /** /model names another model than the last turn ran under: each has its
-   *  own cache, so the next message rebuilds. */
-  modelChanged: boolean
   /** Claude Code may compact this conversation when it sits idle on the
    *  hour's cache: where it does that, idle compaction on, and the context
    *  past its threshold. */
@@ -375,10 +373,8 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
     savedUsd: tokens.read <= 0 ? null : savedUsdOf(s.bill, pricing, sessionCost, rate, s.prior?.tokens.read ?? 0),
     readShare: share,
     fresh: s.knownFresh,
-    compacted: s.compaction !== undefined,
+    interrupted: s.compaction !== undefined ? 'compacted' : s.notCaching ? 'uncached' : modelChangedTo(s, at.modelNow, now) ? 'switched' : undefined,
     compactedIdle: s.compaction?.idle ?? false,
-    notCaching: s.notCaching,
-    modelChanged: modelChangedTo(s, at.modelNow, now),
     idleCompacts: idleCompactsOn(at.surface) && s.idleCompactFrom !== undefined && !autoCompactOff && contextTokens >= s.idleCompactFrom,
     recovered: s.prior !== undefined,
     tokens: { sent: tokens.uncached + tokens.written, back: tokens.output, cached: tokens.read },

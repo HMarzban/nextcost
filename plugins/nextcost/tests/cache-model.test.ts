@@ -528,7 +528,7 @@ test('model changed compares with what the last request went on: a turn that sen
   c.turnStarted({ priceModel: 'opus', ledger: 0 })
   c.responded(OPUS_BUILD, 0, true)
   c.turnEnded(0)
-  const changed = (modelNow: string) => c.view({ now: MIN, ledger: 0, contextTokens: 100_000, autoCompactOff: false, modelNow }).cache.modelChanged
+  const changed = (modelNow: string) => c.view({ now: MIN, ledger: 0, contextTokens: 100_000, autoCompactOff: false, modelNow }).cache.interrupted === 'switched'
   expect(changed('opus')).toBe(false)
   expect(changed('haiku')).toBe(true)
   // A turn on Haiku that never reached the API: the cache is still Opus's.

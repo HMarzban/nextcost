@@ -44,22 +44,11 @@ export type CacheFacts = CacheView &
     idleCompactSoon: boolean
   }>
 
-const moodOf = (c: CacheView): CacheMood =>
-  c.compacted
-    ? 'compacted'
-    : c.requests === 0 && !c.recalled
-      ? c.fresh
-        ? 'warming'
-        : 'unmeasured'
-      : c.notCaching
-        ? 'uncached'
-        : c.modelChanged
-          ? 'switched'
-          : c.leftMs <= 0
-            ? 'cold'
-            : c.leftMs <= SOON_MS
-              ? 'expiring'
-              : 'warm'
+const moodOf = (c: CacheView): CacheMood => {
+  if (c.interrupted !== undefined) return c.interrupted
+  if (c.requests === 0 && !c.recalled) return c.fresh ? 'warming' : 'unmeasured'
+  return c.leftMs <= 0 ? 'cold' : c.leftMs <= SOON_MS ? 'expiring' : 'warm'
+}
 
 /** What the cache's view means while Claude is working, or isn't. */
 export const cacheFactsOf = (c: CacheView, isWorking: boolean): CacheFacts => {

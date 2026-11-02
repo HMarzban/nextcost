@@ -106,7 +106,7 @@ test('the hovers say the price is the cache rewrite, and what comes on top', () 
   const hover = (cache: BandSnapshot['cache']) => readingsOf(snapOf({ cache })).chips.cache.hover
   expect(hover(cacheWith({ leftMs: 0 }))).toBe('Cold: ~$1.66 rewrites 155k tokens to the cache, plus your reply')
   expect(hover({ ...cacheWith({ leftMs: 0 }), reWarmUsd: null })).toBe('Cold: next message rewrites 155k tokens to the cache, plus your reply')
-  expect(hover(cacheWith({ leftMs: 0, compacted: true, compactedIdle: true }))).toBe('Compacted while idle: ~$1.66 rewrites the 155k summary, plus your reply')
+  expect(hover(cacheWith({ leftMs: 0, interrupted: 'compacted', compactedIdle: true }))).toBe('Compacted while idle: ~$1.66 rewrites the 155k summary, plus your reply')
   expect(hover(cacheWith({ leftMs: 30_000 }))).toBe('0:30 left; if cold, ~$1.66 rewrites the cache, plus your reply')
   // A warm pill shows no price, so its hover names none.
   expect(hover(cacheWith({}))).not.toMatch(/rewrite|extra/)
@@ -123,7 +123,7 @@ test('every hover is one line a terminal row keeps whole: the price and a guess 
     ['idle-compactable, assumed', { cache: { ...GUESSED, idleCompacts: true, leftMs: 50 * MIN } }],
     ['expiring, assumed', { cache: { ...GUESSED, leftMs: 30_000 } }],
     ['cold', { cache: cacheWith({ leftMs: 0 }) }],
-    ['compacted', { cache: cacheWith({ leftMs: 0, compacted: true }) }],
+    ['compacted', { cache: cacheWith({ leftMs: 0, interrupted: 'compacted' }) }],
     ['near compaction', { context: NEAR_COMPACTION }],
     ['under way', { cache: cacheWith({ fresh: false, recovered: false }) }],
   ]
@@ -241,7 +241,7 @@ test('the ASCII tier never draws a bare span after a bar, nor a bare token count
 })
 
 test('the short cache pill keeps the word cache in the ASCII tier, where the clock glyph was its only mark', () => {
-  for (const cache of [LAST_MINUTE_CACHE, cacheWith({ leftMs: 0 }), cacheWith({ leftMs: 0, compacted: true })]) {
+  for (const cache of [LAST_MINUTE_CACHE, cacheWith({ leftMs: 0 }), cacheWith({ leftMs: 0, interrupted: 'compacted' })]) {
     const snap = snapOf({ glyphs: 'ascii', cache })
     const pill = cachePill(makeKit(fakeEl, snap), readingsOf(snap), true)
     expect(shown({ children: pill.body })).toMatch(/cache/)

@@ -39,8 +39,8 @@ export const SNAP_PARTS: SnapshotParts = {
   band: { palette: DARK, layout: 'chips', glyphs: 'unicode', samples: [], workspace: undefined, compactAt: 190_000, autoCompactOff: false },
   cache: {
     requests: 1, leftMs: 52 * MIN, coldAt: null, ttl: '1h', ttlPinned: true, window: 155_000, hitRatio: 0.96, misses: 0, reWarmUsd: 1.66,
-    savedUsd: 11.4, readShare: 0.05, fresh: true, compacted: false, idleCompacts: false, recalled: false, idleMs: null, recovered: false, tokens: { sent: 18_000, back: 9_000, cached: 198_000 },
-    wake: undefined, notCaching: false, modelChanged: false, compactedIdle: false,
+    savedUsd: 11.4, readShare: 0.05, fresh: true, idleCompacts: false, recalled: false, idleMs: null, recovered: false, tokens: { sent: 18_000, back: 9_000, cached: 198_000 },
+    wake: undefined, interrupted: undefined, compactedIdle: false,
   },
   costUsd: 3.19,
   history: NO_HISTORY,

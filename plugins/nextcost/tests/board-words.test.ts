@@ -45,14 +45,14 @@ test('working boards; unmeasured and warming check in; recalled carries ~', () =
 test('a cache gone cold or compacted mid-turn says so, as chips and pulse do', () => {
   const cold = row({ isWorking: true, now: HOUR, cache: cacheAt({ requests: 1, leftMs: 0, coldAt: 10 * MIN }) }, 'cache')
   expect(cold?.status).toBe('DEPARTED')
-  const compacted = row({ isWorking: true, now: HOUR, cache: cacheAt({ requests: 1, leftMs: 0, coldAt: 10 * MIN, compacted: true }) }, 'cache')
+  const compacted = row({ isWorking: true, now: HOUR, cache: cacheAt({ requests: 1, leftMs: 0, coldAt: 10 * MIN, interrupted: 'compacted' }) }, 'cache')
   expect(compacted?.status).toBe('COMPACTED')
 })
 test('not caching and a pending model switch have their own lines, working or not', () => {
   for (const isWorking of [false, true]) {
-    const off = row({ isWorking, cache: cacheAt({ requests: 1, leftMs: 0, notCaching: true }) }, 'cache')
+    const off = row({ isWorking, cache: cacheAt({ requests: 1, leftMs: 0, interrupted: 'uncached' }) }, 'cache')
     expect([off?.status, off?.time, off?.remarks]).toEqual(['NOT CACHING', undefined, ''])
-    const moved = row({ isWorking, cache: cacheAt({ requests: 1, leftMs: 38 * MIN, modelChanged: true }) }, 'cache')
+    const moved = row({ isWorking, cache: cacheAt({ requests: 1, leftMs: 38 * MIN, interrupted: 'switched' }) }, 'cache')
     expect([moved?.status, moved?.time]).toEqual(['MODEL CHANGED', undefined])
     expect(moved?.remarks).toBe('NEXT 155K TOKENS')
   }
