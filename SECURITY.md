@@ -80,10 +80,17 @@ it:
   solved for each model, the layout you chose, and a week of your 5-hour
   and weekly limit readings (their percentages and reset times, at most one
   per 15 minutes).
-- **Never** writes files, calls a model, or sends anything anywhere.
+- **Never** writes a file of its own, calls a model, or sends anything
+  anywhere. The store above is kept through Claude Code, which holds it for
+  the plugin.
 
-`claude plugin validate plugins/nextcost` lists every read and
-write the module makes, so you can check this yourself.
+`claude plugin validate plugins/nextcost` lists the engine calls the module
+makes, each with the functions that make them (`$.process.run`, `$.fs.read`,
+`$.store.set`, `$.state.set` and the rest), the environment variables it
+reads, and the state keys it reads and writes. It shows no file-write, network
+or environment-write call. It doesn't list which commands run, which files
+are read, the keys it stores or the settings it keeps: this file does, so
+check the two together.
 
 ## Supported versions
 

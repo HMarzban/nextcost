@@ -23,10 +23,23 @@ claude plugin install nextcost --marketplace HMarzban/nextcost
 It loads in your next session, or run `/reload-plugins` in an open one.
 
 The band needs Claude Code with mods (function-hooks plugins). CI tests
-every change on 2.1.299 and the latest release (2.1.316 at 0.21.0). The
-one-line form needs Claude Code 2.1.292 or later; on an older one, add the
-marketplace first (`claude plugin marketplace add HMarzban/nextcost`),
-then `claude plugin install nextcost@hossein-mods`.
+every change on 2.1.299 and the latest release (2.1.316 at 0.21.0), so
+2.1.299 is the oldest version tested. The one-line form needs Claude Code
+2.1.292 or later; on an older one, add the marketplace first
+(`claude plugin marketplace add HMarzban/nextcost`), then
+`claude plugin install nextcost@hossein-mods`.
+
+Older than 2.1.299 isn't tested. Known differences there: before 2.1.290,
+Claude Code doesn't tell a mod how many tool calls Anthropic ran, so for a
+session that uses the advisor the band's re-warm quotes run about 58% high
+(replayed on real transcripts), which makes 2.1.290 the floor for an accurate
+price; idle compaction is also a 2.1.290 feature, so older versions never
+compact an idle session; before 2.1.275, `/plugin install` inside a session
+isn't there.
+
+The desktop app bundles its own Claude Code, so a surface's version can differ
+from the terminal's (2.1.309 against 2.1.316 on one machine here). What counts
+is the version the surface you use runs.
 
 It draws in the terminal and the desktop app's Code tab, which are the
 surfaces with a band above the prompt. WSL sessions don't load plugins. The
@@ -529,7 +542,8 @@ machine, so there it may still say it could.
 ## What it runs, reads and sends
 
 **It sends nothing.** nextcost makes no network calls, never calls a model,
-and writes no files. The only web address in its code is the SVG namespace,
+and writes no files of its own; the small store it keeps is held by Claude
+Code on its behalf. The only web address in its code is the SVG namespace,
 `http://www.w3.org/2000/svg`, which every SVG icon it draws declares; nothing
 is fetched from it. The one way out a scanner can see is that it starts
 programs (`$.process.run`), since a program could reach anywhere. The five
@@ -601,7 +615,7 @@ carry on from.
 ## Developing
 
 See [CONTRIBUTING.md](https://github.com/HMarzban/nextcost/blob/main/CONTRIBUTING.md)
-for the development loop, the gates (over 1,100 tests), the module map and
+for the development loop, the gates (over 1,200 tests), the module map and
 the rules the code follows.
 
 ## Help make it better

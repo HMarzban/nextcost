@@ -3,6 +3,11 @@
 import { test } from 'claude-code/testing'
 import { LONG, MIN, START, mountBand, resp, respond, setup, usage, FRESH, HOUR_1 } from './helpers'
 
+/** What the reply costs as Claude Code's ledger prices it on Opus 5.5: $4 per
+ *  million input tokens, a write on the hour's cache (pinned below) at 2×,
+ *  output at 5×. The band solves its rate from this bill. */
+const priced = (input: number, write: number, output: number) => (4 / 1e6) * (input + 2 * write + 5 * output)
+
 test('capture: terminal frames', LONG, async ($, on) => {
   const clock = setup(on, { usage: FRESH, env: { ...HOUR_1, CLAUDE_CODE_PROMPT_CACHE_TTL: '1h' } })
   await $.session.start(START)
@@ -10,7 +15,7 @@ test('capture: terminal frames', LONG, async ($, on) => {
   await respond($, resp(2_000, 0, 298_000, 3_000))
   usage.current = {
     ...usage.current,
-    cost: { usd: 1.56 },
+    cost: { usd: priced(2_000, 298_000, 3_000) },
     context: { tokens: 303_000, window: 1_000_000, percent: 30 },
     rateLimits: [
       { kind: 'five_hour', percentUsed: 42, resetsAt: new Date(2 * 60 * MIN + 61 * MIN).toISOString() },
