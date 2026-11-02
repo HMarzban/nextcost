@@ -285,19 +285,3 @@ test('no read yet: a partial read beyond the shared system prompt infers nothing
 test('no read yet: a /rewind infers nothing, even reading near nothing', () => {
   expect(unread(0, 20)).toBe('1h')
 })
-
-// ---- a tool loop's rounds -----------------------------------------------------
-
-/** An advisor reply after a 100k cache. Claude Code hands a mod a step's four
- *  token counts alone, never `iterations`, so its rounds are a guess. */
-const advisor = (read: number) => {
-  const c = newCache()
-  c.configured({ ttl: '1h', idleCompactFrom: undefined })
-  c.responded({ ...resp(100, 0, 100_000, 100), ...OPUS }, 0, true)
-  c.responded({ ...resp(100, read, 500, 100), ...OPUS }, MIN, true, { serverTools: 1 })
-  return c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache
-}
-
-test('a read a server tool may have halved counts no miss', () => {
-  expect(advisor(100_000).misses).toBe(0)
-})

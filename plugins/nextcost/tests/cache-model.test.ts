@@ -290,6 +290,20 @@ test("an advisor step's summed usage counts its prefix once", () => {
   expect(c.view({ now: 2 * MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.misses).toBe(0)
 })
 
+/** An advisor reply after a 100k cache. Claude Code hands a mod a step's four
+ *  token counts alone, never `iterations`, so its rounds are a guess. */
+const advisor = (read: number) => {
+  const c = newCache()
+  c.configured({ ttl: '1h', idleCompactFrom: undefined })
+  c.responded({ ...resp(100, 0, 100_000, 100), model: 'claude-opus-5-5' }, 0, true)
+  c.responded({ ...resp(100, read, 500, 100), model: 'claude-opus-5-5' }, MIN, true, { serverTools: 1 })
+  return c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache
+}
+
+test('a read a server tool may have halved counts no miss', () => {
+  expect(advisor(100_000).misses).toBe(0)
+})
+
 test("an advisor step's own bill stays out of the rate the re-warm is solved from", LONG, async ($, on) => {
   const clock = setup(on)
   await $.session.start(START)
