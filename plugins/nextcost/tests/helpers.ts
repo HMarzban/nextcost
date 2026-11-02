@@ -97,6 +97,9 @@ type EngineFake = {
   /** While set, git and grep answers wait on it: each answer is the one at the call. */
   hold: Promise<void> | undefined
   ran: string[][]
+  /** The same runs with where and for how long each was asked to run:
+   *  `ran` holds the argv alone, which most tests read. */
+  runs: Array<{ argv: string[]; cwd: string | undefined; timeoutMs: number | undefined }>
   /** The session's id and model, as the engine names them. */
   sessionId: string
   model: string
@@ -163,6 +166,7 @@ const ENGINE_INITIAL: Readonly<EngineFake> = {
   repoRoot: PROJECT,
   git: { status: GIT_CLEAN, dirs: GIT_MAIN_TREE },
   ran: [],
+  runs: [],
   compact: { messages: SUMMARY, tokensAfter: COMPACTED_TO },
   stop: 'end_turn',
   gate: undefined,
@@ -230,6 +234,7 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
   }))
   on('process.run', async ($, e) => {
     engine.ran.push([...e.argv])
+    engine.runs.push({ argv: [...e.argv], cwd: e.init?.cwd, timeoutMs: e.init?.timeoutMs })
     const quiet = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
     if (e.argv[0] === 'tail') {
       if (engine.tailHold !== undefined) await engine.tailHold

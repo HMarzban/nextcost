@@ -59,6 +59,17 @@ test('the first reply after a resume or a reload rebuilds a cache already cold',
   warm.responded({ ...resp(2_000, 196_000, 4_000, 3_000), model: 'claude-opus-5-5' }, 10 * MIN, true)
   expect(rebuilt(warm)).toBe(false)
 })
+test('a miss within the lifetime rebuilt the cache too, and the turn takes the mark once', () => {
+  const c = newCache()
+  c.responded(OPUS_BUILD, 0, true)
+  expect(rebuilt(c)).toBe(false)
+  // Two minutes on, well within the hour: the reply reads a tenth of what was cached.
+  c.responded({ ...resp(2_000, 15_000, 4_000, 3_000), model: 'claude-opus-5-5' }, 2 * MIN, true)
+  expect(viewAt(c, 2 * MIN).misses).toBe(1)
+  expect(rebuilt(c)).toBe(true)
+  expect(rebuilt(c)).toBe(false)
+})
+
 test('a warm read is no re-warm', () => {
   const c = newCache()
   c.responded(OPUS_BUILD, 0, true)
