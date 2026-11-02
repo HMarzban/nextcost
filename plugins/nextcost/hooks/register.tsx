@@ -661,7 +661,8 @@ export const register: Register = on => {
 
   on('session.measure', async ($, e, next) => {
     const now = await $.clock.now()
-    for (const limit of e.rateLimits.map(limitOf)) if (limit.kind === FIVE_HOUR) band.insights.noteFiveHour(now, limit.percentUsed, limit.resetsAt)
+    // Only a reading that moved is a point: another unit's measure holds the one from the last reply, which `now` would make look new.
+    if (e.changed.includes('rateLimits')) for (const limit of e.rateLimits.map(limitOf)) if (limit.kind === FIVE_HOUR) band.insights.noteFiveHour(now, limit.percentUsed, limit.resetsAt)
     const limits = limitToasts(band.warned, e.rateLimits)
     band.warned = limits.warned
     for (const text of limits.say) $.ui.toast(text)

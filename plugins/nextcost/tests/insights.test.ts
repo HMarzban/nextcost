@@ -90,6 +90,15 @@ test('the ETA hides when the samples go stale', () => {
   expect(i.fiveHourEtaMs(28 * MIN)).toBe(null) // 16 minutes: stale
 })
 
+test('the ETA hides once the time it projects has passed, rather than saying ~5m for a quarter of an hour', () => {
+  const i = newInsights()
+  i.noteFiveHour(0, 90, RESET_IN_3H)
+  i.noteFiveHour(12 * MIN, 96, RESET_IN_3H) // half a point a minute, 4 to go: full at 20m
+  expect(i.fiveHourEtaMs(19 * MIN)).toBe(MIN)
+  expect(i.fiveHourEtaMs(20 * MIN)).toBe(null)
+  expect(i.fiveHourEtaMs(21 * MIN)).toBe(null)
+})
+
 test('the ETA hides when the window resets first', () => {
   const i = newInsights()
   const soon = 30 * MIN

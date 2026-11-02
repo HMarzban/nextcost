@@ -41,7 +41,7 @@ const withCompaction = (tokens: number) => ({
   context: { tokens, window: 200_000, percent: (tokens / 2000), breakdown: breakdown({ autoCompactThreshold: 160_000, isAutoCompactEnabled: true }) },
 })
 const measureContext = async ($: Engine, tokens: number) =>
-  $.session.measure({ context: { tokens, window: 200_000, percent: tokens / 2000 }, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: [] })
+  $.session.measure({ context: { tokens, window: 200_000, percent: tokens / 2000 }, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: ['context'] })
 
 // ── opening ────────────────────────────────────────────────────────────
 

@@ -67,7 +67,8 @@ export type Insights = Readonly<{
   /** session.measure: the 5-hour window's use at `now`, and its reset. */
   noteFiveHour: (now: number, percentUsed: number, resetsAt: number | undefined) => void
   /** Time until your pace fills the 5-hour window, or null while the
-   *  evidence is thin, stale, or the window resets first. */
+   *  evidence is thin or stale, the window resets first, or the time it
+   *  projects has passed. */
   fiveHourEtaMs: (now: number) => number | null
   /** session.end: a new conversation (/clear, resume). Its turns and their
    *  trails start over, but the 5-hour window is account-wide, so its pace
@@ -114,7 +115,8 @@ export const newInsights = (kept?: InsightState): Insights => {
       if (span < MIN_SPAN_MS || rise < MIN_RISE || now - last.at > STALE_MS) return null
       const tFull = last.at + ((100 - last.pct) * span) / rise
       if (s.resetsAt !== undefined && tFull >= s.resetsAt) return null
-      return Math.max(0, tFull - now)
+      // The time it projected has come and gone: the window may be full, or the pace has dropped.
+      return tFull > now ? tFull - now : null
     },
     conversationEnded: () => {
       s.turnStartCost = {}

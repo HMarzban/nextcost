@@ -641,7 +641,7 @@ export const pacing = async ($: Engine, clock: MockClock): Promise<void> => {
   ] as const) {
     usage.current = at(pct)
     const u = usage.current
-    await $.session.measure({ context: u.context, rateLimits: u.rateLimits, cost: u.cost, changed: [] })
+    await $.session.measure({ context: u.context, rateLimits: u.rateLimits, cost: u.cost, changed: ['rateLimits'] })
     await clock.advance(wait)
   }
 }

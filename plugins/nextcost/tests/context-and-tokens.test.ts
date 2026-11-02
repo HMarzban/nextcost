@@ -39,7 +39,7 @@ test('near auto-compaction the context chip turns amber and counts down', async 
   }
   setup(on, { usage: near })
   await $.session.start(START)
-  await $.session.measure({ context: { tokens: 152_000, window: 200_000, percent: 76 }, rateLimits: near.rateLimits, cost: near.cost, changed: [] })
+  await $.session.measure({ context: { tokens: 152_000, window: 200_000, percent: 76 }, rateLimits: near.rateLimits, cost: near.cost, changed: ['context'] })
 
   const ui = await mountBand($, 'terminal', 110)
   const ctx = await ui.find({ type: 'Text', text: /compacts in ~8\.0k/ })
