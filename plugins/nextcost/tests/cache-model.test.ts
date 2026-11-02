@@ -78,7 +78,7 @@ test('a warm read is no re-warm', () => {
   expect(rebuilt(c)).toBe(false)
 })
 
-test('an assumed hour is corrected to 5m when a gap past 5m rebuilt the cache', LONG, async ($, on) => {
+test('an assumed hour is corrected to a guessed 5m when a gap past 5m rebuilt the cache', LONG, async ($, on) => {
   const clock = setup(on, { env: {} })
   await $.session.start(START)
   await respond($, BUILD_80K)
@@ -88,7 +88,7 @@ test('an assumed hour is corrected to 5m when a gap past 5m rebuilt the cache', 
   const ui = await mountBand($, 'terminal', 110)
   await ui.press({ key: 'more' })
   const tree = await ui.drawn()
-  expect(fact(tree, 'expires')).toBe('5m idle')
+  expect(fact(tree, 'expires')).toBe('5m idle · assumed')
   expect(rebuilds(tree)).toBe(0)
   await ui.unmount()
 })
@@ -295,18 +295,29 @@ test("an advisor step's own bill stays out of the rate the re-warm is solved fro
   await $.session.start(START)
   await respond($, BUILD_100K) // the ledger reads $2.41: 220k weighted, its writes an hour's
   // The step's message rounds and the advisor's own round bill $1.29 more.
-  usage.current = { ...USAGE, cost: { usd: 3.7009 } }
+  usage.current = { ...USAGE, cost: { usd: 3.7009 }, context: { tokens: 102_002, window: 200_000, percent: 51 } }
   engine.serverTools = 1
   await respond($, resp(4, 200_000, 2_000, 1_000))
   engine.serverTools = 0
   await clock.advance(61 * MIN)
 
-  // The rate stays 2.41/220k, on a window of 202,004/2 + 1,000 = 102,002:
+  // The rate stays 2.41/220k, on the 102,002 of context Claude Code reports:
   // 2 * 102,002 * 2.41 / 220k = 2.23 (with the step's bill and tokens in,
   // 2 * 102,002 * 3.7009 / 239,004 = 3.16).
   const ui = await mountBand($, 'terminal', 110)
   expect(await ui.find({ type: 'Text', text: /~\$2\.23/ })).toBeDefined()
   await ui.unmount()
+})
+
+test("a server tool's step prices the context Claude Code reports, not a guess at its rounds", () => {
+  const c = newCache()
+  c.configured({ ttl: '1h', idleCompactFrom: undefined })
+  c.responded(OPUS_BUILD, 0, true)
+  c.responded({ ...resp(100, 200_000, 500, 100), model: 'claude-opus-5-5' }, MIN, true, { serverTools: 1 })
+  const at = (contextTokens: number) => c.view({ now: 2 * MIN, ledger: undefined, contextTokens, autoCompactOff: false }).cache.window
+  expect(at(203_000)).toBe(203_000)
+  // With none reported, the round's share stands.
+  expect(at(0)).toBeLessThan(110_000)
 })
 
 test('a reply that sent no tokens leaves the cache as it was measured', () => {
@@ -509,4 +520,21 @@ test('a recalled reply at now is a reply just made, not unknown', () => {
   c.recalled({ lastAt: HOUR, rate: null, billed: undefined })
   const cache = viewAt(c, HOUR)
   expect([cache.recalled, cache.idleMs, cache.leftMs]).toEqual([true, 0, TTL_MS['1h']])
+})
+
+test('model changed compares with what the last request went on: a turn that sent none still says it, and a new conversation starts clean', () => {
+  const c = newCache()
+  c.configured({ ttl: '1h', idleCompactFrom: undefined })
+  c.turnStarted({ priceModel: 'opus', ledger: 0 })
+  c.responded(OPUS_BUILD, 0, true)
+  c.turnEnded(0)
+  const changed = (modelNow: string) => c.view({ now: MIN, ledger: 0, contextTokens: 100_000, autoCompactOff: false, modelNow }).cache.modelChanged
+  expect(changed('opus')).toBe(false)
+  expect(changed('haiku')).toBe(true)
+  // A turn on Haiku that never reached the API: the cache is still Opus's.
+  c.turnStarted({ priceModel: 'haiku', ledger: 0 })
+  c.turnEnded(0)
+  expect(changed('haiku')).toBe(true)
+  c.conversationEnded(0, true)
+  expect(changed('sonnet')).toBe(false)
 })

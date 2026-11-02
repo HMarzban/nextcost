@@ -478,7 +478,7 @@ test('an hour seen on the transcript speaks only until the first reply, so infer
   await respond($, BUILD_80K)
   await clock.advance(12 * MIN)
   await respond($, resp(82_500, 0, 82_500, 300))
-  expect(fact(await mounted($, true), 'expires')).toBe('5m idle')
+  expect(fact(await mounted($, true), 'expires')).toBe('5m idle · assumed')
 })
 
 test('a TTL read off the transcript after the first reply is no longer news', async ($, on) => {

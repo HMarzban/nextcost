@@ -75,9 +75,9 @@ test('a guessed hour is marked in the warm hover, in both of its branches and wh
   const compact = readingsOf(snapOf({ cache: { ...GUESSED, idleCompacts: true, leftMs: 50 * MIN } })).chips.cache.hover
   expect(compact).toBe('50m left (assumed); may be compacted at ~54m idle, before it goes cold')
   expect(readingsOf(snapOf({ cache: { ...GUESSED, leftMs: 30_000 } })).chips.cache.hover).toMatch(/^0:30 left \(assumed\); /)
-  // A pin or a read says nothing of a guess; nor does the 5m cache, which is never assumed.
+  // A pin or a read says nothing of a guess; an inferred 5m is one.
   expect(readingsOf(snapOf()).chips.cache.hover).not.toMatch(/assumed/)
-  expect(readingsOf(snapOf({ cache: cacheWith({ ttlPinned: false, ttl: '5m' }) })).chips.cache.hover).not.toMatch(/assumed/)
+  expect(readingsOf(snapOf({ cache: cacheWith({ ttlPinned: false, ttl: '5m' }) })).chips.cache.hover).toMatch(/assumed 5m/)
 })
 
 test('a guessed hour is the second fact of the Cache card, above everything droppable; a known one stays last', () => {

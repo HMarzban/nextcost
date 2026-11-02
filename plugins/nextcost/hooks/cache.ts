@@ -37,11 +37,6 @@ export const IDLE_COMPACT_MS = 54 * MINUTE_MS
  *  an idle one: an auto-compaction comes as a turn starts, not half an hour on. */
 const IDLE_GAP_MS = 30 * MINUTE_MS
 
-/** How near a step's rate must come to twice or half its model's, as a share of
- *  it, to say the speed changed: fast mode bills every price at 2×. A write
- *  weighed at the wrong lifetime moves a step's rate by 1.6× at most. */
-const SPEED_TOLERANCE = 0.1
-
 /** What started a main-loop turn the user didn't type: a background task's
  *  notification, a schedule, another session, a channel, a plugin, or Claude
  *  Code going on by itself. */
@@ -143,7 +138,7 @@ export type CacheView = Readonly<{
 /** Main-loop writes by the lifetime they were weighed at. */
 type UnreadWrites = Readonly<Record<Ttl, Readonly<{ tokens: number; tiered: number }>>>
 
-/** One model's own bill, at one speed: what its steps cost by the ledger, what
+/** One model's own bill: what its steps cost by the ledger, what
  *  they weigh, what those with no bill to tell weigh, its reads at the lower
  *  tier's prices, and its writes since the lifetime was read, by the lifetime
  *  they were weighed at. A step with a server-side tool loop stays out of its
@@ -209,12 +204,9 @@ export type CacheState = {
    *  no later step should take. A redraw's read leaves it, so it never hides
    *  a step's. */
   ledgerSeen: number | undefined
-  /** Each model's own bill, by its base name, and its speed's where that's
-   *  not the first. Only with two can the session's bill not speak for one. */
+  /** Each model's own bill, by its base name. Only with two can the session's
+   *  bill not speak for one. */
   books: Readonly<Record<string, ModelBook>>
-  /** The prices in force against those this conversation began on: 2 since
-   *  a step showed fast mode going on, ½ going off from a start in it. */
-  speed: number
   /** Requests that missed a cache that should have been warm. */
   misses: number
   /** When the last main-loop request was sent. */
@@ -264,6 +256,11 @@ export type CacheState = {
   prior: Spend | undefined
   /** The model /model has in force, as it names it: perhaps an alias. */
   priceModel: string | undefined
+  /** What /model named when the main loop's last request went: the model the
+   *  cache was written for, as /model names it. */
+  requestModel: string | undefined
+  /** The last request's rounds were a guess, so `window` is too. */
+  windowGuessed: boolean
   /** The model the main loop's last reply was billed under, as the API names
    *  it. Where known, the tokens are priced at it. */
   billedModel: string | undefined
@@ -291,7 +288,6 @@ const INITIAL: Readonly<CacheState> = {
   offBookWeight: 0,
   ledgerSeen: undefined,
   books: {},
-  speed: 1,
   misses: 0,
   lastAt: 0,
   window: 0,
@@ -311,6 +307,8 @@ const INITIAL: Readonly<CacheState> = {
   recall: undefined,
   prior: undefined,
   priceModel: undefined,
+  requestModel: undefined,
+  windowGuessed: false,
   billedModel: undefined,
 }
 
@@ -357,8 +355,7 @@ const allTokens = (s: CacheState): TokenCounts => (s.prior === undefined ? s.tok
 /** Which of `s.books` a step on `model` goes in. */
 const bookKey = (s: CacheState, model: string | undefined): string => {
   const name = model ?? pricedModel(s)
-  const base = name === undefined ? '' : baseModel(name)
-  return s.speed === 1 ? base : `${base} at ${s.speed}x`
+  return name === undefined ? '' : baseModel(name)
 }
 
 /** What the steps have cost since the baseline: the ledger, as far as the last
@@ -419,9 +416,9 @@ const ratePerToken = (s: CacheState, sessionCost: number | undefined): number | 
 }
 
 /** The rate to remember under the model's name, for its other sessions: never
- *  a blend, and never fast mode's, which they may not be in. */
+ *  a blend. */
 const rememberedRate = (s: CacheState, sessionCost: number | undefined): number | null => {
-  if (sessionCost === undefined || s.speed > 1) return null
+  if (sessionCost === undefined) return null
   return wholeBillSpeaks(s) ? wholeBillRate(s, sessionCost) : toldRate(s.books[bookKey(s, undefined)])
 }
 
@@ -488,7 +485,7 @@ const idleCompactsOn = (surface: RenderSurface | undefined): boolean => surface 
  *  is a cache to lose. Name against name, as /model gives them, since a name
  *  may be an alias that the API's own name for it would never match. */
 const modelChangedTo = (s: CacheState, modelNow: string | undefined, now: number): boolean =>
-  (s.requests > 0 || isRecalled(s, now)) && modelNow !== undefined && s.priceModel !== undefined && modelName(modelNow) !== modelName(s.priceModel)
+  (s.requests > 0 || isRecalled(s, now)) && modelNow !== undefined && (s.requestModel ?? s.priceModel) !== undefined && modelName(modelNow) !== modelName(s.requestModel ?? s.priceModel ?? '')
 
 /** The cache as the band shows it, at `now`: measured once a reply has been
  *  seen, recalled before that. `contextTokens` is the context as it stands,
@@ -497,7 +494,11 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
   const recalled = isRecalled(s, now)
   const recallRate = s.recall?.rate ?? null
   // A resume's price is the engine's own; else it is solved from the rate recalled.
-  const recalledPrice = s.resumedCache?.reWarmUsd ?? (recallRate === null ? null : reWarmAt(s, recallRate, contextTokens))
+  // With no context known, there's nothing to price it at.
+  const recalledPrice = s.resumedCache?.reWarmUsd ?? (recallRate === null || contextTokens <= 0 ? null : reWarmAt(s, recallRate, contextTokens))
+  // A step with a server tool sums rounds a mod isn't told, so Claude Code's
+  // own count of the context speaks for it, where it has one.
+  const window = recalled || (s.windowGuessed && contextTokens > 0) ? contextTokens : s.window
   const rate = ratePerToken(s, sessionCost)
   const tokens = allTokens(s)
   const input = tokens.read + tokens.written + tokens.uncached
@@ -509,11 +510,11 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
     ttl: effectiveTtl(s),
     // Known, not assumed: pinned, or seen on the transcript's last cache write.
     ttlPinned: s.ttlPinned || s.ttlSeen !== undefined || s.ttlRead,
-    window: recalled ? contextTokens : s.window,
+    window,
     hitRatio: input > 0 ? tokens.read / input : null,
     misses: s.misses,
     // A measured cold cache rebuilds with a cache write of the whole window.
-    reWarmUsd: recalled ? recalledPrice : rate === null ? null : reWarmAt(s, rate, s.window),
+    reWarmUsd: recalled ? recalledPrice : rate === null ? null : reWarmAt(s, rate, window),
     recalled,
     idleMs: idleMsOf(s, now),
     // Every cache read saved the rest of the base rate against full input price.
@@ -682,28 +683,15 @@ const shortOf = (s: CacheState, hit: number, switched: boolean): boolean | undef
   return shortfall >= MISS_MIN_TOKENS && shortfall > prefix * MISS_MIN_SHARE
 }
 
-/** How a step's bill says the speed changed, a multiple of the prices in
- *  force; undefined if it doesn't. A mod isn't told a step's speed, but fast
- *  mode bills every price at 2×, so a step billed at twice or half its model's
- *  own rate changed speed. Taken only of a step that read short, since a speed
- *  has its own cache, so a bill with something else in it says nothing alone. */
-const speedChangeOf = (s: CacheState, usage: Response, bill: number): number | undefined => {
-  const rate = toldRate(s.books[bookKey(s, usage.model)])
-  const { weighted } = weighResponse(usage, 1, effectiveTtl(s))
-  if (rate === null || weighted <= 0) return undefined
-  const multiple = bill / weighted / rate
-  return [2, 0.5].find(by => Math.abs(multiple / by - 1) <= SPEED_TOLERANCE)
-}
-
 /** A main-loop response, sent at `sentAt`, as a measure of the cache: a
  *  miss or a rebuild, what it leaves in the cache, and the model its reply
- *  was billed under; `bill` what the ledger says it cost, where it says. A
+ *  was billed under. A
  *  subagent's prefix is its own, so it says nothing of the main conversation's
  *  cache or its countdown. Over `rounds` of a server-side tool loop each round
  *  read the prefix again, so the cache is measured by a round's share; where
  *  those are guessed, not `roundsSure`, the share may be half a whole read, so
  *  it counts as no miss. `messages` is how many messages it carried, where told. */
-const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: number, roundsSure: boolean, messages: number | undefined, bill: number | undefined): void => {
+const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: number, roundsSure: boolean, messages: number | undefined): void => {
   const model = usage.model
   const perRound = (n: number): number => Math.round(n / rounds)
   const hit = perRound(usage.cache_read_input_tokens)
@@ -720,11 +708,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   const uncached = hit === 0 && written === 0 && perRound(usage.input_tokens) > UNCACHED_MIN_TOKENS
   // Fewer messages than last time: a /rewind, which reads the earlier entry.
   const rewound = messages !== undefined && s.messageCount !== undefined && messages < s.messageCount
-  const readShort = uncached || rewound || !roundsSure ? undefined : shortOf(s, hit, switched)
-  // So has another speed: reading nothing after a change of speed is no miss.
-  const speedChange = readShort === true && rounds === 1 && bill !== undefined ? speedChangeOf(s, usage, bill) : undefined
-  if (speedChange !== undefined) s.speed *= speedChange
-  const short = speedChange === undefined ? readShort : undefined
+  const short = uncached || rewound || !roundsSure ? undefined : shortOf(s, hit, switched)
   // The lifetime is read off the transcript at each turn's end. Until a read
   // succeeds, it is inferred from a request after five idle minutes: one that
   // read all it could, an hour; one that found only what other sessions keep
@@ -740,10 +724,10 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   if (missed) s.misses += 1
 
   // A rebuild of a cache that existed: its time ran out, it missed, a
-  // compaction rebuilt it, or the model or its speed changed. The first build
+  // compaction rebuilt it, or the model changed. The first build
   // is warming, unless the cache it rebuilt was already read as cold. With
   // caching off on either side, nothing was rebuilt.
-  if (!uncached && !s.notCaching && (coldBefore || (s.requests > 0 && (gap > TTL_MS[s.ttl] || missed || s.rebuilding || switched || speedChange !== undefined)))) s.lastRebuilt = true
+  if (!uncached && !s.notCaching && (coldBefore || (s.requests > 0 && (gap > TTL_MS[s.ttl] || missed || s.rebuilding || switched)))) s.lastRebuilt = true
 
   s.requests += 1
   // The next request's TTL follows the config in force, not the transcript's.
@@ -757,6 +741,8 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   s.compactedIdle = false
   s.notCaching = uncached
   s.messageCount = messages ?? s.messageCount
+  s.requestModel = s.priceModel
+  s.windowGuessed = !roundsSure
   s.model = model ?? s.model
 }
 
@@ -886,7 +872,7 @@ export const newCache = (kept?: CacheState): CacheModel => {
       if (isMain && sent > 0) {
         // Claude Code hands a mod no list of a step's rounds, and a server
         // tool's block doesn't always start one, so a step with one is a guess.
-        measureCache(s, usage, sentAt, rounds, rounds === 1, after.messages, bill)
+        measureCache(s, usage, sentAt, rounds, rounds === 1, after.messages)
         s.turnMeasured = true
       }
       // Its writes last as long as its bucket's TTL: the main loop's as just
@@ -1009,7 +995,7 @@ export const cacheFactsOf = (c: CacheView, isWorking: boolean): CacheFacts => {
     charge: timeless ? 0 : mood === 'warm' && isWorking ? 1 : c.leftMs / TTL_MS[c.ttl],
     // After a switch the rate is the old model's, so the tokens alone. After a
     // compaction of no size told, only that it writes the summary.
-    estimate: mood === 'compacted' && c.window === 0 ? 'summary' : c.reWarmUsd !== null && mood !== 'switched' ? fmtEstimate(c.reWarmUsd) : `${fmtTokens(c.window)} tokens`,
+    estimate: mood === 'compacted' && c.window === 0 ? 'summary' : c.window === 0 && c.reWarmUsd === null ? 'unknown' : c.reWarmUsd !== null && mood !== 'switched' ? fmtEstimate(c.reWarmUsd) : `${fmtTokens(c.window)} tokens`,
     measured,
     known: mood !== 'uncached' && (measured || c.recalled),
     untimed,

@@ -256,24 +256,7 @@ test('two steps under way at once each take their own bill', () => {
   expect(Math.abs(rate - 4e-6) < 1e-9).toBe(true)
 })
 
-// ---- fast mode --------------------------------------------------------------
-
-test('a speed change is no unexpected rebuild, and the re-warm follows the new speed', () => {
-  const s = session()
-  const end = turns(s, OPUS, 3, { at: 0, prefix: 100_000 })
-  // Fast mode: twice every price, and a cache of its own, so it reads nothing.
-  const window = end.prefix
-  const fast = resp(500, 0, window, 800)
-  const bill = 2 * billOf(fast, OPUS, 2)
-  const was = s.ledger()
-  s.grows(bill)
-  s.c.responded({ ...fast, model: OPUS }, end.at, true, { ledger: s.ledger(), ledgerBefore: was })
-  const look = s.look(end.at + MIN)
-  expect(look.misses).toBe(0)
-  expect(near(look.reWarmUsd, 2 * trueReWarm(OPUS, look.window))).toBe(true)
-  // A rate at fast prices isn't kept for the model's other sessions.
-  expect(s.c.turnEnded(s.ledger()).remember?.rate).toBe(null)
-})
+// ---- a short read ------------------------------------------------------------
 
 test('a short read billed at the usual rate is still an unexpected rebuild', () => {
   const s = session()

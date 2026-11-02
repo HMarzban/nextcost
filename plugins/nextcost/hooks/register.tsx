@@ -108,6 +108,9 @@ type Band = {
   readAgainFor: number | undefined
   /** Where the engine last said this conversation's transcript is. */
   transcript: string | undefined
+  /** How much context the engine said a resumed conversation holds, where it
+   *  did, for before its first reply reports it. */
+  resumedContext: number | undefined
   /** What the band last drew, so the timer repaints only when it would change. */
   lastPaintKey: string
   /** The limits' resets the band last drew, epoch ms, so the timer repaints
@@ -153,6 +156,7 @@ const band: Band = {
   resume: undefined,
   readAgainFor: undefined,
   transcript: undefined,
+  resumedContext: undefined,
   nextWaker: undefined,
   tick: undefined,
 }
@@ -331,6 +335,8 @@ const readResumedAgain = ($: EngineInterface, waits: readonly number[] = RESUME_
  *  judges it, or as the band recalls it where the engine doesn't say; then,
  *  off the hook, what its transcript shows. */
 const resumeConversation = async ($: EngineInterface, e: ClassicEventOf['classic.SessionStart']): Promise<void> => {
+  // Read through `in`: not every engine's start says it.
+  band.resumedContext = 'context_tokens' in e && typeof e.context_tokens === 'number' ? e.context_tokens : undefined
   const now = await $.clock.now()
   // An idle time below zero isn't one: the engine said nothing, and the last reply is recalled.
   const said = e.seconds_since_last_response
@@ -821,7 +827,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
     // A /model switch shows at the next redraw, before the message it rebuilds on.
     const modelNow = await $.session.model().catch(() => undefined)
-    const { cache, costUsd } = band.cache.view({ now, ledger: dollarsOf(usage.cost?.usd), contextTokens: contextUsed(usage.context) ?? 0, autoCompactOff: band.autoCompactOff, modelNow, surface: e.surface })
+    const { cache, costUsd } = band.cache.view({ now, ledger: dollarsOf(usage.cost?.usd), contextTokens: contextUsed(usage.context) ?? band.resumedContext ?? 0, autoCompactOff: band.autoCompactOff, modelNow, surface: e.surface })
     const snap = snapshotOf({
       usage,
       now,

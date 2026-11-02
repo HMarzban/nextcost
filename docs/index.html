@@ -529,7 +529,7 @@
         <li class="ln" data-k="7d"><span class="k">7d</span><span class="lead" aria-hidden="true"></span><span class="v">41% used · resets in 2d 18h</span></li>
       </ul>
       <div class="demo-foot">
-        <a class="film-link" id="film-link" href="demo.mp4?v=1e2c0a0438">Watch the 17-second film</a>
+        <a class="film-link" id="film-link" href="demo.mp4?v=0c6b5a422c">Watch the 17-second film</a>
         <span class="laycmd js-only" id="laycmd" hidden><code id="laycmd-text">/nextcost layout pulse</code><button type="button" id="laycopy" data-copy="/nextcost layout pulse" aria-label="Copy layout command">Copy</button></span>
         <span class="clock">The band's real drawings, from a simulated session: its replies, costs and limits are scripted, and its clock is moved forward.</span>
       </div>
@@ -730,7 +730,7 @@
   $('#film-link').addEventListener('click', e => {
     if (typeof film.showModal !== 'function') return
     e.preventDefault()
-    const dark = isDark(), src = dark ? 'demo-dark.mp4?v=f14e10001a' : 'demo.mp4?v=1e2c0a0438'
+    const dark = isDark(), src = dark ? 'demo-dark.mp4?v=26b9080eaa' : 'demo.mp4?v=0c6b5a422c'
     video.poster = dark ? 'demo-poster-dark.png?v=e9c722d584' : 'demo-poster.png?v=de1bf51f4f'
     if (video.getAttribute('src') !== src) video.src = src
     film.showModal()

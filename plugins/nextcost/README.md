@@ -394,14 +394,15 @@ It's always shown with `~`.
   raises no step, and adds to the ledger with no tokens to weigh. It still
   counts in what the session has cost.
 - **Fast mode** bills every price at 2× from a cache of its own, and a mod
-  isn't told a reply's speed. The band reads a change of speed off a reply
-  that read short of the cache and was billed at twice or half its model's
-  `r`: that's no unexpected rebuild, and `r` follows the new speed. It can't
-  read it from a session's first reply, and with no step's bill to go by
-  (the ledger unread) the change counts as a rebuild and the re-warm lags
-  until the bill catches up. Once the band has seen a switch to fast mode, a
-  rate at fast prices isn't remembered for the model's other sessions; a
-  session that starts in fast mode shows no switch, so its rate is kept.
+  isn't told a reply's speed. So turning it on counts as an unexpected rebuild
+  and the re-warm lags: it reads low until the bill catches up, and high for a
+  while after you turn it off. A rate solved in fast mode may be remembered for
+  the model's other sessions.
+- **The re-warm prices the whole context.** A cold rebuild often finds the
+  system prompt other sessions in the folder keep warm, about 30k to 45k tokens,
+  so it can read a little high: 5 to 7% typically on real sessions. After a
+  compaction it's the other way: it prices the summary, and the next request
+  also writes the system prompt, so it reads low, though by little in dollars.
 - **After `/clear` or a resume,** the rate is solved from what
   the current conversation has spent, not the session's whole ledger.
 - **Claude Haiku 5.5 has two price tiers.** A request whose prompt (every
