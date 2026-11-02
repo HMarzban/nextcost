@@ -96,12 +96,12 @@ const countOf = (record: Record<string, unknown>, key: string): number => {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0
 }
 
-/** One model's tokens in a cost record. The record doesn't split its writes
- *  by lifetime, so they count as five minutes'. */
+/** One model's tokens in a cost record: its writes split by lifetime where it
+ *  says (since Claude Code 2.1.310), else five minutes'. */
 const recordTokens = (m: Record<string, unknown>): TokenCounts => ({
   uncached: countOf(m, 'inputTokens'),
   written: countOf(m, 'cacheCreationInputTokens'),
-  writtenHour: 0,
+  writtenHour: Math.min(countOf(m, 'cacheCreationInputTokens'), countOf(m, 'cacheCreationEphemeral1hInputTokens')),
   read: countOf(m, 'cacheReadInputTokens'),
   output: countOf(m, 'outputTokens'),
 })

@@ -63,6 +63,20 @@ const USAGE_FLAGS = { breakdownFails: false, fails: false }
  *  limits, or sets one of USAGE_FLAGS to make a read throw. */
 export const usage: { current: SessionUsage } & typeof USAGE_FLAGS = { current: USAGE, ...USAGE_FLAGS }
 
+/** The ledger as the last step left it: `respond` holds it there until its
+ *  step bills, as the real one moves, while a test sets `usage.current` to
+ *  what it reads after the step. `ledgerGrows` moves it between steps. */
+let ledgerAtStepEnd: number | undefined
+let ledgerAfterStep: SessionUsage | null = null
+
+/** The ledger grows by `usd` with no step to show for it, as a compaction's
+ *  request does. */
+export const ledgerGrows = (usd: number): void => {
+  const was = usage.current.cost?.usd ?? 0
+  usage.current = { ...usage.current, cost: { usd: was + usd } }
+  ledgerAtStepEnd = was + usd
+}
+
 /** The size the engine reports for the conversation after a compaction. */
 export const COMPACTED_TO = 20_000
 
@@ -185,6 +199,8 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
   Object.assign(usage, USAGE_FLAGS, { current: initial })
   toasts.length = 0
   nextUsage = null
+  ledgerAtStepEnd = undefined
+  ledgerAfterStep = null
   Object.assign(engine, structuredClone(ENGINE_INITIAL))
   engine.store = JSON.parse(JSON.stringify(store)) as Record<string, unknown>
   on('store.get', ($, e) => {
@@ -259,7 +275,10 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
     return { value: { ...quiet, exitCode: 0, stdout: e.argv.includes('status') ? git.status : git.dirs } }
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('session.end', ($, e) => ({ sessionId: e.sessionId }))
+  on('session.end', ($, e) => {
+    ledgerAtStepEnd = usage.current.cost?.usd
+    return { sessionId: e.sessionId }
+  })
   on('classic.SessionStart', () => ({}))
   on('command.register', ($, e) => {
     engine.commands.push(e.name)
@@ -273,7 +292,10 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
   on('session.compact', () => engine.compact)
   on('prompt.submit', ($, e) => ({ text: e.text, origin: e.origin }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
-  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('turn.start', ($, e) => {
+    ledgerAtStepEnd = usage.current.cost?.usd
+    return { turnId: e.turnId }
+  })
   on('turn.complete', () => ({ text: '' }))
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
@@ -287,6 +309,7 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
   })
   on('turn.step', async function* ($, e) {
     if (engine.gate !== undefined) await engine.gate
+    if (ledgerAfterStep !== null) usage.current = ledgerAfterStep
     return {
       turnId: e.turnId,
       index: e.index,
@@ -321,11 +344,14 @@ export const BUILD_80K: ModelUsage = resp(2_000, 0, 80_000, 500)
  *  makes it a subagent's (`{ agentId }`) or another model's. */
 export const respond = async ($: Engine, u: ModelUsage, over: Partial<TurnStepInput> = {}): Promise<void> => {
   nextUsage = u
+  ledgerAfterStep = usage.current
+  if (ledgerAtStepEnd !== undefined && usage.current.cost !== undefined) usage.current = { ...usage.current, cost: { usd: ledgerAtStepEnd } }
   const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 1, ...over })
   for await (const _chunk of stream) {
     // drain so the hook's result settles
   }
   await stream.result
+  ledgerAtStepEnd = usage.current.cost?.usd
 }
 
 export type Node = {

@@ -42,6 +42,16 @@ const DEFAULT_READ_MULT = 0.1
  *  suffix, `claude-opus-5-5[1m]`, and the cost record names the model alone. */
 export const modelName = (model: string): string => model.replace(/\[[^\]]*\]$/, '')
 
+/** The model a provider's id for it names, for a price to be found by: past a
+ *  window's suffix, an ARN's path or a Bedrock `us.anthropic.` prefix, a Bedrock
+ *  `-v1:0` tail, and a date, Vertex's `@20261001` or the API's `-20261001`,
+ *  eight digits exactly. Any other name stays as it is, and pays the default. */
+export const baseModel = (model: string): string =>
+  modelName(model)
+    .replace(/^(?:.*\/)?(?:[a-z0-9-]+\.)?anthropic\./, '')
+    .replace(/-v\d+(?::\d+)?$/, '')
+    .replace(/[@-]\d{8}$/, '')
+
 /** Prices that rise with a request's prompt, by model: past `over` input
  *  tokens, every price is `factor` times the lower tier's. Per Anthropic's
  *  list prices as of 2026-10: Haiku 5.5 is $0.10 input up to 100,000 prompt
@@ -53,13 +63,13 @@ const TIERS_BY_MODEL: Readonly<Record<string, Readonly<{ over: number; factor: n
 /** How many times the lower tier's prices a request with `prompt` input
  *  tokens pays on `model`: 1 on a model with one tier. */
 export const tierFactor = (model: string | undefined, prompt: number): number => {
-  const tier = model === undefined ? undefined : TIERS_BY_MODEL[modelName(model)]
+  const tier = model === undefined ? undefined : TIERS_BY_MODEL[baseModel(model)]
   return tier !== undefined && prompt > tier.over ? tier.factor : 1
 }
 
 /** What a cache read costs against base input on `model`. */
 export const readMultiplier = (model: string | undefined): number =>
-  (model === undefined ? undefined : READ_MULT_BY_MODEL[modelName(model)]) ?? DEFAULT_READ_MULT
+  (model === undefined ? undefined : READ_MULT_BY_MODEL[baseModel(model)]) ?? DEFAULT_READ_MULT
 
 /** Tokens weighted by their price against base input on `model`: the one
  *  unknown left is the base rate itself. */
