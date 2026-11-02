@@ -36,9 +36,10 @@ export const warmAverageOf = (costs: readonly CostEntry[]): number | undefined =
  *  nothing is never on the trail, so the last that did still stands. */
 export const lastCostOf = (t: Trails): number | null => t.costs.at(-1)?.usd ?? null
 
-type InsightState = {
+/** One session's insights' facts, plain data, for a reload to carry on from. */
+export type InsightState = {
   /** The ledger as each open main-loop turn started, by turn id. */
-  turnStartCost: Map<string, number>
+  turnStartCost: Record<string, number>
   /** The 5-hour window's use as measured, oldest first, within the lookback. */
   points: readonly PacePoint[]
   /** When the 5-hour window resets, epoch ms. */
@@ -51,6 +52,8 @@ type InsightState = {
 
 /** One session's insights. Each entry is a hook's facts, in its shape. */
 export type Insights = Readonly<{
+  /** Everything they hold, for the next insights after a reload to start from. */
+  kept: () => InsightState
   /** turn.start of a main-loop turn: the ledger as it starts. */
   noteTurnStart: (turnId: string, costUsd: number | undefined) => void
   /** turn.complete of a main-loop turn: everything the ledger rose by during
@@ -74,16 +77,18 @@ export type Insights = Readonly<{
   trails: () => Trails
 }>
 
-/** A session's insights, before anything is known of it. */
-export const newInsights = (): Insights => {
-  const s: InsightState = { turnStartCost: new Map(), points: [], resetsAt: undefined, costs: [], context: [] }
+/** A session's insights: before anything is known of it, or carrying on from
+ *  what the insights before a reload `kept`. */
+export const newInsights = (kept?: InsightState): Insights => {
+  const s: InsightState = { turnStartCost: {}, points: [], resetsAt: undefined, costs: [], context: [], ...kept }
   return {
+    kept: () => ({ ...s }),
     noteTurnStart: (turnId, costUsd) => {
-      if (costUsd !== undefined) s.turnStartCost.set(turnId, costUsd)
+      if (costUsd !== undefined) s.turnStartCost = { ...s.turnStartCost, [turnId]: costUsd }
     },
     noteTurnEnd: (turnId, costUsd) => {
-      const start = s.turnStartCost.get(turnId)
-      s.turnStartCost.delete(turnId)
+      const { [turnId]: start, ...open } = s.turnStartCost
+      s.turnStartCost = open
       if (start === undefined || costUsd === undefined) return null
       const spent = costUsd - start
       return spent > 0 ? spent : null
@@ -112,7 +117,7 @@ export const newInsights = (): Insights => {
       return Math.max(0, tFull - now)
     },
     conversationEnded: () => {
-      s.turnStartCost.clear()
+      s.turnStartCost = {}
       s.costs = []
       s.context = []
     },

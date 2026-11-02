@@ -7,7 +7,7 @@ import type { Tone } from './facts'
 import { asciiText, asciiTree, drawnTier } from './glyphs'
 import { ALT, GLYPH, ICON_PATHS, ICON_PX } from './icons'
 import type { Icon } from './icons'
-import { DESKTOP, DESKTOP_CARD_TEXT, TERMINAL, clipWords, textCells } from './layout'
+import { DESKTOP, TERMINAL, clipWords, textCells } from './layout'
 import type { Span } from './layout'
 import type { BandSnapshot } from './snapshot'
 
@@ -35,9 +35,8 @@ const cardSpan = (place: CardPlace, cells: number) => {
       to = Math.max(to, end + 1)
     }
   }
-  // The desktop's columns are estimates: the nearest whole ones.
-  const near = Math.round(Math.max(0, from))
-  const span = { width: Math.max(0, Math.round(Math.min(room, to)) - near) }
+  const near = Math.max(0, from)
+  const span = { width: Math.max(0, Math.min(room, to) - near) }
   return 'right' in place ? { right: near, ...span } : { left: near, ...span }
 }
 
@@ -58,8 +57,8 @@ export const makeKit = (el: ElementTable, snap: BandSnapshot) => {
    *  piece is measured here where its cards are placed. */
   const asDrawn = (n: RenderChildren): RenderChildren => (glyphs === 'ascii' ? asciiTree(n) : n)
 
-  // A piece and its card share this hover scope; see hoverCard and
-  // CONTRIBUTING's hover-card rules.
+  // On a text surface, a piece and its card share this hover scope; see
+  // hoverCard and CONTRIBUTING's hover-card rules.
   const scopeOf = (key: string) => `band-${key}`
 
   /** One line of text, cut where its box ends rather than wrapped. The
@@ -82,29 +81,39 @@ export const makeKit = (el: ElementTable, snap: BandSnapshot) => {
     )
   }
 
-  /** The props that make a keyed Box reveal the hover card drawn for `key`. */
-  const hoverable = (key: string) => (palette.filled ? { hover: { scope: scopeOf(key) } } : {})
+  /** The props that make a keyed Box reveal the hover card a text surface
+   *  draws for `key`. The desktop's card is inside its piece: see liftedCard. */
+  const hoverable = (key: string) => (palette.filled && snap.surface !== 'desktop' ? { hover: { scope: scopeOf(key) } } : {})
 
-  /** The one-line explanation `key`'s piece reveals, for after the pieces of
-   *  its row, placed as `place` says. It has no key: a keyed Box is its own
-   *  hover scope, and a hidden one could never be hovered. It is inverted
-   *  against the chips, and on a text surface its ends are half blocks in its
-   *  ground's colour on the band's own background, so they read as rounded
-   *  edges where a one-row band has no room for a border; the desktop, with
-   *  or without Svg, draws the ground alone, whose own edge is sharp. Past
-   *  its text, the ground runs on to the end of the last piece it covers, so
-   *  the card stays one slab. A card with no room past its padding and caps
-   *  for one character isn't drawn. */
+  /** The desktop's one-line explanation, as the last child of the keyed Box
+   *  it explains. A hidden placed Box, with no scope of its own, inside a
+   *  keyed Box above the prompt is what the desktop lifts into a popover: it
+   *  opens above its piece, or below where there's no room above, wraps at
+   *  360px, and takes the surface's own card ground and ink, which is why it
+   *  names no size, ground or colour. */
+  const liftedCard = (text: string): RenderChildren =>
+    palette.filled && snap.surface === 'desktop' ? (
+      <Box position="absolute" display="none" hover={{ display: 'flex' }}>
+        <Text>{text}</Text>
+      </Box>
+    ) : null
+
+  /** A text surface's one-line explanation of `key`'s piece, for after the
+   *  pieces of its row, placed as `place` says. It has no key: a keyed Box is
+   *  its own hover scope, and a hidden one could never be hovered. It is
+   *  inverted against the chips, and its ends are half blocks in its ground's
+   *  colour on the band's own background, so they read as rounded edges where
+   *  a one-row band has no room for a border. Past its text, the ground runs
+   *  on to the end of the last piece it covers, so the card stays one slab. A
+   *  card with no room past its padding and caps for one character isn't
+   *  drawn. */
   const hoverCard = (key: string, text: string, place: CardPlace): RenderChildren => {
-    if (!palette.filled) return null
-    const capped = snap.surface !== 'desktop'
-    // The columns around the text: its padding, and a text surface's caps.
-    const chrome = capped ? 4 : 2
+    if (!palette.filled || snap.surface === 'desktop') return null
+    // The columns around the text: its padding and its caps.
+    const chrome = 4
     // Sized in the glyphs it is drawn in: the ascii tier's are narrower.
     const shown = glyphs === 'ascii' ? asciiText(text) : text
-    // A text surface counts a cell a character; the desktop sizes by its font.
-    const cells = (capped ? textCells(shown) : Math.ceil(textCells(shown) * DESKTOP_CARD_TEXT)) + chrome
-    const span = cardSpan(place, cells)
+    const span = cardSpan(place, textCells(shown) + chrome)
     if (span.width < chrome + 1) return null
     const shell = { position: 'absolute', top: 0, ...span, display: 'none', hover: { display: 'flex', scope: scopeOf(key) } } as const
     const ground = { backgroundColor: palette.tooltipBg, paddingX: 1 }
@@ -120,7 +129,6 @@ export const makeKit = (el: ElementTable, snap: BandSnapshot) => {
           {text}
         </Text>
       )
-    if (!capped) return <Box {...shell} {...ground}>{words}</Box>
     return (
       <Box {...shell}>
         <Text color={palette.tooltipBg}>▐</Text>
@@ -164,7 +172,7 @@ export const makeKit = (el: ElementTable, snap: BandSnapshot) => {
     return GLYPH[name] ? [<Text key={`i-${name}`} color={color}>{`${GLYPH[name]} `}</Text>] : []
   }
 
-  return { Box, Button, Text, Svg, palette, measure, columns: snap.columns, glyphs, asDrawn, onTone, oneLine, hoverable, hoverCard, gap, air, svg, icon }
+  return { Box, Button, Text, Svg, palette, measure, columns: snap.columns, glyphs, asDrawn, onTone, oneLine, hoverable, liftedCard, hoverCard, gap, air, svg, icon }
 }
 
 export type Kit = ReturnType<typeof makeKit>

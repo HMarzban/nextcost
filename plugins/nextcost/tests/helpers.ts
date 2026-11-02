@@ -540,7 +540,8 @@ export const cards = (tree: unknown): Array<[string, Node]> => {
   walk(tree, row => {
     for (const card of (row.children ?? []).filter(isCard)) {
       const scope = card.hover?.scope
-      let key = ''
+      // The desktop's card is inside the piece it explains, with no scope.
+      let key = scope === undefined ? String(row.props?.key ?? '') : ''
       walk(row, n => {
         if (key === '' && scope !== undefined && n !== card && n.props?.key !== undefined && n.hover?.scope === scope) key = String(n.props.key)
       })

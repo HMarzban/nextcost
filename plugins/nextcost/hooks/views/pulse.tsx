@@ -23,13 +23,14 @@ import type { View } from './view'
  *  taken only while the row doesn't fit: at 40 columns a calm row of tiles
  *  is the cache and the 7d, and a few columns wider the 5h is back. An amber
  *  reading keeps its tile, its chart and its long words until the amber
- *  step; past it, last of all, the tiles drop their padding (plain, its
- *  second column between readings, each amber one led by its `!`). The
- *  cache and the 7d never go. */
+ *  step. Past it the 5h's forecast gives way to its value: it says `full` or
+ *  nothing, never a bare time, which beside a reset would read as one. Last
+ *  of all, the tiles drop their padding (plain, its second column between
+ *  readings, each amber one led by its `!`). The cache and the 7d never go. */
 const ORDER = {
   calm: ['last', 'contextTrail', 'beats14', 'fiveTrail', 'sevenDays', 'beats', 'spend', 'context', 'five', 'short'],
   amber: ['amberShort'],
-  last: ['padding'],
+  last: ['forecast', 'padding'],
 } as const
 type Piece = PieceOf<typeof ORDER>
 /** The beats' width: 6 px a beat. */
@@ -108,7 +109,7 @@ const collapsed = (kit: Kit, read: Readings, toggle: RenderElement): RenderEleme
         : null,
     ])
     const fiveTile = fiveHour === undefined || !k.calm('five', fiveHour.tone) ? null : tile(kit, k, '5h', fiveHour.tone, palette.fiveBg, [
-      ...tileWords(kit, k, fiveHour.bandName, fiveHour.valueText, fiveHour.amber),
+      ...tileWords(kit, k, fiveHour.bandName, fiveHour.valueText, k.has('forecast') ? fiveHour.amber : fiveHour.amberValue),
       charts && k.part('fiveTrail', fiveHour.tone) ? windowTrail(kit, read, fiveHour.tone, { key: 'trail', px: 48, height: 16 }) : null,
     ])
     // The 7d's cells are the desktop's: in text it is words

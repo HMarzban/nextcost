@@ -100,12 +100,18 @@ test('a transcript of any size is read from its end, the last megabyte alone', a
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold/)
 })
 
-test('without tail, a small transcript is read whole; a big one leaves the cache unmeasured', async ($, on) => {
+test('without tail, a small transcript is read whole', async ($, on) => {
   setup(on, { env: ENV, now: 3 * HOUR })
   engine.tailFails = true
   engine.transcript = transcriptOf(0)
   await $.session.start(START)
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold/)
+})
+
+test('without tail, a transcript too big to read leaves the cache unmeasured', async ($, on) => {
+  setup(on, { env: ENV, now: 3 * HOUR })
+  engine.tailFails = true
+  engine.transcript = transcriptOf(0)
   engine.transcriptBytes = 5 * 1024 * 1024
   await $.session.start(START)
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache –/)

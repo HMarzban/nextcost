@@ -6,7 +6,8 @@
 // align; REMARKS are plain dim text. The footer is the one every layout
 // draws: the workspace strip, then Collapse and Hide band. Short of rows, the
 // remarks give way first, then the lines in that spec's order; an amber line
-// never does.
+// never does. Who restarted the countdown, when the user didn't, stays in the
+// cache's remark past the others, wherever it costs no line.
 
 import type { RenderElement } from 'claude-code'
 import { boardBudget, boardLineHeight, boardRule, flapCells, flapColumns, type FlapColumn } from '../flaps'
@@ -41,8 +42,9 @@ const REMARKS_LEAST = 8
 const BOARD_PAD = 2
 
 type Line = Readonly<{ name: LineName; key: string; row?: BoardRow }>
-/** The lines a board keeps, and whether they keep their remarks. */
-type Plan = Readonly<{ lines: readonly Line[]; remarks: boolean }>
+/** The lines a board keeps, whether they keep their remarks, and whether the
+ *  cache's says who restarted the countdown. */
+type Plan = Readonly<{ lines: readonly Line[]; remarks: boolean; woken?: boolean }>
 /** The board's columns: ITEM, STATUS and TIME as wide as their widest,
  *  air included; REMARKS what is left, none under REMARKS_LEAST; and the
  *  characters each flap column keeps. */
@@ -90,9 +92,16 @@ const columnsOf = (kit: Kit, rows: readonly BoardRow[], room: number): Columns =
 }
 
 /** A line's remark as drawn: cut to its column, none where it has none or
- *  the plan leaves them out. A column holds a capital a cell. */
-const remarkOf = (row: BoardRow, cols: Columns, plan: Plan): string =>
-  !plan.remarks || cols.remarks === 0 ? '' : clipToTiles(row.remarks, cols.remarks)
+ *  the plan leaves them out. A column holds a capital a cell. After a turn
+ *  the user didn't type, the widest form the column holds, and with the
+ *  plan's remarks gone its last: who restarted the countdown says nowhere
+ *  else on the board. */
+const remarkOf = (row: BoardRow, cols: Columns, plan: Plan): string => {
+  if (cols.remarks === 0) return ''
+  const forms = plan.woken !== true ? undefined : plan.remarks ? row.woken : row.woken?.slice(-1)
+  if (forms === undefined) return plan.remarks ? clipToTiles(row.remarks, cols.remarks) : ''
+  return clipToTiles(forms.find(form => textCells(form) <= cols.remarks) ?? forms.at(-1) ?? '', cols.remarks)
+}
 
 /** The plan's height in the board's units, a rule under each line but the
  *  last on the desktop. */
@@ -102,6 +111,13 @@ const heightOf = (kit: Kit, plan: Plan, cols: Columns): number =>
     const text = l.row === undefined || l.row.time === undefined || remarkOf(l.row, cols, plan) !== ''
     return sum + boardLineHeight(kit, { text, rule })
   }, 0)
+
+/** Who restarted the countdown costs no line: the plan with it, where it
+ *  still fits `budget`. */
+const withWake = (kit: Kit, plan: Plan, cols: Columns, budget: number): Plan => {
+  const woken = { ...plan, woken: true }
+  return heightOf(kit, woken, cols) <= budget ? woken : plan
+}
 
 /** The plan that fits `budget`: every line with its remarks; then, where
  *  that saves height, without them; then calm lines go in GIVE_WAY's order.
@@ -191,9 +207,10 @@ const board = (kit: Kit, read: Readings, collapsedRows: number): RenderElement |
   const { Box, Svg, palette } = kit
   const inner = Math.max(0, rowRoom(kit) - BOARD_PAD)
   const cols = columnsOf(kit, read.board().rows, inner)
-  const plan = fitPlan(kit, boardLines(read), cols, boardBudget(kit, bodyRowsFor(read.frame.maxRows, collapsedRows, 0)))
+  const budget = boardBudget(kit, bodyRowsFor(read.frame.maxRows, collapsedRows, 0))
+  const plan = withWake(kit, fitPlan(kit, boardLines(read), cols, budget), cols, budget)
   if (plan.lines.length === 0) return null
-  const remarks = plan.remarks && cols.remarks > 0
+  const remarks = cols.remarks > 0 && (plan.remarks || plan.lines.some(l => l.row !== undefined && remarkOf(l.row, cols, plan) !== ''))
   return (
     <Box
       key="board"

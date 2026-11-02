@@ -66,7 +66,7 @@ test('every amber phrase, long and short, starts with "! " once', () => {
     { long: '! context 93% · compacts in ~12k', short: '! ctx 93%' },
     { long: '! context 85%', short: '! ctx 85%' },
     { long: '! 5h 82%', short: '! 5h 82%' },
-    { long: '! 5h full in ~40m', short: '! 5h ~40m' },
+    { long: '! 5h full in ~40m', short: '! 5h full ~40m' },
   ])
   for (const a of all) for (const s of [a.long, a.short]) {
     expect(s.startsWith('! ')).toBe(true)

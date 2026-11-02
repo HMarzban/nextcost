@@ -20,44 +20,24 @@ from common import demo_layouts, plugin_version, read, words, write
 from render_desk import node
 
 
-def lift_hovers(tree):
-    """Move each hidden hover card's words onto the chip that shares its
-    hover scope, as `tip`."""
-    tips = {}
-
-    def drop(n):
-        if isinstance(n, list):
-            for c in n:
-                drop(c)
-            return
-        if not isinstance(n, dict):
-            return
-        keep = []
-        for c in n.get('children') or []:
-            p = (c.get('props') or {}) if isinstance(c, dict) else {}
-            if p.get('position') == 'absolute' and p.get('display') == 'none':
-                scope = (c.get('hover') or {}).get('scope')
-                if scope is not None:
-                    tips[scope] = ' '.join(words(c).split())
-            else:
-                keep.append(c)
-                drop(c)
-        n['children'] = keep
-
-    def tag(n):
-        if isinstance(n, list):
-            for c in n:
-                tag(c)
-            return
-        if not isinstance(n, dict):
-            return
-        scope = (n.get('hover') or {}).get('scope')
-        if scope in tips:
-            n.setdefault('props', {})['tip'] = tips[scope]
-        tag(n.get('children') or [])
-
-    drop(tree)
-    tag(tree)
+def lift_hovers(n):
+    """Move each hidden hover card's words onto the piece that holds it, as
+    `tip`."""
+    if isinstance(n, list):
+        for c in n:
+            lift_hovers(c)
+        return
+    if not isinstance(n, dict):
+        return
+    keep = []
+    for c in n.get('children') or []:
+        p = (c.get('props') or {}) if isinstance(c, dict) else {}
+        if p.get('position') == 'absolute' and p.get('display') == 'none':
+            n.setdefault('props', {})['tip'] = ' '.join(words(c).split())
+        else:
+            keep.append(c)
+            lift_hovers(c)
+    n['children'] = keep
 
 
 # The live demo's drawings: every state in every layout, from demo.txt.
