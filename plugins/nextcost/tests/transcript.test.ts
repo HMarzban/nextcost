@@ -191,16 +191,16 @@ test("a cost record that splits its writes by lifetime is solved at each's price
 // ── the cache's last write ─────────────────────────────────────────────
 
 test("the cache's last write says its TTL: an hour if it wrote any for an hour, else five minutes", () => {
-  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '1h': 100 } })))).toBe('1h')
-  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '1h': 100, '5m': 50 } })))).toBe('1h')
-  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '5m': 50 } })))).toBe('5m')
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '1h': 100 } })))?.ttl).toBe('1h')
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '1h': 100, '5m': 50 } })))?.ttl).toBe('1h')
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '5m': 50 } })))?.ttl).toBe('5m')
   // The last write that wrote anything is the one read.
-  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '1h': 100 } }), replyLine(1_000, { wrote: { '5m': 50 } })))).toBe('5m')
-  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '5m': 50 } }), replyLine(1_000, { wrote: { '5m': 0, '1h': 0 } })))).toBe('5m')
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '1h': 100 } }), replyLine(1_000, { wrote: { '5m': 50 } })))?.ttl).toBe('5m')
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '5m': 50 } }), replyLine(1_000, { wrote: { '5m': 0, '1h': 0 } })))?.ttl).toBe('5m')
 })
 
 test("a subagent's write says nothing of the main loop's cache, and no write is no TTL", () => {
-  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '5m': 50 } }), { ...replyLine(1_000, { wrote: { '1h': 100 } }), isSidechain: true }))).toBe('5m')
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '5m': 50 } }), { ...replyLine(1_000, { wrote: { '1h': 100 } }), isSidechain: true }))?.ttl).toBe('5m')
   expect(lastWrite(jsonl(replyLine(1_000), promptLine(2_000)))).toBeUndefined()
   expect(lastWrite('')).toBeUndefined()
 })
