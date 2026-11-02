@@ -34,13 +34,15 @@ type Sessions = Readonly<Record<string, SessionRecord>>
 /** The base input rate per token, solved from a session's own bill, by model. */
 type Rates = Readonly<Record<string, number>>
 
-/** The store's sessions, keeping only well-formed entries: it is data, not trusted. */
-export const asSessions = (v: unknown): Sessions =>
+/** The store's sessions, keeping only well-formed entries taken by `now`: it
+ *  is data, not trusted, and a reply dated later, from a clock that ran
+ *  ahead, would count down for good and hold a place among the newest. */
+export const asSessions = (v: unknown, now: number): Sessions =>
   isRecord(v)
     ? Object.fromEntries(
         Object.entries(v).filter(
           (entry): entry is [string, SessionRecord] =>
-            isRecord(entry[1]) && typeof entry[1].lastAt === 'number' && Number.isFinite(entry[1].lastAt),
+            isRecord(entry[1]) && typeof entry[1].lastAt === 'number' && Number.isFinite(entry[1].lastAt) && entry[1].lastAt <= now,
         ),
       )
     : {}
@@ -56,6 +58,10 @@ export const asRates = (v: unknown): Rates =>
 /** The key a rate is kept and found under: the model it was billed under,
  *  its window aside, as every released version has kept it. */
 const rateKey = (model: string): string => modelName(model)
+
+/** The rate stored for `model`; an inherited property of Object, such as a
+ *  model named `constructor`, is none. */
+const rateFor = (rates: Rates, model: string): number | undefined => (Object.hasOwn(rates, rateKey(model)) ? rates[rateKey(model)] : undefined)
 
 /** The store's rates with `rate` kept for `model`, the one billed. */
 export const rememberRate = (stored: unknown, model: string, rate: number): Rates => ({ ...asRates(stored), [rateKey(model)]: rate })
@@ -143,12 +149,12 @@ const billedOf = (record: SessionRecord | undefined): string | undefined =>
  *  names it. With the billed model recorded, the rate is the one kept under
  *  that name; a record from before 0.19.0 names none, and the rate under the
  *  /model name stands in, which is the billed one when /model names it in full. */
-export const fromStore = (stored: Readonly<{ sessions: unknown; rates: unknown }>, sessionId: string, model: string): StoreRecall => {
+export const fromStore = (stored: Readonly<{ sessions: unknown; rates: unknown }>, sessionId: string, model: string, now: number): StoreRecall => {
   const rates = asRates(stored.rates)
-  const record = asSessions(stored.sessions)[sessionId]
+  const record = asSessions(stored.sessions, now)[sessionId]
   const billed = billedOf(record)
   const key = rateKey(model)
-  return { rates, model: key, lastAt: record?.lastAt, billed, rate: rates[billed === undefined ? key : rateKey(billed)] ?? null }
+  return { rates, model: key, lastAt: record?.lastAt, billed, rate: rateFor(rates, billed ?? key) ?? null }
 }
 
 /** Whether the store leaves a fact unknown that the transcript may give. */
@@ -158,13 +164,15 @@ export const needsTranscript = (r: StoreRecall): boolean => r.lastAt === undefin
  *  unknown off the transcript's end, when one was read: its last reply's
  *  time and the model it was billed under, and the rate on that model, as
  *  stored under its name or else solved from the transcript's cost record. */
-export const recallOf = (r: StoreRecall, transcript: string | undefined): RecalledReply => {
+export const recallOf = (r: StoreRecall, transcript: string | undefined, now: number): RecalledReply => {
   if (transcript === undefined) return { lastAt: r.lastAt, rate: r.rate, billed: r.billed }
   // /model may name an alias; the last reply names the model it was billed under.
   const billed = lastReplyModel(transcript) ?? r.billed
+  const logged = lastRequestAt(transcript)
   return {
-    lastAt: r.lastAt ?? lastRequestAt(transcript),
-    rate: r.rate ?? (billed === undefined ? rateFromTranscript(transcript, r.model) : (r.rates[rateKey(billed)] ?? rateFromTranscript(transcript, billed))),
+    // A request logged after now is unknown, not the time recalled.
+    lastAt: r.lastAt ?? (logged !== undefined && logged <= now ? logged : undefined),
+    rate: r.rate ?? (billed === undefined ? rateFromTranscript(transcript, r.model) : (rateFor(r.rates, billed) ?? rateFromTranscript(transcript, billed))),
     billed,
   }
 }

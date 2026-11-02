@@ -2,7 +2,7 @@
 // into the pure modules, and ui.render hands drawBand a snapshot of them.
 
 import { atom, read, update } from 'claude-code'
-import type { ClassicEventOf, EngineInterface, ProcessRunResult, Register, Timer } from 'claude-code'
+import type { ClassicEventOf, EngineInterface, ModelUsage, ProcessRunResult, Register, Timer } from 'claude-code'
 import { drawBand } from './band'
 import { newCache, wakerOf } from './cache'
 import type { CacheModel, CacheState, RecalledReply, Remembered, ResumedCache, Spend, TranscriptFacts, Waker } from './cache'
@@ -37,8 +37,8 @@ import { DEFAULT_LAYOUT, FIVE_HOUR, asLayoutName, limitOf, removedLayoutOf, rese
 import type { Glyphs, LayoutName } from './snapshot'
 import { NO_WARNINGS, contextToasts, forgetConversation, limitToasts } from './toast'
 import type { Warned } from './toast'
-import { READ_LIMIT, lastWrite, lastWriteTtl, sessionCostRecord, transcriptPath, transcriptSpend } from './transcript'
-import { homeRelative, parseGitState, splitPath } from './workspace'
+import { READ_LIMIT, countOf, lastWrite, lastWriteTtl, sessionCostRecord, transcriptPath, transcriptSpend } from './transcript'
+import { homeRelative, parseGitState, printable, splitPath } from './workspace'
 import type { Workspace } from './workspace'
 
 const isHidden = atom({ plugin: 'nextcost', key: 'isHidden' } as const, false)
@@ -242,8 +242,9 @@ const recallLastReply = async (
     const model = await $.session.model()
     const rates = await $.store.get(RATES_KEY)
     const sessions = await $.store.get(SESSIONS_KEY)
-    const stored = fromStore({ sessions, rates }, sessionId, model)
-    return recallOf(stored, needsTranscript(stored) ? await readEnd() : undefined)
+    const now = await $.clock.now()
+    const stored = fromStore({ sessions, rates }, sessionId, model, now)
+    return recallOf(stored, needsTranscript(stored) ? await readEnd() : undefined, now)
   } catch {
     return undefined // nothing to recall
   }
@@ -330,8 +331,10 @@ const readResumedAgain = ($: EngineInterface, waits: readonly number[] = RESUME_
  *  judges it, or as the band recalls it where the engine doesn't say; then,
  *  off the hook, what its transcript shows. */
 const resumeConversation = async ($: EngineInterface, e: ClassicEventOf['classic.SessionStart']): Promise<void> => {
-  const idleSec = e.seconds_since_last_response
   const now = await $.clock.now()
+  // An idle time below zero isn't one: the engine said nothing, and the last reply is recalled.
+  const said = e.seconds_since_last_response
+  const idleSec = said !== undefined && Number.isFinite(said) && said >= 0 ? said : undefined
   const resume: Resume = {
     // The engine names the conversation it resumes; on a /resume, the
     // process switches to it only after this hook.
@@ -358,7 +361,8 @@ const resumeConversation = async ($: EngineInterface, e: ClassicEventOf['classic
 const rememberTurn = async ($: EngineInterface, cache: Remembered): Promise<void> => {
   try {
     const id = await $.session.id()
-    await $.store.set(SESSIONS_KEY, rememberReply(asSessions(await $.store.get(SESSIONS_KEY)), id, cache.lastAt, cache.billed))
+    // Entries dated after now are dropped here, so one never stays in the store.
+    await $.store.set(SESSIONS_KEY, rememberReply(asSessions(await $.store.get(SESSIONS_KEY), await $.clock.now()), id, cache.lastAt, cache.billed))
     const rate = cache.rate
     if (rate !== null) await $.store.set(RATES_KEY, rememberRate(await $.store.get(RATES_KEY), cache.billed ?? cache.priceModel ?? (await $.session.model()), rate))
   } catch {
@@ -366,17 +370,22 @@ const rememberTurn = async ($: EngineInterface, cache: Remembered): Promise<void
   }
 }
 
-/** Reads the project and git into `band.workspace`, then redraws. It never throws:
- *  outside a repository, or with git missing or slow, the band shows the
- *  path alone. Callers don't wait on it. */
-const readWorkspace = async ($: EngineInterface): Promise<void> => {
+/** A workspace read is out, and another was asked for while it was. */
+let reading = false
+let rereads = false
+
+/** Reads the project and git once into `band.workspace`, then redraws. It
+ *  never throws: outside a repository, or with git missing or slow, the band
+ *  shows the path alone. */
+const readWorkspaceOnce = async ($: EngineInterface): Promise<void> => {
   const mine = ++band.reads
   try {
     const root = await $.session.root()
     const home = await $.env.get('HOME')
     const stdoutOf = async (run: Promise<ProcessRunResult>): Promise<string | undefined> => {
       const r = await settled(run)
-      return r?.exitCode === 0 ? r.stdout : undefined
+      // Output cut short is unknown, not a count: a status cut off would undercount.
+      return r?.exitCode === 0 && !r.isStdoutTruncated ? r.stdout : undefined
     }
     const [status, dirs, repo] = await Promise.all([
       // Status without the index lock, so the band never blocks a commit,
@@ -388,7 +397,8 @@ const readWorkspace = async ($: EngineInterface): Promise<void> => {
       $.session.repo().catch(() => null),
     ])
     if (mine !== band.reads) return
-    const path = homeRelative(root, home)
+    // Names off the file system and git are drawn on one row: printable.
+    const path = printable(homeRelative(root, home))
     const last = band.workspace
     band.workspace = {
       path,
@@ -396,11 +406,31 @@ const readWorkspace = async ($: EngineInterface): Promise<void> => {
       // same project, so a slow repository doesn't flicker to the path alone.
       git: status === undefined ? (last?.path === path ? last.git : undefined) : parseGitState(status, dirs ?? ''),
       // A linked worktree's main repository, by its folder's name.
-      repoName: repo === null ? undefined : splitPath(repo.root).name,
+      repoName: repo === null ? undefined : printable(splitPath(repo.root).name),
     }
     $.ui.invalidate('ui.render')
   } catch {
     // keep the last reading
+  }
+}
+
+/** Reads the workspace, never two at once: each read is two git processes,
+ *  so one asked for while another is out waits for it, and the one out, now
+ *  stale, lands nothing. Callers don't wait on it. */
+const readWorkspace = async ($: EngineInterface): Promise<void> => {
+  if (reading) {
+    rereads = true
+    band.reads++ // the read out began before this request
+    return
+  }
+  reading = true
+  try {
+    do {
+      rereads = false
+      await readWorkspaceOnce($)
+    } while (rereads)
+  } finally {
+    reading = false
   }
 }
 
@@ -424,10 +454,24 @@ const noteSample = async ($: EngineInterface, sample: Sample): Promise<void> => 
   await $.store.set(LIMIT_SAMPLES_KEY, band.samples).catch(() => undefined)
 }
 
+/** A sum of dollars the host gives, or undefined for anything that isn't one
+ *  spent: below zero, infinite, not a number. */
+const dollarsOf = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined)
+
+/** A response's usage with each count taken as a count: one the host left
+ *  out, or gave as anything else, is 0, so no sum becomes NaN for good. */
+const counted = (usage: ModelUsage): ModelUsage => ({
+  ...usage,
+  input_tokens: countOf(usage, 'input_tokens'),
+  output_tokens: countOf(usage, 'output_tokens'),
+  cache_read_input_tokens: countOf(usage, 'cache_read_input_tokens'),
+  cache_creation_input_tokens: countOf(usage, 'cache_creation_input_tokens'),
+})
+
 /** What the session has cost so far, if the host keeps a ledger; undefined
  *  when it has none, or the read fails. */
 const ledgerUsd = async ($: EngineInterface): Promise<number | undefined> =>
-  (await $.session.usage().catch(() => undefined))?.cost?.usd
+  dollarsOf((await $.session.usage().catch(() => undefined))?.cost?.usd)
 
 /** Reads where auto-compaction runs, or that it is off, from the context
  *  breakdown. Local and token-free, but it can fail, or have nothing yet:
@@ -624,8 +668,9 @@ export const register: Register = on => {
     band.warned = forgetConversation(band.warned)
     await keepCounts($)
     band.lastPaintKey = ''
-    // A resume may be another project.
-    void readWorkspace($)
+    // A resume may be another project. Any other end is the process's, and
+    // two git processes on the way out hold up the exit.
+    if (e.reason === 'clear' || e.reason === 'resume') void readWorkspace($)
     $.ui.invalidate('ui.render')
     return next(e)
   })
@@ -672,7 +717,7 @@ export const register: Register = on => {
     const result = await next(e)
     if (e.agentId === undefined) {
       const usage = await $.session.usage().catch(() => undefined)
-      const cost = usage?.cost?.usd
+      const cost = dollarsOf(usage?.cost?.usd)
       const spent = band.insights.noteTurnEnd(e.turnId, cost)
       // Taken every turn, so a rebuild never marks a later turn's cost.
       const ended = band.cache.turnEnded(cost)
@@ -712,7 +757,7 @@ export const register: Register = on => {
       const served = 'serverToolUses' in result && Array.isArray(result.serverToolUses) ? result.serverToolUses.length : 0
       // The ledger goes in with the response, so no other hook's step can
       // come between them and take its bill for this one's.
-      band.cache.responded(result.usage, sentAt, isMain, { serverTools: served, ledger: await ledgerUsd($), ledgerBefore, messages: e.messageCount })
+      band.cache.responded(counted(result.usage), sentAt, isMain, { serverTools: served, ledger: await ledgerUsd($), ledgerBefore, messages: e.messageCount })
       // The reply brought the limits with it, whether or not they moved.
       band.insights.noteReading(await $.clock.now())
       $.ui.invalidate('ui.render')

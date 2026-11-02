@@ -69,7 +69,7 @@ export const tierFactor = (model: string | undefined, prompt: number): number =>
 
 /** What a cache read costs against base input on `model`. */
 export const readMultiplier = (model: string | undefined): number =>
-  (model === undefined ? undefined : READ_MULT_BY_MODEL[baseModel(model)]) ?? DEFAULT_READ_MULT
+  (model !== undefined && Object.hasOwn(READ_MULT_BY_MODEL, baseModel(model)) ? READ_MULT_BY_MODEL[baseModel(model)] : undefined) ?? DEFAULT_READ_MULT
 
 /** Tokens weighted by their price against base input on `model`: the one
  *  unknown left is the base rate itself. */

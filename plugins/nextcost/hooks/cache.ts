@@ -317,12 +317,16 @@ const INITIAL: Readonly<CacheState> = {
 // ---- what the state says ----------------------------------------------------
 
 /** When the conversation's last reply was, before this band's own: as the
- *  engine said on a resume, else as recalled. */
-const recalledAt = (s: CacheState): number | undefined => s.resumedCache?.lastAt ?? s.recall?.lastAt
+ *  engine said on a resume, else as recalled. A time after `now` is a clock
+ *  that ran ahead, or data that isn't a time: unknown. */
+const recalledAt = (s: CacheState, now: number): number | undefined => {
+  const at = s.resumedCache?.lastAt ?? s.recall?.lastAt
+  return at !== undefined && at <= now ? at : undefined
+}
 
 /** Whether the cache stands as recalled: no reply seen yet, a conversation
  *  that didn't start here, something to recall, and no compaction since. */
-const isRecalled = (s: CacheState): boolean => s.requests === 0 && !s.knownFresh && s.compactedAt === undefined && recalledAt(s) !== undefined
+const isRecalled = (s: CacheState, now: number): boolean => s.requests === 0 && !s.knownFresh && s.compactedAt === undefined && recalledAt(s, now) !== undefined
 
 /** The TTL the cache stands at: the pin, else one seen on the transcript,
  *  else the one assumed or inferred. */
@@ -447,13 +451,14 @@ const measuredColdAt = (s: CacheState): number | null => (s.requests > 0 ? s.las
 
 /** When the cache goes or went cold: measured from the last reply, else
  *  recalled; null with nothing to go by, or a resume the engine called expired. */
-const coldAtOf = (s: CacheState): number | null => {
+const coldAtOf = (s: CacheState, now: number): number | null => {
   if (s.compactedAt !== undefined) return s.compactedAt
   if (s.notCaching) return null
   const measured = measuredColdAt(s)
-  if (measured !== null) return measured
+  // A reply dated after now cools a lifetime from now at the latest.
+  if (measured !== null) return Math.min(measured, now + TTL_MS[effectiveTtl(s)])
   if (s.resumedCache?.expired === true) return null
-  const recalled = isRecalled(s) ? recalledAt(s) : undefined
+  const recalled = isRecalled(s, now) ? recalledAt(s, now) : undefined
   return recalled === undefined ? null : recalled + TTL_MS[effectiveTtl(s)]
 }
 
@@ -463,15 +468,16 @@ const coldAtOf = (s: CacheState): number | null => {
 const leftMsOf = (s: CacheState, now: number): number => {
   if (s.compactedAt !== undefined || s.notCaching) return 0
   if (s.requests === 0 && s.resumedCache?.expired === true) return 0
-  const at = coldAtOf(s)
-  return at === null ? TTL_MS[effectiveTtl(s)] : Math.max(0, at - now)
+  const at = coldAtOf(s, now)
+  const lifetime = TTL_MS[effectiveTtl(s)]
+  return at === null ? lifetime : Math.min(lifetime, Math.max(0, at - now))
 }
 
 /** How long the recalled reply has sat idle at `now`; null unless the
  *  cache stands as recalled. */
 const idleMsOf = (s: CacheState, now: number): number | null => {
-  const lastAt = recalledAt(s)
-  return isRecalled(s) && lastAt !== undefined ? now - lastAt : null
+  const lastAt = recalledAt(s, now)
+  return isRecalled(s, now) && lastAt !== undefined ? now - lastAt : null
 }
 
 /** Where Claude Code compacts an idle conversation, of where the band draws:
@@ -481,14 +487,14 @@ const idleCompactsOn = (surface: RenderSurface | undefined): boolean => surface 
 /** Whether /model names another model than the last turn took, while there
  *  is a cache to lose. Name against name, as /model gives them, since a name
  *  may be an alias that the API's own name for it would never match. */
-const modelChangedTo = (s: CacheState, modelNow: string | undefined): boolean =>
-  (s.requests > 0 || isRecalled(s)) && modelNow !== undefined && s.priceModel !== undefined && modelName(modelNow) !== modelName(s.priceModel)
+const modelChangedTo = (s: CacheState, modelNow: string | undefined, now: number): boolean =>
+  (s.requests > 0 || isRecalled(s, now)) && modelNow !== undefined && s.priceModel !== undefined && modelName(modelNow) !== modelName(s.priceModel)
 
 /** The cache as the band shows it, at `now`: measured once a reply has been
  *  seen, recalled before that. `contextTokens` is the context as it stands,
  *  which a recalled cold cache would rebuild. */
 const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, contextTokens: number, autoCompactOff: boolean, at: Readonly<{ modelNow?: string | undefined; surface?: RenderSurface }>): CacheView => {
-  const recalled = isRecalled(s)
+  const recalled = isRecalled(s, now)
   const recallRate = s.recall?.rate ?? null
   // A resume's price is the engine's own; else it is solved from the rate recalled.
   const recalledPrice = s.resumedCache?.reWarmUsd ?? (recallRate === null ? null : reWarmAt(s, recallRate, contextTokens))
@@ -499,7 +505,7 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
   return {
     requests: s.requests,
     leftMs: leftMsOf(s, now),
-    coldAt: coldAtOf(s),
+    coldAt: coldAtOf(s, now),
     ttl: effectiveTtl(s),
     // Known, not assumed: pinned, or seen on the transcript's last cache write.
     ttlPinned: s.ttlPinned || s.ttlSeen !== undefined || s.ttlRead,
@@ -517,7 +523,7 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
     compacted: s.compactedAt !== undefined,
     compactedIdle: s.compactedIdle,
     notCaching: s.notCaching,
-    modelChanged: modelChangedTo(s, at.modelNow),
+    modelChanged: modelChangedTo(s, at.modelNow, now),
     idleCompacts: idleCompactsOn(at.surface) && s.idleCompactFrom !== undefined && !autoCompactOff && contextTokens >= s.idleCompactFrom,
     recovered: s.prior !== undefined,
     tokens: { sent: tokens.uncached + tokens.written, back: tokens.output, cached: tokens.read },
@@ -706,7 +712,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
 
   // Read as cold already: a resume the engine called expired, or a recalled
   // reply past its TTL.
-  const coldBefore = isRecalled(s) && leftMsOf(s, sentAt) === 0
+  const coldBefore = isRecalled(s, sentAt) && leftMsOf(s, sentAt) === 0
   const gap = s.requests > 0 ? sentAt - s.lastAt : 0
   // Another model has its own cache: reading nothing after a switch is no miss.
   const switched = s.model !== undefined && model !== undefined && model !== s.model

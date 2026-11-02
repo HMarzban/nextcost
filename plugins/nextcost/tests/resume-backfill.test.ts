@@ -111,6 +111,21 @@ test('a cache the engine calls expired is cold, however recent the reply', async
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold/)
 })
 
+test('an idle time below zero is no idle time: the last reply is recalled, as when the engine says nothing', async ($, on) => {
+  setup(on, { usage: RESUMED, env: ENV, now: 3 * HOUR })
+  engine.transcript = jsonl({ type: 'assistant', timestamp: new Date(3 * HOUR - 10 * MIN).toISOString(), message: { role: 'assistant', model: 'claude-opus-5-5', content: [] } })
+  await $.session.start(START)
+  await resume($, -6 * HOUR)
+  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache 50m/)
+})
+
+test('an idle time below zero with nothing to recall draws no countdown', async ($, on) => {
+  setup(on, { usage: RESUMED, env: ENV, now: 3 * HOUR })
+  await $.session.start(START)
+  await resume($, -6 * HOUR)
+  expect(shown(pillOf(await mounted($), 'cache'))).not.toMatch(/cache \d/)
+})
+
 test("without the engine's idle time, the band's own memory of the last reply stands in", async ($, on) => {
   const clock = setup(on, { usage: RESUMED, env: ENV, store: { sessions: { s1: { lastAt: 3 * HOUR - 10 * MIN } } }, now: 3 * HOUR })
   await $.session.start(START)

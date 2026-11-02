@@ -28,11 +28,12 @@ it:
   They run at session start, after each of your messages, on a new
   conversation and when you open the cards. They never run while the band
   draws, and they have a 3-second timeout. The engine runs git with
-  repository hooks off. `core.fsmonitor=false` stops git from starting a
-  program a repository's own config names, and `--no-optional-locks` keeps
-  it from taking the index lock. Besides `grep` and `tail`, below, the
-  plugin runs no other command, though git itself still honours the rest
-  of your git configuration.
+  repository hooks off. `core.fsmonitor=false` stops git from starting the
+  repository's fsmonitor program, and nothing else: git still honours the
+  rest of the repository's config, some of which can start programs (a
+  filter's `clean` command, for one), as any git command run in that folder
+  does. `--no-optional-locks` keeps it from taking the index lock. Besides
+  `grep` and `tail`, below, the plugin runs no other command.
 - **Reads**, once when the band loads into a session it can't tell is new
   (reopened, reloaded, or one whose cost Claude Code doesn't report) and
   its store doesn't know the last reply's time or its model's rate, the end

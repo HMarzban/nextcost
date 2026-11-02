@@ -2,7 +2,7 @@
 
 import { test, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { newCache, type CacheModel } from '../hooks/cache'
+import { TTL_MS, newCache, type CacheModel } from '../hooks/cache'
 import {
   BUILD_100K,
   BUILD_80K,
@@ -59,6 +59,17 @@ test('the first reply after a resume or a reload rebuilds a cache already cold',
   warm.responded({ ...resp(2_000, 196_000, 4_000, 3_000), model: 'claude-opus-5-5' }, 10 * MIN, true)
   expect(rebuilt(warm)).toBe(false)
 })
+test('a miss within the lifetime rebuilt the cache too, and the turn takes the mark once', () => {
+  const c = newCache()
+  c.responded(OPUS_BUILD, 0, true)
+  expect(rebuilt(c)).toBe(false)
+  // Two minutes on, well within the hour: the reply reads a tenth of what was cached.
+  c.responded({ ...resp(2_000, 15_000, 4_000, 3_000), model: 'claude-opus-5-5' }, 2 * MIN, true)
+  expect(viewAt(c, 2 * MIN).misses).toBe(1)
+  expect(rebuilt(c)).toBe(true)
+  expect(rebuilt(c)).toBe(false)
+})
+
 test('a warm read is no re-warm', () => {
   const c = newCache()
   c.responded(OPUS_BUILD, 0, true)
@@ -457,4 +468,45 @@ test('a lifetime inferred before a reload stands, with nothing pinned on either 
   const reloaded = newCache(before.kept())
   reloaded.configured({ ttl: undefined, idleCompactFrom: undefined })
   expect(reloaded.view({ now: 6 * 60_000, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.ttl).toBe('5m')
+})
+
+// ── a countdown never runs past its lifetime ────────────────────────────
+
+const viewAt = (c: CacheModel, now: number) => c.view({ now, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache
+
+test('a reply dated after now counts down one lifetime at most, whatever the clock says', () => {
+  const c = newCache()
+  c.responded(OPUS_BUILD, 6 * HOUR, true)
+  for (const now of [0, HOUR]) {
+    const cache = viewAt(c, now)
+    expect(cache.leftMs).toBe(TTL_MS['1h'])
+    expect(c.leftMs(now)).toBe(TTL_MS['1h'])
+    expect(cache.coldAt).toBe(now + TTL_MS['1h'])
+  }
+})
+
+test('a recalled reply dated after now is unknown: no countdown, no idle time', () => {
+  for (const lastAt of [HOUR + 1, 6 * HOUR, 1e15]) {
+    const c = newCache()
+    c.loaded({ priceModel: undefined, ledger: 5 })
+    c.recalled({ lastAt, rate: null, billed: undefined })
+    const cache = viewAt(c, HOUR)
+    expect([cache.recalled, cache.coldAt, cache.idleMs, c.idleMs(HOUR)]).toEqual([false, null, null, null])
+    expect(cache.leftMs).toBeLessThanOrEqual(TTL_MS['1h'])
+  }
+})
+
+test("a resume the engine dates after now is unknown too", () => {
+  const c = newCache()
+  c.resumed({ cache: { lastAt: 1e15, expired: false, reWarmUsd: undefined }, transcript: undefined })
+  const cache = viewAt(c, HOUR)
+  expect([cache.recalled, cache.coldAt, cache.idleMs]).toEqual([false, null, null])
+})
+
+test('a recalled reply at now is a reply just made, not unknown', () => {
+  const c = newCache()
+  c.loaded({ priceModel: undefined, ledger: 5 })
+  c.recalled({ lastAt: HOUR, rate: null, billed: undefined })
+  const cache = viewAt(c, HOUR)
+  expect([cache.recalled, cache.idleMs, cache.leftMs]).toEqual([true, 0, TTL_MS['1h']])
 })

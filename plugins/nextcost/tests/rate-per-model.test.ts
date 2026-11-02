@@ -335,8 +335,8 @@ test('through the hooks: after a switch the store keeps the new model its own ra
 
 test('a stored rate under a provider id is found again under that id', () => {
   const id = 'us.anthropic.claude-opus-5-5-v1:0'
-  const stored = fromStore({ sessions: { s1: { lastAt: 5, billed: id } }, rates: { [id]: 4e-6 } }, 's1', 'opus')
-  expect(recallOf(stored, undefined).rate).toBe(4e-6)
+  const stored = fromStore({ sessions: { s1: { lastAt: 5, billed: id } }, rates: { [id]: 4e-6 } }, 's1', 'opus', 10)
+  expect(recallOf(stored, undefined, 10).rate).toBe(4e-6)
 })
 
 // ---- the cost record's split ------------------------------------------------
