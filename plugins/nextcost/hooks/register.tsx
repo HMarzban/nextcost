@@ -87,10 +87,10 @@ type Band = {
   compactAt: number | undefined
   /** The breakdown said auto-compaction is off. */
   autoCompactOff: boolean
-  /** The breakdown has been read this session, so the context's scale is known. */
-  compactKnown: boolean
-  /** Measures that found no breakdown before one was read: the first holds the context's toast. */
-  compactMisses: number
+  /** What the band knows of the context's scale. Unread: no breakdown yet.
+   *  Held: one measure found none, which holds the context's toast. Known: a
+   *  breakdown was read this session, or a second measure says the engine has none. */
+  compactScale: 'unread' | 'held' | 'known'
   /** Where the session is: its project, home-relative, and git there. Read
    *  between redraws, never while drawing, since git takes a process. */
   workspace: Workspace | undefined
@@ -98,8 +98,6 @@ type Band = {
    *  read from the store at load and at each new 15-minute bucket, written
    *  once per bucket. */
   samples: Sample[]
-  /** Reads begun, so one that ends after a newer one never overwrites it. */
-  reads: number
   /** The conversation the engine last said it resumed, until it ends. The
    *  engine may say so before session.start, or while it runs, and its reset
    *  forgets it, so it outlives that reset and session.start notes it again. */
@@ -127,7 +125,7 @@ type Band = {
 /** What each session.start begins the band from: its cache model, insights
  *  and warnings spoken, new or carrying on after a reload, nothing drawn or
  *  read yet, and the default layout until the store is read. */
-const freshSession = (from?: Readonly<{ cache: unknown; insights: unknown; warned: ReadonlyArray<readonly [string, number]> }> | null): Pick<Band, 'cache' | 'insights' | 'warned' | 'lastPaintKey' | 'resets' | 'workspace' | 'layout' | 'compactAt' | 'autoCompactOff' | 'compactKnown' | 'compactMisses'> => ({
+const freshSession = (from?: Readonly<{ cache: unknown; insights: unknown; warned: ReadonlyArray<readonly [string, number]> }> | null): Pick<Band, 'cache' | 'insights' | 'warned' | 'lastPaintKey' | 'resets' | 'workspace' | 'layout' | 'compactAt' | 'autoCompactOff' | 'compactScale'> => ({
   // Only this band writes them, as keepCounts wrote them.
   cache: newCache(from?.cache as CacheState | undefined),
   insights: newInsights(from?.insights as InsightState | undefined),
@@ -138,8 +136,7 @@ const freshSession = (from?: Readonly<{ cache: unknown; insights: unknown; warne
   layout: DEFAULT_LAYOUT,
   compactAt: undefined,
   autoCompactOff: false,
-  compactKnown: false,
-  compactMisses: 0,
+  compactScale: 'unread',
 })
 
 /** The band. A reload starts it over with the module; session.start starts
@@ -152,7 +149,6 @@ const band: Band = {
   removed: undefined,
   glyphs: 'unicode',
   samples: [],
-  reads: 0,
   resume: undefined,
   readAgainFor: undefined,
   transcript: undefined,
@@ -205,6 +201,12 @@ const transcriptEnd = async ($: EngineInterface, path: string): Promise<string |
   return tail?.exitCode === 0 ? tail.stdout : readWhole($, path)
 }
 
+/** The end of `sessionId`'s transcript, wherever `transcriptFile` finds it. */
+const endOfTranscript = async ($: EngineInterface, sessionId: string, given: string | undefined): Promise<string | undefined> => {
+  const file = await transcriptFile($, sessionId, given)
+  return file === undefined ? undefined : transcriptEnd($, file)
+}
+
 /** What `sessionId`'s conversation spent before this process resumed it at
  *  `before`, off its transcript: its cost record, which `grep` finds at any
  *  size, and the replies logged after it, which `tail` reads from there.
@@ -254,36 +256,42 @@ const recallLastReply = async (
   }
 }
 
-/** How long after a turn to look for its reply in the transcript. Claude Code
+/** How long after a turn to look for its line in the transcript. Claude Code
  *  writes a line about 100ms after its turn completes, on a timer, so a read
  *  at the turn's end finds the turn before's; each further wait is for a
  *  machine under load. Waiting in the hook would hold up the next turn. */
-const LIFETIME_READS_MS = [500, 2000, 8000]
+const READ_AGAIN_MS = [500, 2000, 8000]
+
+/** Runs `attempt` after each of the waits, off the hook, until it says it is
+ *  done or it fails. */
+const retryLater = ($: EngineInterface, attempt: () => Promise<boolean>, waits: readonly number[] = READ_AGAIN_MS): void => {
+  const [wait, ...later] = waits
+  if (wait === undefined) return
+  $.clock.after(wait, () => {
+    void attempt().then(
+      done => {
+        if (!done) retryLater($, attempt, later)
+      },
+      () => undefined,
+    )
+  })
+}
 
 /** Reads, off its transcript, the lifetime the cache write of the request sent
  *  at `since` was made for, and redraws, waiting for its line to be logged.
  *  Callers don't wait on it, and it never throws: failing, the lifetime stands
  *  as the cache's reads infer it. */
-const readLifetime = ($: EngineInterface, since: number, waits: readonly number[] = LIFETIME_READS_MS): void => {
-  const [wait, ...later] = waits
-  if (wait === undefined) return
-  $.clock.after(wait, () => {
-    void (async () => {
-      try {
-        const sessionId = band.resume?.sessionId ?? (await $.session.id())
-        const file = await transcriptFile($, sessionId, band.resume?.path ?? band.transcript)
-        const end = file === undefined ? undefined : await transcriptEnd($, file)
-        const write = end === undefined ? undefined : lastWrite(end)
-        if (write === undefined || write.at === undefined || write.at < since) return readLifetime($, since, later)
-        band.cache.wroteFor(write.ttl)
-        await keepCounts($)
-        $.ui.invalidate('ui.render')
-      } catch {
-        // the lifetime stands
-      }
-    })()
+const readLifetime = ($: EngineInterface, since: number): void =>
+  retryLater($, async () => {
+    const sessionId = band.resume?.sessionId ?? (await $.session.id())
+    const end = await endOfTranscript($, sessionId, band.resume?.path ?? band.transcript)
+    const write = end === undefined ? undefined : lastWrite(end)
+    if (write === undefined || write.at === undefined || write.at < since) return false
+    band.cache.wroteFor(write.ttl)
+    await keepCounts($)
+    $.ui.invalidate('ui.render')
+    return true
   })
-}
 
 /** Reads what a resumed conversation's transcript shows, keeps it with the
  *  resume and redraws; where the engine gave no idle time, recalls the last
@@ -310,26 +318,18 @@ const readResumed = async ($: EngineInterface, mine: Resume): Promise<void> => {
   }
 }
 
-/** How long after a resumed conversation's first turn to look again. */
-const RESUME_READS_MS = [500, 2000, 8000]
-
 /** Reads a resumed conversation's transcript again, once, after its first
  *  turn, where it showed no spend at its start: a fork's new file gains its
  *  lines only after its first prompt, and the engine doesn't name the file it
  *  forked from. Waits off the hook, as its line lands late, and stops at the
  *  first read that finds a record. */
-const readResumedAgain = ($: EngineInterface, waits: readonly number[] = RESUME_READS_MS): void => {
-  const [wait, ...later] = waits
-  if (wait === undefined) return
-  $.clock.after(wait, () => {
-    void (async () => {
-      const mine = band.resume
-      if (mine === undefined || mine.transcript?.spend !== undefined) return
-      await readResumed($, mine)
-      readResumedAgain($, later)
-    })()
+const readResumedAgain = ($: EngineInterface): void =>
+  retryLater($, async () => {
+    const mine = band.resume
+    if (mine === undefined || mine.transcript?.spend !== undefined) return true
+    await readResumed($, mine)
+    return false
   })
-}
 
 /** A conversation resumed or forked: never new, its cache as the engine
  *  judges it, or as the band recalls it where the engine doesn't say; then,
@@ -376,15 +376,16 @@ const rememberTurn = async ($: EngineInterface, cache: Remembered): Promise<void
   }
 }
 
-/** A workspace read is out, and another was asked for while it was. */
-let reading = false
-let rereads = false
+/** The workspace read out, if any. Landing: nothing has made it stale. Dropped:
+ *  a new load has, so it lands nothing. Again: a read was asked for while it was
+ *  out, so it lands nothing and another follows. */
+type WorkspaceRead = 'idle' | 'landing' | 'dropped' | 'again'
+let workspaceRead: WorkspaceRead = 'idle'
 
 /** Reads the project and git once into `band.workspace`, then redraws. It
  *  never throws: outside a repository, or with git missing or slow, the band
  *  shows the path alone. */
 const readWorkspaceOnce = async ($: EngineInterface): Promise<void> => {
-  const mine = ++band.reads
   try {
     const root = await $.session.root()
     const home = await $.env.get('HOME')
@@ -402,7 +403,7 @@ const readWorkspaceOnce = async ($: EngineInterface): Promise<void> => {
       stdoutOf($.process.run(['git', 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: root, timeoutMs: PROCESS_TIMEOUT_MS })),
       $.session.repo().catch(() => null),
     ])
-    if (mine !== band.reads) return
+    if (workspaceRead !== 'landing') return
     // Names off the file system and git are drawn on one row: printable.
     const path = printable(homeRelative(root, home))
     const last = band.workspace
@@ -424,19 +425,18 @@ const readWorkspaceOnce = async ($: EngineInterface): Promise<void> => {
  *  so one asked for while another is out waits for it, and the one out, now
  *  stale, lands nothing. Callers don't wait on it. */
 const readWorkspace = async ($: EngineInterface): Promise<void> => {
-  if (reading) {
-    rereads = true
-    band.reads++ // the read out began before this request
+  if (workspaceRead !== 'idle') {
+    workspaceRead = 'again'
     return
   }
-  reading = true
   try {
     do {
-      rereads = false
+      workspaceRead = 'landing'
       await readWorkspaceOnce($)
-    } while (rereads)
+      // The cast: the read awaited may have changed it, which the checker can't see.
+    } while ((workspaceRead as WorkspaceRead) === 'again')
   } finally {
-    reading = false
+    workspaceRead = 'idle'
   }
 }
 
@@ -489,7 +489,7 @@ const readCompaction = async ($: EngineInterface): Promise<void> => {
     // On without a threshold says nothing about where: leave it unknown.
     band.autoCompactOff = !breakdown.isAutoCompactEnabled
     band.compactAt = breakdown.isAutoCompactEnabled ? breakdown.autoCompactThreshold : undefined
-    band.compactKnown = true
+    band.compactScale = 'known'
   } catch {
     // keep the last known setting
   }
@@ -618,11 +618,7 @@ const readCacheSettings = async ($: EngineInterface): Promise<void> => {
  *  load, names it, else where Claude Code keeps it. */
 const recallOnLoad = async ($: EngineInterface, id: string): Promise<void> => {
   const path = band.resume?.path ?? band.transcript
-  const readEnd = async () => {
-    const file = await transcriptFile($, id, path)
-    return file === undefined ? undefined : transcriptEnd($, file)
-  }
-  band.cache.recalled(await recallLastReply($, id, readEnd))
+  band.cache.recalled(await recallLastReply($, id, () => endOfTranscript($, id, path)))
 }
 
 export const register: Register = on => {
@@ -643,7 +639,7 @@ export const register: Register = on => {
     band.samples = samplesUpTo((await storedSamples($)) ?? [], now)
     // Where the context compacts, before any measure: a resumed one is already past its window's levels.
     await readCompaction($)
-    band.reads++ // any read still out began before this load
+    if (workspaceRead === 'landing') workspaceRead = 'dropped' // it began before this load
     // A read that fails keeps the layout drawn: none yet, so chips.
     await readLayout($)
     // The settings come before the recall, which may wait on a transcript,
@@ -796,15 +792,15 @@ export const register: Register = on => {
     for (const text of limits.say) $.ui.toast(text)
 
     await readCompaction($)
-    if (!band.compactKnown) band.compactMisses++
-
     // The first measure with no breakdown holds the toast, for the point it would speak on; a second says the engine has none.
+    if (band.compactScale !== 'known') band.compactScale = band.compactScale === 'unread' ? 'held' : 'known'
+
     const context = contextToasts(band.warned, {
       used: contextUsed(e.context),
       window: e.context.window,
       compactAt: band.compactAt,
       autoCompactOff: band.autoCompactOff,
-      scaleKnown: band.compactKnown || band.compactMisses > 1,
+      scaleKnown: band.compactScale === 'known',
     })
     band.warned = context.warned
     for (const text of context.say) $.ui.toast(text)
