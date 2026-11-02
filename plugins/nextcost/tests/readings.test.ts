@@ -31,11 +31,23 @@ test('a window that fills before its reset says when: a measured fill, else the 
   const seven = sevenFrom(3 * 24 * HOUR + 20 * HOUR)
   expect(Math.abs((seven?.fillInMs ?? 0) - (30 * HOUR * 34) / 66)).toBeLessThan(1e-3)
   expect(seven?.fillText).toBe('full ~Mon')
-  expect(sevenFrom(3 * 24 * HOUR)?.fillText).toBe('full ~15:27')
+  expect(sevenFrom(3 * 24 * HOUR)?.fillText).toBe('full ~15:30')
   expect(readingsOf(snapOf({ sevenDay: { percentUsed: 66, resetsAt: 138 * HOUR } })).sevenDay?.fillText).toBe('full in ~15h 30m')
   // Measured, the 5h's own fill.
   expect(readingsOf(snapOf({ zone: fixedZone(0), fiveHour: { percentUsed: 40, resetsAt: 3 * HOUR, etaMs: 40 * MIN } })).fiveHour?.fillText).toBe('full ~00:40')
   expect(readingsOf(snapOf({ zone: fixedZone(0) })).fiveHour?.fillInMs).toBeUndefined()
+})
+test("a fill's clock is rounded as its ETA is: to 5 minutes under an hour, 15 from one, in the wall time it shows", () => {
+  const now = Date.UTC(2026, 9, 9, 13, 40)
+  const filling = (etaMs: number, zone = fixedZone(0)) => readingsOf(snapOf({ now, zone, fiveHour: { percentUsed: 84, resetsAt: now + 4 * HOUR, etaMs } })).fiveHour
+  // 14:23 is the minute the arithmetic gives; the ETA says ~45m, to 5 minutes.
+  expect(filling(43 * MIN)?.fillText).toBe('full ~14:25')
+  expect(filling(43 * MIN)?.fullIn).toBe('~45m')
+  expect(filling(127 * MIN)?.fillText).toBe('full ~15:45') // 15:47
+  expect(filling(70 * MIN)?.fillText).toBe('full ~14:45') // 14:50: its ETA, ~1h 15m, is to 15
+  // At +5:30 the wall clock reads 19:10; its minutes round, not UTC's.
+  expect(filling(43 * MIN, fixedZone(330))?.fillText).toBe('full ~19:55')
+  expect(filling(117 * MIN, fixedZone(330))?.fillText).toBe('full ~21:00') // 21:07, to the quarter hour
 })
 test('a card says nothing of a window that has passed', () => {
   expect(readingsOf(snapOf({ now: 4 * HOUR })).fiveHour?.resetAndPace).toBeUndefined()

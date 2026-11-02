@@ -132,10 +132,13 @@ export const severityMark = (frac: number): string => {
   return shown >= SEVERE_AT ? '!!' : shown >= WARN_AT ? '!' : ''
 }
 
+/** Where a projection's step goes from 5 minutes to 15: 57.5 minutes rounds to the hour. */
+const ETA_QUARTER_FROM_MIN = 57.5
+
 /** A projection's whole minutes: 5-minute steps under an hour, 15 from one. */
 export const etaMinutes = (ms: number): number => {
   const mins = Math.max(0, ms) / MINUTE_MS
-  return mins < 57.5 ? Math.max(5, Math.round(mins / 5) * 5) : Math.round(mins / 15) * 15
+  return mins < ETA_QUARTER_FROM_MIN ? Math.max(5, Math.round(mins / 5) * 5) : Math.round(mins / 15) * 15
 }
 
 /** A projection, never a countdown: `~40m`, `~1h`, `~1h 15m`. */
@@ -188,6 +191,14 @@ const wallTime = (ms: number, zone: Zone): number => ms + zone(ms) * MINUTE_MS
 const hhmm = (wall: number): string => {
   const at = new Date(wall)
   return `${String(at.getUTCHours()).padStart(2, '0')}:${String(at.getUTCMinutes()).padStart(2, '0')}`
+}
+
+/** When a projection `etaMs` away fills, at `ms`, rounded as its ETA is: the
+ *  minutes of the clock it will be read on go to 5 under an hour and 15 from
+ *  one, so `~1h 15m` doesn't come with a clock to the minute. */
+export const fillTime = (ms: number, etaMs: number, zone: Zone): number => {
+  const step = (etaMs / MINUTE_MS < ETA_QUARTER_FROM_MIN ? 5 : 15) * MINUTE_MS
+  return Math.round(wallTime(ms, zone) / step) * step - zone(ms) * MINUTE_MS
 }
 
 /** A local 24-hour clock time: `14:32`. */

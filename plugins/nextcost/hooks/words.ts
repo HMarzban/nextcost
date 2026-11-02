@@ -6,6 +6,7 @@
 
 import type { DrawnWeek, SliceMark } from './calendar'
 import {
+  fillTime,
   fmtAgo,
   fmtCost,
   fmtCountdown,
@@ -460,7 +461,7 @@ export const limitWords = (f: LimitFacts, frame: Frame): LimitWords => {
   const resetWhen = resetClock ?? resetIn
   // A day's window says the fill's day; a shorter one its clock too, as its reset does.
   const fillDay = f.key === '7d' ? fmtDay : fmtDayClock
-  const fillAt = f.fillInMs === undefined ? undefined : zone !== undefined ? `~${fillDay(frame.now + f.fillInMs, zone, frame.now)}` : `in ${fmtEta(f.fillInMs)}`
+  const fillAt = f.fillInMs === undefined ? undefined : zone !== undefined ? `~${fillDay(fillTime(frame.now + f.fillInMs, f.fillInMs, zone), zone, frame.now)}` : `in ${fmtEta(f.fillInMs)}`
   const amberValue = f.tone !== 'amber' ? undefined : AMBER.limit(f.name, f.percentUsed)
   const amber = fullIn !== undefined && amberValue !== undefined ? AMBER.limitPace(f.name, fullIn) : amberValue
   const fact: Fact =
