@@ -6,11 +6,26 @@ import type { On, SessionUsage } from 'claude-code'
 import type { Engine, MockClock } from 'claude-code/testing'
 import { TTL_MS, type Ttl } from '../hooks/cache'
 import {
-  BUILD_155K, DEFAULT_MAX_ROWS, HOUR, HOUR_1, MIN, SPEND_LIMIT, START, SUMMARY, USAGE, FRESH, breakdown, engine, mountBand, pacing, respond, setup,  usageAt, type Node,
-  startTurn,
-  endTurn,
-  usage,
+  BUILD_155K,
+  DEFAULT_MAX_ROWS,
+  FRESH,
+  HOUR,
+  HOUR_1,
+  MIN,
+  SPEND_LIMIT,
+  START,
+  SUMMARY,
+  USAGE,
+  breakdown,
+  engine,
+  mountBand,
+  pacing,
   resp,
+  respond,
+  setup,
+  turn,
+  usageAt,
+  type Node,
 } from './helpers'
 
 export type Appearance = 'dark' | 'light' | 'plain'
@@ -93,12 +108,7 @@ export const SCENARIOS = {
     drive: async $ => {
       await replied($)
       // As the real ledger moves: each turn's bill lands in its step.
-      for (let i = 1; i <= 30; i++) {
-        await startTurn($, `t${i}`, 2.41 + (i - 1) * 0.2)
-        usage.current = { ...usage.current, cost: { usd: 2.41 + i * 0.2 } }
-        await respond($, resp(200, 155_000, 1_000, 500))
-        await endTurn($, `t${i}`, 2.41 + i * 0.2)
-      }
+      for (let i = 1; i <= 30; i++) await turn($, `t${i}`, 2.41 + (i - 1) * 0.2, 2.41 + i * 0.2, { usage: resp(200, 155_000, 1_000, 500) })
     },
     amber: [],
   },

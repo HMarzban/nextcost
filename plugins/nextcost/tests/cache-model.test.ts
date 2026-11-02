@@ -295,9 +295,9 @@ test("an advisor step's own bill stays out of the rate the re-warm is solved fro
   await $.session.start(START)
   await respond($, BUILD_100K) // the ledger reads $2.41: 220k weighted, its writes an hour's
   // The step's message rounds and the advisor's own round bill $1.29 more.
-  usage.current = { ...USAGE, cost: { usd: 3.7009 }, context: { tokens: 102_002, window: 200_000, percent: 51 } }
+  usage.current = { ...usage.current, context: { tokens: 102_002, window: 200_000, percent: 51 } }
   engine.serverTools = 1
-  await respond($, resp(4, 200_000, 2_000, 1_000))
+  await respond($, resp(4, 200_000, 2_000, 1_000), { billsTo: 3.7009 })
   engine.serverTools = 0
   await clock.advance(61 * MIN)
 
@@ -435,8 +435,7 @@ test("a subagent's own TTL is read as Claude Code reads it, and an hour there pr
   const clock = setup(on, { env: { ENABLE_PROMPT_CACHING_1H: '1', CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL: '5m' } })
   await $.session.start(START)
   await respond($, BUILD_100K) // main: weighted 220k
-  usage.current = { ...USAGE, cost: { usd: 2.565 } }
-  await respond($, resp(3_000, 20_000, 10_000, 4_000), { agentId: 'agent-1' }) // 36.5k at five minutes
+  await respond($, resp(3_000, 20_000, 10_000, 4_000), { agentId: 'agent-1', billsTo: 2.565 }) // 36.5k at five minutes
   await clock.advance(61 * MIN)
   // ENABLE_PROMPT_CACHING_1H asks an hour for both buckets, but the subagent's
   // own variable comes first: r = 2.565/256.5k; re-warm 2 * 112k * r = $2.24

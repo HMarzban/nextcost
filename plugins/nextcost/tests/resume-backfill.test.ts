@@ -519,8 +519,7 @@ test("a recall that lands after the first reply leaves that reply's billed model
   await $.session.start(START)
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: PATH })
   await $.turn.start(TURN_START)
-  usage.current = { ...usage.current, cost: { usd: 2.83 } }
-  await respond($, BUILD_155K)
+  await respond($, BUILD_155K, { billsTo: 2.83 })
   release()
   await clock.settle()
   await $.turn.complete(TURN_DONE)
@@ -619,12 +618,10 @@ test("the first reply after a resume the engine calls expired is pulse's re-warm
 /** Two turns with the cache warm: 100k read, and the ledger at $3. */
 const beforeReload = async ($: Engine) => {
   await startTurn($, 't1', 2)
-  usage.current = { ...USAGE, cost: { usd: 2.5 } }
-  await respond($, BUILD_80K)
+  await respond($, BUILD_80K, { billsTo: 2.5 })
   await endTurn($, 't1', 2.5)
   await startTurn($, 't2', 2.5)
-  usage.current = { ...USAGE, cost: { usd: 3 } }
-  await respond($, resp(1_000, 80_000, 1_000, 1_000))
+  await respond($, resp(1_000, 80_000, 1_000, 1_000), { billsTo: 3 })
   await endTurn($, 't2', 3)
 }
 
@@ -671,8 +668,7 @@ test('a reply after a reload counts once, and the re-warm price stays solved fro
     await beforeReload($)
     if (reload) await $.session.start(START)
     await startTurn($, 't3', 3)
-    usage.current = { ...USAGE, cost: { usd: 3.5 } }
-    await respond($, resp(1_000, 81_000, 1_000, 1_000))
+    await respond($, resp(1_000, 81_000, 1_000, 1_000), { billsTo: 3.5 })
     await endTurn($, 't3', 3.5)
     await clock.advance(61 * MIN)
     return figures($)
@@ -690,11 +686,9 @@ test('a reload mid-turn keeps the rate off the ledger of earlier turns, and the 
     usage.current = { ...USAGE, cost: { usd: 2 } }
     await $.session.start(START)
     await startTurn($, 't1', 2)
-    usage.current = { ...USAGE, cost: { usd: 2.5 } }
-    await respond($, BUILD_80K)
+    await respond($, BUILD_80K, { billsTo: 2.5 })
     if (reload) await $.session.start(START)
-    usage.current = { ...USAGE, cost: { usd: 3 } }
-    await respond($, resp(1_000, 80_000, 1_000, 1_000))
+    await respond($, resp(1_000, 80_000, 1_000, 1_000), { billsTo: 3 })
     await endTurn($, 't1', 3)
     await clock.advance(61 * MIN)
     return figures($)

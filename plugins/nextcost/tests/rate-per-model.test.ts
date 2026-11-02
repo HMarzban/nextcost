@@ -7,22 +7,13 @@ import { newCache, type CacheModel } from '../hooks/cache'
 import { readMultiplier, tierFactor } from '../hooks/prices'
 import { recallOf, fromStore } from '../hooks/memory'
 import { rateFromTranscript, transcriptSpend } from '../hooks/transcript'
-import { HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, engine, ledgerGrows, mountBand, resp, respond, setup, shown, pillOf, usage } from './helpers'
+import { HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, engine, ledgerGrows, listBill, mountBand, resp, respond, setup, shown, pillOf, usage } from './helpers'
 
 const OPUS = 'claude-opus-5-5'
 const SONNET = 'claude-sonnet-5-5'
 const HAIKU = 'claude-haiku-5-5'
-const BASE: Readonly<Record<string, number>> = { [OPUS]: 4e-6, [SONNET]: 2e-6, [HAIKU]: 1e-7 }
-const READ: Readonly<Record<string, number>> = { [OPUS]: 0.05, [SONNET]: 0.05, [HAIKU]: 0.1 }
 
 type Usage = ReturnType<typeof resp>
-
-/** What the list bills `u` on `model`, its writes at `writeMult`. */
-const billOf = (u: Usage, model: string, writeMult: number): number => {
-  const prompt = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
-  const tier = model === HAIKU && prompt > 100_000 ? 5 : 1
-  return (BASE[model] ?? 0) * tier * (u.input_tokens + writeMult * u.cache_creation_input_tokens + (READ[model] ?? 0.1) * u.cache_read_input_tokens + 5 * u.output_tokens)
-}
 
 /** A session pinned to the hour's cache, its subagents on five minutes, on a ledger of its own. */
 const session = () => {
@@ -35,7 +26,7 @@ const session = () => {
     /** A step: the ledger read as it is sent, and again after it billed. */
     step: (model: string, u: Usage, at: number, isMain = true, mult = isMain ? 2 : 1.25): void => {
       const ledgerBefore = ledger
-      ledger += billOf(u, model, mult)
+      ledger += listBill(u, model, mult)
       c.responded({ ...u, model }, at, isMain, { ledger, ledgerBefore })
     },
     /** Growth no step accounts for: a compaction's request, a fee. */
@@ -64,7 +55,7 @@ const turns = (s: ReturnType<typeof session>, model: string, count: number, from
 }
 
 /** The re-warm true of `window` tokens on `model`, written for the hour. */
-const trueReWarm = (model: string, window: number): number => 2 * window * (BASE[model] ?? 0) * (model === HAIKU && window > 100_000 ? 5 : 1)
+const trueReWarm = (model: string, window: number): number => listBill(resp(0, 0, window, 0), model, 2)
 
 test('after a switch the re-warm is priced at the new model alone, and it remembers that rate', () => {
   const s = session()
@@ -96,8 +87,8 @@ test('a step whose ledger read failed leaves the rest told: its model solves fro
   c.turnStarted({ priceModel: undefined, ledger: 0 })
   const opus = resp(500, 0, 100_000, 800)
   const sonnet = resp(500, 0, 100_000, 800)
-  const opusBill = billOf(opus, OPUS, 2)
-  const whole = opusBill + billOf(sonnet, SONNET, 2)
+  const opusBill = listBill(opus, OPUS, 2)
+  const whole = opusBill + listBill(sonnet, SONNET, 2)
   c.responded({ ...opus, model: OPUS }, 0, true, { ledger: opusBill, ledgerBefore: 0 })
   c.responded({ ...sonnet, model: SONNET }, MIN, true, { ledger: undefined, ledgerBefore: undefined })
   const { cache } = c.view({ now: 2 * MIN, ledger: whole, contextTokens: 0, autoCompactOff: false })
@@ -197,11 +188,11 @@ test("what a turn's end reads of the lifetime moves a model's own writes", () =>
   c.turnStarted({ priceModel: undefined, ledger: 0 })
   const opus = resp(500, 0, 100_000, 800)
   // The ledger bills the writes at five minutes' 1.25×; the band assumed the hour's 2×.
-  const opusBill = billOf(opus, OPUS, 1.25)
+  const opusBill = listBill(opus, OPUS, 1.25)
   c.responded({ ...opus, model: OPUS }, 0, true, { ledger: opusBill, ledgerBefore: 0 })
   c.turnEnded(opusBill)
   const sonnet = resp(500, 0, 100_000, 800)
-  const whole = opusBill + billOf(sonnet, SONNET, 1.25)
+  const whole = opusBill + listBill(sonnet, SONNET, 1.25)
   c.turnStarted({ priceModel: undefined, ledger: opusBill })
   c.responded({ ...sonnet, model: SONNET }, MIN, true, { ledger: whole, ledgerBefore: opusBill })
   c.turnEnded(whole)
@@ -247,8 +238,8 @@ test('two steps under way at once each take their own bill', () => {
   c.turnStarted({ priceModel: undefined, ledger: 0 })
   const main = resp(500, 0, 100_000, 800)
   const agent = resp(500, 0, 50_000, 800)
-  const mainBill = billOf(main, OPUS, 2)
-  const agentBill = billOf(agent, HAIKU, 2)
+  const mainBill = listBill(main, OPUS, 2)
+  const agentBill = listBill(agent, HAIKU, 2)
   // Both sent at $0; the subagent's comes back first, inside the main step's window.
   c.responded({ ...agent, model: HAIKU }, MIN, false, { ledger: agentBill, ledgerBefore: 0 })
   c.responded({ ...main, model: OPUS }, 0, true, { ledger: agentBill + mainBill, ledgerBefore: 0 })
@@ -275,12 +266,10 @@ test('through the hooks: a ledger that moves inside a step and between steps sol
   await $.session.start(START)
   await $.turn.start(TURN_START)
   const first = resp(500, 0, 50_000, 800)
-  usage.current = { ...USAGE, cost: { usd: billOf(first, HAIKU, 2) } }
-  await respond($, first, { model: HAIKU })
+  await respond($, first, { model: HAIKU, billsTo: listBill(first, HAIKU, 2) })
   ledgerGrows(0.002)
   const second = resp(500, 0, 20_000, 800)
-  usage.current = { ...USAGE, cost: { usd: (usage.current.cost?.usd ?? 0) + billOf(second, HAIKU, 2) } }
-  await respond($, second, { model: HAIKU })
+  await respond($, second, { model: HAIKU, billsTo: (usage.current.cost?.usd ?? 0) + listBill(second, HAIKU, 2) })
   ledgerGrows(0.0005)
   await $.turn.complete(TURN_DONE)
   await clock.settle()
@@ -293,14 +282,13 @@ test('through the hooks: after a switch the store keeps the new model its own ra
   await $.session.start(START)
   await $.turn.start(TURN_START)
   const opus = resp(500, 0, 200_000, 800)
-  usage.current = { ...USAGE, cost: { usd: billOf(opus, OPUS, 2) } }
-  await respond($, opus)
+  await respond($, opus, { billsTo: listBill(opus, OPUS, 2) })
   await $.turn.complete(TURN_DONE)
   await clock.settle()
   await $.turn.start(TURN_START)
   const sonnet = resp(500, 0, 200_000, 800)
-  usage.current = { ...USAGE, cost: { usd: (usage.current.cost?.usd ?? 0) + billOf(sonnet, SONNET, 2) }, context: { tokens: 201_300, window: 1_000_000, percent: 20 } }
-  await respond($, sonnet, { model: SONNET })
+  usage.current = { ...usage.current, context: { tokens: 201_300, window: 1_000_000, percent: 20 } }
+  await respond($, sonnet, { model: SONNET, billsTo: (usage.current.cost?.usd ?? 0) + listBill(sonnet, SONNET, 2) })
   await $.turn.complete(TURN_DONE)
   await clock.settle()
   const rates = engine.store.rates as Record<string, number>

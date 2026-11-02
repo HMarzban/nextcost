@@ -63,18 +63,10 @@ const USAGE_FLAGS = { breakdownFails: false, fails: false }
  *  limits, or sets one of USAGE_FLAGS to make a read throw. */
 export const usage: { current: SessionUsage } & typeof USAGE_FLAGS = { current: USAGE, ...USAGE_FLAGS }
 
-/** The ledger as the last step left it: `respond` holds it there until its
- *  step bills, as the real one moves, while a test sets `usage.current` to
- *  what it reads after the step. `ledgerGrows` moves it between steps. */
-let ledgerAtStepEnd: number | undefined
-let ledgerAfterStep: SessionUsage | null = null
-
 /** The ledger grows by `usd` with no step to show for it, as a compaction's
  *  request does. */
 export const ledgerGrows = (usd: number): void => {
-  const was = usage.current.cost?.usd ?? 0
-  usage.current = { ...usage.current, cost: { usd: was + usd } }
-  ledgerAtStepEnd = was + usd
+  usage.current = { ...usage.current, cost: { usd: (usage.current.cost?.usd ?? 0) + usd } }
 }
 
 /** The size the engine reports for the conversation after a compaction. */
@@ -200,15 +192,14 @@ export const engine: EngineFake = structuredClone(ENGINE_INITIAL)
 /** Every toast the plugin raised since `base` ran. */
 export const toasts: string[] = []
 
-let nextUsage: ModelUsage | null = null
+/** What the next step answers with: its usage, and the ledger it leaves behind. */
+let pending: { usage: ModelUsage; billsTo: number | undefined } | null = null
 
 /** Everything beneath the plugin: the engine's own answers. */
 const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<string, unknown>> = {}): void => {
   Object.assign(usage, USAGE_FLAGS, { current: initial })
   toasts.length = 0
-  nextUsage = null
-  ledgerAtStepEnd = undefined
-  ledgerAfterStep = null
+  pending = null
   Object.assign(engine, structuredClone(ENGINE_INITIAL))
   engine.store = JSON.parse(JSON.stringify(store)) as Record<string, unknown>
   on('store.get', ($, e) => {
@@ -284,10 +275,7 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
     return { value: { ...quiet, exitCode: 0, stdout: e.argv.includes('status') ? git.status : git.dirs, isStdoutTruncated: truncates === 'git' } }
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('session.end', ($, e) => {
-    ledgerAtStepEnd = usage.current.cost?.usd
-    return { sessionId: e.sessionId }
-  })
+  on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   on('classic.SessionStart', () => ({}))
   on('command.register', ($, e) => {
     engine.commands.push(e.name)
@@ -301,10 +289,7 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
   on('session.compact', () => engine.compact)
   on('prompt.submit', ($, e) => ({ text: e.text, origin: e.origin }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
-  on('turn.start', ($, e) => {
-    ledgerAtStepEnd = usage.current.cost?.usd
-    return { turnId: e.turnId }
-  })
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
@@ -318,14 +303,15 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
   })
   on('turn.step', async function* ($, e) {
     if (engine.gate !== undefined) await engine.gate
-    if (ledgerAfterStep !== null) usage.current = ledgerAfterStep
+    // The step's bill lands in the ledger as it answers, after the hook read it.
+    if (pending?.billsTo !== undefined) usage.current = { ...usage.current, cost: { usd: pending.billsTo } }
     return {
       turnId: e.turnId,
       index: e.index,
       answer: '',
       toolUses: [],
       stopReason: engine.stop,
-      usage: nextUsage === null ? null : { ...nextUsage, model: e.model },
+      usage: pending === null ? null : { ...pending.usage, model: e.model },
       ...(engine.serverTools > 0 && {
         serverToolUses: Array.from({ length: engine.serverTools }, (_, i) => ({ id: `srv-${i}`, name: 'advisor', input: {}, startedAt: 0, endedAt: 1 })),
       }),
@@ -340,6 +326,28 @@ export const resp = (input: number, read: number, write: number, output: number)
   cache_creation_input_tokens: write,
 })
 
+/** What the list prices input tokens at on each model the tests bill, in USD
+ *  per token, with what a read costs against it, and the prompt size above
+ *  which Haiku bills five times that. Written out here, apart from
+ *  hooks/prices.ts, so a bill is checked against the list and not against the
+ *  code that reads it. */
+const LIST: Readonly<Record<string, { input: number; read: number; fiveTimesAbove?: number }>> = {
+  'claude-opus-5-5': { input: 4e-6, read: 0.05 },
+  'claude-sonnet-5-5': { input: 2e-6, read: 0.05 },
+  'claude-haiku-5-5': { input: 1e-7, read: 0.1, fiveTimesAbove: 100_000 },
+}
+
+/** What the list bills the step `u` on `model` (Opus 5.5 when not given), as
+ *  Claude Code's ledger adds it: a write at `writeMult` times the input rate
+ *  (2 for the hour's cache, 1.25 for five minutes'), output at 5x. */
+export const listBill = (u: ModelUsage, model = 'claude-opus-5-5', writeMult = 2): number => {
+  const price = LIST[model]
+  if (price === undefined) throw new Error(`no list price for ${model}`)
+  const prompt = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
+  const tier = price.fiveTimesAbove !== undefined && prompt > price.fiveTimesAbove ? 5 : 1
+  return price.input * tier * (u.input_tokens + writeMult * u.cache_creation_input_tokens + price.read * u.cache_read_input_tokens + 5 * u.output_tokens)
+}
+
 /** A step that builds a 155k cache, none read from it: 41k in, 12k out. */
 export const BUILD_155K: ModelUsage = resp(41_000, 0, 155_000, 12_000)
 /** A step that builds a 100k cache: 10k in, 2k out. */
@@ -350,17 +358,18 @@ export const READ_100K: ModelUsage = resp(4_000, 100_000, 6_000, 3_000)
 export const BUILD_80K: ModelUsage = resp(2_000, 0, 80_000, 500)
 
 /** One step of a main-loop turn on `$`, its reply billed as `u`; `over`
- *  makes it a subagent's (`{ agentId }`) or another model's. */
-export const respond = async ($: Engine, u: ModelUsage, over: Partial<TurnStepInput> = {}): Promise<void> => {
-  nextUsage = u
-  ledgerAfterStep = usage.current
-  if (ledgerAtStepEnd !== undefined && usage.current.cost !== undefined) usage.current = { ...usage.current, cost: { usd: ledgerAtStepEnd } }
-  const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 1, ...over })
+ *  makes it a subagent's (`{ agentId }`) or another model's. `billsTo` is the
+ *  ledger the step leaves, in USD: the ledger reads as it stands while the
+ *  request goes out, and as `billsTo` once the reply is in, as the real one
+ *  moves. Without it the step bills nothing. */
+export const respond = async ($: Engine, u: ModelUsage, over: Partial<TurnStepInput> & { billsTo?: number } = {}): Promise<void> => {
+  const { billsTo, ...step } = over
+  pending = { usage: u, billsTo }
+  const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 1, ...step })
   for await (const _chunk of stream) {
     // drain so the hook's result settles
   }
   await stream.result
-  ledgerAtStepEnd = usage.current.cost?.usd
 }
 
 export type Node = {
@@ -653,10 +662,12 @@ export const endTurn = async ($: Engine, id: string, at: number, extra: TurnEnd 
 }
 
 /** One main-loop turn (or, with `agentId`, a subagent's) that moves the
- *  ledger from `from` to `to`. */
-export const turn = async ($: Engine, id: string, from: number, to: number, extra: TurnEnd = {}): Promise<void> => {
-  await startTurn($, id, from, extra.agentId)
-  await endTurn($, id, to, extra)
+ *  ledger from `from` to `to`; with `usage`, in one step billed as that. */
+export const turn = async ($: Engine, id: string, from: number, to: number, extra: TurnEnd & { usage?: ModelUsage } = {}): Promise<void> => {
+  const { usage: reply, ...end } = extra
+  await startTurn($, id, from, end.agentId)
+  if (reply !== undefined) await respond($, reply, { billsTo: to, ...(end.agentId !== undefined && { agentId: end.agentId }) })
+  await endTurn($, id, to, end)
 }
 
 /** Starts the session and feeds a 5h pace: 40% then 50% twelve minutes on,
