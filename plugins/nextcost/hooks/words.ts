@@ -62,7 +62,7 @@ export const SINCE_LOADED = 'since the band loaded'
  *  from where the band loaded: the conversation didn't begin here and no
  *  transcript was read for what came before. The cost is the engine's whole
  *  ledger either way. */
-export const countedSinceLoad = (f: Pick<CacheFacts, 'measured' | 'fresh' | 'recovered'>): boolean => f.measured && !f.fresh && !f.recovered
+const countedSinceLoad = (f: Pick<CacheFacts, 'measured' | 'fresh' | 'recovered'>): boolean => f.measured && !f.fresh && !f.recovered
 
 /** A value not known yet: unknown, never 0. */
 export const UNKNOWN = '–'
@@ -222,6 +222,9 @@ export type CacheWords = Readonly<{
 export type ContextWords = Readonly<{
   /** `38%`; while not reported, `–`. */
   valueText: string
+  /** The fill's severity mark, `!` or `!!`, with compaction off; else none:
+   *  a fill toward compaction says near in words. */
+  fillMark: string
   /** `! context 93% · compacts in ~14k` / `! ctx 93%`; compaction off, `! context 85%`. */
   amber: Amber | undefined
   /** Tokens in context, where it compacts, the room before then, and the window:
@@ -317,7 +320,7 @@ export const MOOD_ALT: Readonly<Record<CacheFacts['mood'], string>> = {
 }
 
 /** A cache gone, short: its mood and the next message's price, `cold ~$1.66`. */
-export const goneShort = (mood: 'cold' | 'compacted', estimate: string): string => `${mood} ${estimate}`
+const goneShort = (mood: 'cold' | 'compacted', estimate: string): string => `${mood} ${estimate}`
 
 /** The cache's words for its mood, as the cards, pulse and the board say
  *  them; chips' row says its own. `left` and `leftShort` are the countdown,
@@ -422,7 +425,7 @@ const goneMoods: ReadonlySet<CacheFacts['mood']> = new Set(['cold', 'compacted',
 
 /** A turn the user didn't type, in words: what it did, while that still
  *  holds, and who started it. */
-export const wakeOf = (wake: Wake, mood: CacheFacts['mood']): Woken => {
+const wakeOf = (wake: Wake, mood: CacheFacts['mood']): Woken => {
   const gone = goneMoods.has(mood)
   const { noun, subject } = WAKER_WORDS[wake.by]
   const short = `${gone ? 'last turn by' : 'by'} ${noun}`
@@ -477,7 +480,8 @@ export const contextWords = (f: ContextFacts): ContextWords => {
   const towardText = f.compactAt !== undefined ? 'toward compaction' : 'of the window'
   const roomText = !f.known || f.compactAt === undefined ? undefined : roomOf(f.toCompact)
   const amber = f.tone !== 'amber' ? undefined : f.compactAt !== undefined ? AMBER.context(f.frac, f.toCompact) : AMBER.contextNoCompaction(f.frac)
-  const cardHead: Say = [[`${f.pct}${f.compactAt === undefined ? severityMark(f.frac) : ''}`, 'value'], [' full', 'label']]
+  const fillMark = f.compactAt === undefined ? severityMark(f.frac) : ''
+  const cardHead: Say = [[`${f.pct}${fillMark}`, 'value'], [' full', 'label']]
   const cardHeadNamed: Say = f.compactAt === undefined ? cardHead : [[f.pct, 'value'], [' toward compaction', 'label']]
   const compactsAtText = f.compactAt === undefined ? undefined : fmtTokens(f.compactAt)
   // Near compaction, the room before it; else where it compacts.
@@ -485,6 +489,7 @@ export const contextWords = (f: ContextFacts): ContextWords => {
   const inContext = f.known ? fmtTokens(f.used) : UNKNOWN
   return {
     valueText: value,
+    fillMark,
     amber,
     inContextText: inContext,
     compactsAtText,
