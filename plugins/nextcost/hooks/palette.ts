@@ -45,15 +45,9 @@ export type Palette = {
   fiveBg: string
   fiveFg: string
   fiveAccent: string
-  /** The 5-hour accent as words, on the card and on its own tint: in light,
-   *  fiveAccent holds there only as a mark. */
-  fiveText: string
   weekBg: string
   weekFg: string
   weekAccent: string
-  /** The 7-day accent as words, on the card and on its own tint, as
-   *  fiveText is the 5-hour's. */
-  weekText: string
   /** The departures board: the case behind the tiles, dark in dark and
    *  light alike (plain draws none). */
   boardBg: string
@@ -117,11 +111,9 @@ export const DARK: Readonly<Palette> = {
   fiveBg: '#1e3324',
   fiveFg: '#cfe8d3',
   fiveAccent: DARK_FIVE,
-  fiveText: DARK_FIVE,
   weekBg: '#2a2540',
   weekFg: '#d9d3f5',
   weekAccent: DARK_WEEK,
-  weekText: DARK_WEEK,
   ...BOARD,
 }
 
@@ -149,11 +141,9 @@ export const LIGHT: Readonly<Palette> = {
   fiveBg: '#dff0e0',
   fiveFg: '#1f5c2e',
   fiveAccent: '#2f8a45',
-  fiveText: '#26763b',
   weekBg: '#e8e4fa',
   weekFg: '#3c3489',
   weekAccent: '#6b5fd3',
-  weekText: '#5a4ec4',
   ...BOARD,
 }
 
@@ -183,11 +173,9 @@ export const PLAIN: Readonly<Palette> = {
   fiveBg: '',
   fiveFg: 'text',
   fiveAccent: 'success',
-  fiveText: 'success',
   weekBg: '',
   weekFg: 'text',
   weekAccent: 'text',
-  weekText: 'text',
   boardBg: '',
   flapBg: '',
   flapSeam: '',

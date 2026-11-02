@@ -1,7 +1,9 @@
 // Idle compaction: Claude Code compacts a long conversation left idle on the
 // hour's cache about 54 minutes on, before the cache runs out.
 import { test, expect, type Engine, type MockClock } from 'claude-code/testing'
+import { newCache } from '../hooks/cache'
 import { idleCompactFrom } from '../hooks/cache-settings'
+import { LAYOUT_NAMES } from '../hooks/snapshot'
 import {
   LONG,
   MIN,
@@ -39,10 +41,9 @@ const drawnText = async ($: Engine): Promise<string> => {
   return `${shut}\n${open}`
 }
 
-test('idle compaction runs from 200k tokens in an interactive terminal, unless turned off', () => {
-  const on = { terminal: true, setting: undefined, disableAuto: undefined, disableAll: undefined, minTokens: undefined }
+test('idle compaction runs from 200k tokens, unless turned off', () => {
+  const on = { setting: undefined, disableAuto: undefined, disableAll: undefined, minTokens: undefined }
   expect(idleCompactFrom(on)).toBe(200_000)
-  expect(idleCompactFrom({ ...on, terminal: false })).toBeUndefined()
   expect(idleCompactFrom({ ...on, setting: false })).toBeUndefined()
   expect(idleCompactFrom({ ...on, setting: true })).toBe(200_000)
   expect(idleCompactFrom({ ...on, disableAuto: '1' })).toBeUndefined()
@@ -51,7 +52,7 @@ test('idle compaction runs from 200k tokens in an interactive terminal, unless t
 })
 
 test('the threshold takes a positive whole number, raised to 100k', () => {
-  const on = { terminal: true, setting: undefined, disableAuto: undefined, disableAll: undefined }
+  const on = { setting: undefined, disableAuto: undefined, disableAll: undefined }
   expect(idleCompactFrom({ ...on, minTokens: '300000' })).toBe(300_000)
   expect(idleCompactFrom({ ...on, minTokens: '50000' })).toBe(100_000)
   for (const ignored of ['0', '-5', '1.5e5', 'lots', '']) expect(idleCompactFrom({ ...on, minTokens: ignored })).toBe(200_000)
@@ -72,7 +73,6 @@ test('idle on the hour with a long conversation, the card says it may be compact
 const WARM_CARD = /warm cache bills input at 5%, expires 1h after a request$/
 
 for (const [name, usage, surface, settings] of [
-  ['on the desktop', LONG_TALK, 'desktop', {}],
   ['with idleCompaction off', LONG_TALK, 'terminal', { idleCompaction: false }],
   ['below the threshold', USAGE, 'terminal', {}],
 ] as const)
@@ -95,7 +95,7 @@ test('compacted while idle, the cache reads compacted at the summary, calm, unti
   const ui = await mountBand($, 'terminal', 160)
   const tree = await ui.drawn()
   expect(textOf(tree)).toContain('cache compacted · next')
-  expect(cardText(hoverCardOf(tree, 'cache'))).toMatch(/^Compacted while idle: next message writes the 20k summary \(/)
+  expect(cardText(hoverCardOf(tree, 'cache'))).toMatch(/^Compacted while idle: ~\$[\d.]+ rewrites the 20k summary, plus your reply$/)
   await ui.unmount()
 
   // The countdown is over: no amber in what was the cache's last minute.
@@ -120,27 +120,95 @@ const COMPACTED = /cache compacted|compacted while idle|COMPACTED/
 
 const autoCompact = ($: Engine) => $.session.compact({ trigger: 'auto', messages: SUMMARY })
 
-for (const layout of ['chips', 'pulse', 'departures'])
+for (const layout of LAYOUT_NAMES)
   test(`${layout} says the cache was compacted`, LONG, async ($, on) => {
     const clock = setup(on, { usage: LONG_TALK, store: { layout } })
     expect(await afterIdle($, clock, autoCompact)).toMatch(COMPACTED)
   })
 
-test('/compact is no idle compaction', LONG, async ($, on) => {
+const NOT_IDLE = (said: string) => {
+  expect(said).toContain('cache compacted')
+  expect(said).not.toMatch(/while idle/)
+  expect(said).not.toMatch(/\d+m left/)
+}
+
+test('/compact reads compacted, in no words of idling', LONG, async ($, on) => {
   const clock = setup(on, { usage: LONG_TALK })
-  expect(await afterIdle($, clock, $ => $.session.compact({ trigger: 'manual', messages: SUMMARY }))).not.toMatch(COMPACTED)
+  NOT_IDLE(await afterIdle($, clock, $ => $.session.compact({ trigger: 'manual', messages: SUMMARY })))
 })
 
-test('a compaction in a turn under way is no idle one', LONG, async ($, on) => {
+test('a compaction in a turn under way reads compacted, in no words of idling', LONG, async ($, on) => {
   const clock = setup(on, { usage: LONG_TALK })
   const inTurn = async ($: Engine) => {
     await startTurn($, 'main-1', 2.41)
     await autoCompact($)
   }
-  expect(await afterIdle($, clock, inTurn)).not.toMatch(COMPACTED)
+  NOT_IDLE(await afterIdle($, clock, inTurn))
 })
 
-test('a compaction five minutes after a request is no idle one', LONG, async ($, on) => {
+test('a compaction five minutes after a request reads compacted, in no words of idling', LONG, async ($, on) => {
   const clock = setup(on, { usage: LONG_TALK })
-  expect(await afterIdle($, clock, autoCompact, 5 * MIN)).not.toMatch(COMPACTED)
+  NOT_IDLE(await afterIdle($, clock, autoCompact, 5 * MIN))
+})
+
+for (const layout of LAYOUT_NAMES)
+  test(`${layout}: /compact stops the old countdown until the next reply`, LONG, async ($, on) => {
+    const clock = setup(on, { store: { layout } })
+    await $.session.start(START)
+    await respond($, resp(2_000, 0, 240_000, 5_000))
+    await clock.advance(5 * MIN)
+    await $.session.compact({ trigger: 'manual', messages: SUMMARY })
+    await clock.advance(MIN)
+    const said = await drawnText($)
+    expect(said).toMatch(COMPACTED)
+    expect(said).not.toMatch(/\d+m left|DEPARTS|re-warm/i)
+    await respond($, resp(500, 0, 20_000, 300))
+    expect(await drawnText($)).not.toMatch(COMPACTED)
+  })
+
+test('a compaction with no size told still reads compacted, never at the old size, and needs no context', LONG, async ($, on) => {
+  const clock = setup(on, { usage: { ...LONG_TALK, context: { window: 1_000_000 } as typeof LONG_TALK.context } })
+  await $.session.start(START)
+  await respond($, resp(2_000, 0, 240_000, 5_000))
+  engine.compact = { messages: SUMMARY }
+  await $.session.compact({ trigger: 'manual', messages: SUMMARY })
+  await clock.advance(MIN)
+  const said = await drawnText($)
+  expect(said).toContain('cache compacted')
+  expect(said).toContain('next summary')
+  expect(said).not.toMatch(/next 24\dk/)
+})
+
+test('a compaction a resumed conversation makes before its first reply reads compacted at the summary', () => {
+  const c = newCache()
+  c.resumed({ cache: { lastAt: 0, expired: false, reWarmUsd: 9 }, transcript: undefined })
+  c.compacted({ now: 5 * MIN, sizeAfter: 20_000, manual: true })
+  const { cache } = c.view({ now: 6 * MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false })
+  expect([cache.interrupted, cache.leftMs, cache.window, cache.recalled]).toEqual(['compacted', 0, 20_000, false])
+})
+
+// ---- where it runs ----------------------------------------------------------
+
+test('on the desktop too, per the docs: the card says it may be compacted', LONG, async ($, on) => {
+  const clock = setup(on, { usage: LONG_TALK })
+  await $.session.start({ ...START, surface: 'desktop' })
+  await respond($, resp(2_000, 0, 240_000, 5_000))
+  await clock.advance(10 * MIN)
+  expect(await cacheCard($, 'desktop')).toMatch(/may be compacted at ~54m idle/)
+})
+
+test('an SDK host, as the desktop is, starts with no surface and no person at the prompt: it still may', LONG, async ($, on) => {
+  const clock = setup(on, { usage: LONG_TALK })
+  await $.session.start({ ...START, surface: null, isInteractive: false })
+  await respond($, resp(2_000, 0, 240_000, 5_000))
+  await clock.advance(10 * MIN)
+  expect(await cacheCard($, 'desktop')).toMatch(/may be compacted at ~54m idle/)
+})
+
+test('the VS Code panel may, the mobile app is not on the docs\' list', () => {
+  const c = newCache()
+  c.configured({ ttl: '1h', idleCompactFrom: 200_000 })
+  c.responded(resp(2_000, 0, 240_000, 5_000), 0, true)
+  const at = (surface: 'vscode' | 'mobile') => c.view({ now: MIN, ledger: undefined, contextTokens: 250_000, autoCompactOff: false, surface }).cache.idleCompacts
+  expect([at('vscode'), at('mobile')]).toEqual([true, false])
 })

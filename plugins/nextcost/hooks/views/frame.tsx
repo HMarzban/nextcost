@@ -25,9 +25,8 @@ export const bodyRowsFor = (maxRows: number, collapsedRows: number, stripRows: n
  *  It points the way the band will move, since the band is anchored to the
  *  prompt and grows upward when it opens, so in every layout it sits on the
  *  row nearest the prompt, the bottom of its line. It comes after the row's
- *  hover cards and, placed relative, stacks over them on the desktop too, so
- *  it stays pressable where the measure sets a card long. Exported for its
- *  tests. */
+ *  hover cards, which paint over only what comes before them. Exported for
+ *  its tests. */
 export const toggleButton = (kit: Kit, read: Readings, act: BandActions): RenderElement => {
   const { Box, Button, Svg } = kit
   return (

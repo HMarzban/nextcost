@@ -8,7 +8,6 @@
 import type { RenderChildren, RenderElement } from 'claude-code'
 import { batteryIcon, meter, textBattery } from '../charts'
 import type { LimitKey, Tone } from '../facts'
-import { GLYPH } from '../icons'
 import type { Icon } from '../icons'
 import type { Kit } from '../kit'
 import { cellsOf, spansOf } from '../layout'
@@ -54,7 +53,7 @@ type PillSpec = Readonly<{
  *  open view says it all. A pill never shrinks: the squeeze drops
  *  pieces instead, so its text never wraps. */
 const pill = (kit: Kit, { key, tone, body, hover, paintsOwnBg, bg }: PillSpec): RenderElement => {
-  const { Box, Text, palette, onTone, hoverable, liftedCard } = kit
+  const { Box, Text, palette, onTone, explains } = kit
   if (!palette.filled) {
     const fg = onTone(tone, palette.value)
     return (
@@ -66,24 +65,26 @@ const pill = (kit: Kit, { key, tone, body, hover, paintsOwnBg, bg }: PillSpec): 
     )
   }
   const fill = paintsOwnBg ? {} : { backgroundColor: onTone(tone, bg ?? palette.surface, palette.amberBg), paddingX: 1 }
+  const { props, card } = explains(key, hover)
   return (
-    <Box key={key} flexShrink={0} {...fill} {...(hover === undefined ? {} : hoverable(key))}>
+    <Box key={key} flexShrink={0} {...fill} {...props}>
       {body}
-      {hover === undefined ? null : liftedCard(hover)}
+      {card}
     </Box>
   )
 }
 
-/** A reset after its reading: the separator in label ink, then `↻` and
- *  when, in `ink`. `↻` is a glyph on every surface, as the boards draw it,
- *  never the clock icon; elsewhere it is the reset icon's own glyph. */
+/** A reset after its reading: the separator in label ink, then the reset
+ *  icon's glyph and when, in `ink`: `↻` on every surface, never an Svg, and
+ *  in the ascii tier the word `resets`, since a bare time after a bar reads
+ *  as nothing. */
 const resetClause = (kit: Kit, ink: string, when: string): RenderElement[] => {
-  const { Text, palette } = kit
+  const { Text, palette, mark } = kit
   return [
     <Text key="d" color={palette.label}>
       {' │ '}
     </Text>,
-    <Text key="i-reset" color={ink}>{`${GLYPH.reset} `}</Text>,
+    <Text key="i-reset" color={ink}>{`${mark('reset')} `}</Text>,
     <Text key="r" color={ink}>
       {when}
     </Text>,
@@ -134,6 +135,8 @@ export const cachePill = (kit: Kit, read: Readings, short: boolean): PillSpec =>
   const copy = read.chips.cache
   const text = copy.pill(short)
   const fg = onTone(tone, palette.value)
+  // `◷` is the short forms' only mark of the cache (`0:47 ~$0.52`, `cold ~$1.66`): the ascii tier drops it, so says the word.
+  const lead = kit.glyphs === 'ascii' && !copy.named(short) ? 'cache' : '◷'
   if (Svg) {
     // A normal rounded pill led by a draining battery icon; the text-surface
     // battery would paint a square-cornered block here.
@@ -143,7 +146,7 @@ export const cachePill = (kit: Kit, read: Readings, short: boolean): PillSpec =>
     return {
       key: 'cache',
       tone,
-      body: textBattery(kit, charge, tone, `◷ ${text}`),
+      body: textBattery(kit, charge, tone, `${lead} ${text}`),
       hover: copy.hover,
       paintsOwnBg: true,
     }
@@ -152,7 +155,7 @@ export const cachePill = (kit: Kit, read: Readings, short: boolean): PillSpec =>
   return {
     key: 'cache',
     tone,
-    body: [tone === 'amber' ? null : <Text key="dot" color={dot}>{'● '}</Text>, <Text key="c" color={fg}>{tone === 'amber' ? `◷ ${text}` : text}</Text>],
+    body: [tone === 'amber' ? null : <Text key="dot" color={dot}>{'● '}</Text>, <Text key="c" color={fg}>{tone === 'amber' ? `${lead} ${text}` : text}</Text>],
     hover: copy.hover,
   }
 }

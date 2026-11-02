@@ -43,7 +43,7 @@ test("another session's message within the hour kept the cache warm", LONG, asyn
   await turnFrom($, 't1', { kind: 'composer' }, BUILD_100K, 0, 1)
   await clock.advance(20 * MIN)
   await turnFrom($, 't2', { kind: 'peer' }, READ_100K, 1, 1.1)
-  expect(await wakeRows($)).toEqual({ reWarmed: undefined, keptWarm: 'another session' })
+  expect(await wakeRows($)).toEqual({ reWarmed: undefined, keptWarm: 'message' })
 })
 
 test("the user's own next turn takes the line away", LONG, async ($, on) => {
@@ -84,7 +84,7 @@ test("who started a turn: the user's own gestures, or what woke the session", ()
 
 test('the model keeps what started its last turn, and whether that turn rebuilt the cache', () => {
   const c = newCache()
-  c.turnStarted({ priceModel: undefined, ledger: undefined, wokenBy: 'task' })
+  c.turnStarted({ namedModel: undefined, ledger: undefined, wokenBy: 'task' })
   c.responded(BUILD_100K, 0, true)
   c.turnEnded(undefined)
   expect(c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.wake).toEqual({ by: 'task', reWarm: false })
@@ -93,7 +93,7 @@ test('the model keeps what started its last turn, and whether that turn rebuilt 
 /** A model after a turn from a background task that measured a request, its wake set. */
 const wokenModel = () => {
   const c = newCache()
-  c.turnStarted({ priceModel: undefined, ledger: undefined, wokenBy: 'task' })
+  c.turnStarted({ namedModel: undefined, ledger: undefined, wokenBy: 'task' })
   c.responded(BUILD_100K, 0, true)
   c.turnEnded(undefined)
   return c
@@ -110,10 +110,10 @@ const NO_REQUEST: ReadonlyArray<readonly [string, (c: ReturnType<typeof newCache
 for (const [name, step] of NO_REQUEST) {
   test(`a turn from a background task with ${name} never touched the cache, so it names no one`, () => {
     const c = newCache()
-    c.turnStarted({ priceModel: undefined, ledger: undefined })
+    c.turnStarted({ namedModel: undefined, ledger: undefined })
     c.responded(BUILD_100K, 0, true)
     c.turnEnded(undefined)
-    c.turnStarted({ priceModel: undefined, ledger: undefined, wokenBy: 'task' })
+    c.turnStarted({ namedModel: undefined, ledger: undefined, wokenBy: 'task' })
     step(c)
     c.turnEnded(undefined)
     expect(wakeOf(c)).toBeUndefined()
@@ -121,12 +121,12 @@ for (const [name, step] of NO_REQUEST) {
   test(`a turn with ${name} leaves the last wake as it was, and its waker doesn't outlive it`, () => {
     for (const wokenBy of ['session', undefined] as const) {
       const c = wokenModel()
-      c.turnStarted({ priceModel: undefined, ledger: undefined, ...(wokenBy === undefined ? {} : { wokenBy }) })
+      c.turnStarted({ namedModel: undefined, ledger: undefined, ...(wokenBy === undefined ? {} : { wokenBy }) })
       step(c)
       c.turnEnded(undefined)
       expect(wakeOf(c)).toEqual({ by: 'task', reWarm: false })
       // The user's next turn that reaches the API takes it away, naming neither.
-      c.turnStarted({ priceModel: undefined, ledger: undefined })
+      c.turnStarted({ namedModel: undefined, ledger: undefined })
       c.responded(READ_100K, 2 * MIN, true)
       c.turnEnded(undefined)
       expect(wakeOf(c)).toBeUndefined()
@@ -136,7 +136,7 @@ for (const [name, step] of NO_REQUEST) {
 
 test("a subagent's request is no turn of the main loop's: it sets no wake", () => {
   const c = newCache()
-  c.turnStarted({ priceModel: undefined, ledger: undefined, wokenBy: 'task' })
+  c.turnStarted({ namedModel: undefined, ledger: undefined, wokenBy: 'task' })
   c.responded(BUILD_100K, 0, false)
   c.turnEnded(undefined)
   expect(wakeOf(c)).toBeUndefined()
@@ -144,17 +144,17 @@ test("a subagent's request is no turn of the main loop's: it sets no wake", () =
 
 test("chips' hover says who re-warmed the cache, and its words are the card's", () => {
   const r = readingsOf(snapOf({ cache: cacheWith({ wake: { by: 'task', reWarm: true } }) }))
-  expect(r.cache.wakeRow).toEqual({ label: 're-warmed by', value: 'background task' })
+  expect(r.cache.woken?.row).toEqual({ label: 're-warmed by', value: 'background task' })
   expect(r.chips.cache.hover).toMatch(/; a background task re-warmed it$/)
   const kept = readingsOf(snapOf({ cache: cacheWith({ wake: { by: 'session', reWarm: false } }) }))
-  expect(kept.chips.cache.hover).toMatch(/; another session kept it warm$/)
+  expect(kept.chips.cache.hover).toMatch(/; a message kept it warm$/)
 })
 
 test('once the cache has gone cold again, the card and hover say only whose turn was last', () => {
   const r = readingsOf(snapOf({ cache: cacheWith({ leftMs: 0, wake: { by: 'session', reWarm: false } }) }))
   expect(r.cache.mood).toBe('cold')
-  expect(r.cache.wakeRow).toEqual({ label: 'last turn by', value: 'another session' })
-  expect(r.chips.cache.hover).toMatch(/; last turn by another session$/)
+  expect(r.cache.woken?.row).toEqual({ label: 'last turn by', value: 'message' })
+  expect(r.chips.cache.hover).toMatch(/; last turn by a message$/)
 })
 
 /** The open Cache card on the desktop at `maxRows`, 95 columns, after a turn

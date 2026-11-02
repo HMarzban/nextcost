@@ -50,7 +50,7 @@ export const limitOf = (l: SessionRateLimit): ReportedLimit => ({ kind: l.kind, 
 
 /** The engine's names for the two limits the band reads by name. */
 export const FIVE_HOUR = 'five_hour'
-const SEVEN_DAY = 'seven_day'
+export const SEVEN_DAY = 'seven_day'
 
 /** The 5-hour and 7-day windows the engine reports, and every other one. */
 export const splitLimits = <L extends Readonly<{ kind: string }>>(limits: readonly L[]): Readonly<{ five: L | undefined; seven: L | undefined; others: L[] }> => ({
@@ -80,11 +80,12 @@ export type BandSnapshot = Readonly<{
     percent: number | undefined
     /** Where auto-compaction runs, when it is on. */
     compactAt: number | undefined
-    /** Auto-compaction is off, as the engine said; false while unknown. */
-    autoCompactOff: boolean
   }>
   fiveHour: (LimitUse & { etaMs: number | null }) | undefined
   sevenDay: LimitUse | undefined
+  /** When the limits were last read, epoch ms: they come from the last API
+   *  response, so they are as old as the last reply. Undefined before one. */
+  limitsAt: number | undefined
   /** The newest limit samples, a week's worth of 15-minute buckets, every
    *  session's, oldest first. Sparse use may stretch them back past a week. */
   samples: readonly Sample[]
@@ -114,12 +115,14 @@ export type SnapshotParts = Readonly<{
   now: number
   mount: Pick<BandSnapshot, 'surface' | 'columns' | 'maxRows' | 'isWorking'>
   expanded: boolean
-  band: Pick<BandSnapshot, 'palette' | 'layout' | 'glyphs' | 'samples' | 'workspace'> & Pick<BandSnapshot['context'], 'compactAt' | 'autoCompactOff'>
+  band: Pick<BandSnapshot, 'palette' | 'layout' | 'glyphs' | 'samples' | 'workspace'> & Pick<BandSnapshot['context'], 'compactAt'>
   cache: CacheView
   costUsd: number
   history: Trails
   /** Time until your pace fills the 5-hour window, as insights.ts measures it. */
   etaMs: number | null
+  /** When the limits were last read, as insights.ts keeps it. */
+  readAt: number | undefined
   zone: Zone | undefined
 }>
 
@@ -143,10 +146,10 @@ export const snapshotOf = (p: SnapshotParts): BandSnapshot => {
       window: usage.context.window,
       percent: usage.context.percent,
       compactAt: band.compactAt,
-      autoCompactOff: band.autoCompactOff,
     },
     fiveHour: five ? { percentUsed: five.percentUsed, resetsAt: five.resetsAt, etaMs: p.etaMs } : undefined,
     sevenDay: seven ? { percentUsed: seven.percentUsed, resetsAt: seven.resetsAt } : undefined,
+    limitsAt: p.readAt,
     samples: band.samples,
     workspace: band.workspace,
     zone: p.zone,

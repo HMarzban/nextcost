@@ -5,6 +5,7 @@
 import { test, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { DARK } from '../hooks/palette'
+import { CALM_LIMITS, bandOf } from './matrix'
 import {
   BUILD_100K,
   DESKTOP_START,
@@ -14,6 +15,7 @@ import {
   CLEAR,
   FRESH,
   HOUR,
+  MIN,
   START,
   USAGE,
   breakdown,
@@ -41,7 +43,7 @@ const withCompaction = (tokens: number) => ({
   context: { tokens, window: 200_000, percent: (tokens / 2000), breakdown: breakdown({ autoCompactThreshold: 160_000, isAutoCompactEnabled: true }) },
 })
 const measureContext = async ($: Engine, tokens: number) =>
-  $.session.measure({ context: { tokens, window: 200_000, percent: tokens / 2000 }, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: [] })
+  $.session.measure({ context: { tokens, window: 200_000, percent: tokens / 2000 }, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: ['context'] })
 
 // ── opening ────────────────────────────────────────────────────────────
 
@@ -120,7 +122,7 @@ test('the limits card: each window with its usage and reset', async ($, on) => {
   expect(fact(tree, 'spend')).toBe('92%!') // past 80%: marked, never colour alone
   // The worst, spend, leads with its reset; no window length, so no pace.
   expect(fact(tree, 'resets')).toBe(hostClock(MODERN + 5 * HOUR, MODERN))
-  expect(fact(tree, '5h pace')).toBe('5h resets 3h 00m · on pace for ~10%')
+  expect(fact(tree, '5h pace')).toBe('5h resets 3h 00m · ~10% at avg pace')
   await ui.unmount()
 })
 
@@ -211,8 +213,8 @@ test('the cache card leads with the stake: re-warm cost, savings, hit rate, expi
   expect(shown(cardOf(tree, 'cache'))).toMatch(/^CACHE1h 00m left/)
   // writes for the pinned hour at 2×, reads at Opus 5.5's 0.05×:
   // rate = 2.41 / (14k + 2*106k + 0.05*100k + 5*5k) = 2.41 / 256k
-  expect(fact(tree, 're-warm if cold')).toBe('~$2.13') // 2 * 113k * rate
-  expect(fact(tree, 'saved by cache')).toBe('~$0.89') // 0.95 * 100k * rate
+  expect(fact(tree, 're-warm if cold')).toBe('~$2.13 · cache rewrite, not your reply') // 2 * 113k * rate, and what it covers
+  expect(fact(tree, 'saved on cache reads')).toBe('~$0.89') // 0.95 * 100k * rate
   expect(fact(tree, 'hit rate')).toBe('45%')
   expect(fact(tree, 'expires')).toBe('1h idle')
   expect(fact(tree, 'unexpected rebuilds')).toBeUndefined() // shown only when there is one
@@ -280,9 +282,9 @@ test('the limits card puts each value beside its bar and says the pace in words'
   const tree = await ui.drawn()
   expect(shown(cardOf(tree, 'limits'))).toMatch(/^LIMITS7d 30%/) // the window closest to trouble
   expect(fact(tree, '5h')).toBe('4%')
-  expect(fact(tree, '5h pace')).toBe('5h resets 3h 00m · on pace for ~10%')
+  expect(fact(tree, '5h pace')).toBe('5h resets 3h 00m · ~10% at avg pace')
   // The worst window, 7d, leads the card with its reset at its clock time and its pace.
-  expect(fact(tree, 'resets')).toBe(`${hostClock(MODERN + 67 * HOUR, MODERN)} · on pace for ~50%`)
+  expect(fact(tree, 'resets')).toBe(`${hostClock(MODERN + 67 * HOUR, MODERN)} · ~50% at avg pace`)
   expect(fact(tree, '7d pace')).toBeUndefined()
   await ui.unmount()
 })
@@ -473,4 +475,17 @@ test('the token split shows cache reads in the warm colour, so the bar never loo
   expect(String(split?.props?.source)).toContain(DARK.warm)
   expect(String(split?.props?.source)).not.toContain(`fill="${DARK.meterTrack}"`)
   await ui.unmount()
+})
+
+test('Limits ends on that its reading is as of the last reply, and drops it first when the card is short of rows', () => {
+  const open = (maxRows: number, columns = 120) => bandOf({ layout: 'chips', surface: 'terminal', columns, maxRows, expanded: true, ...CALM_LIMITS, limitsAt: -12 * MIN })
+  const rows = (maxRows: number, columns?: number) => shown(cardOf(open(maxRows, columns), 'limits') as Node)
+  expect(rows(40)).toMatch(/as of your last reply, 12m ago$/)
+  // At 40 columns the line is cut to the card, never past it.
+  expect(rows(40, 40)).toContain('as of your last reply')
+  // Short of rows, its facts stay and it goes.
+  for (let maxRows = 4; maxRows <= 40; maxRows++) {
+    const text = rows(maxRows)
+    if (text !== '' && !/as of your last reply/.test(text)) expect(text).toMatch(/resets|\d%/)
+  }
 })

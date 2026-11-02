@@ -4,7 +4,6 @@
 
 import { test, expect } from 'claude-code/testing'
 import { DARK, LIGHT } from '../hooks/palette'
-import { ROLE_INK } from '../hooks/views/shell'
 import { DARK_HOSTS, LIGHT_HOSTS, contrast } from './helpers'
 
 // Both palettes, every pair: a palette added later is checked by adding it here.
@@ -44,16 +43,13 @@ for (const [name, p, hosts] of [
     expect(contrast(p.value, p.surface)).toBeGreaterThanOrEqual(4.5)
   })
 
-  test(`${name}: a window's name holds as text on its own tint and on the card`, () => {
-    expect(contrast(p.fiveText, p.fiveBg)).toBeGreaterThanOrEqual(4.5)
-    expect(contrast(p.weekText, p.weekBg)).toBeGreaterThanOrEqual(4.5)
-    expect(contrast(p.weekText, p.cardBg)).toBeGreaterThanOrEqual(4.5)
+  test(`${name}: a value holds as text on a window's tint`, () => {
     for (const bg of [p.fiveBg, p.weekBg]) expect(contrast(p.value, bg)).toBeGreaterThanOrEqual(4.5)
   })
 
   test(`${name}: every role a layout's words take is text that holds on the card ground`, () => {
-    const low = Object.entries(ROLE_INK).filter(([, ink]) => contrast(p[ink], p.cardBg) < 4.5)
-    expect(low.map(([role, ink]) => `${role} ${ink} ${contrast(p[ink], p.cardBg).toFixed(2)}`)).toEqual([])
+    const low = (['label', 'value', 'cardValue', 'amberFg'] as const).filter(ink => contrast(p[ink], p.cardBg) < 4.5)
+    expect(low.map(ink => `${ink} ${contrast(p[ink], p.cardBg).toFixed(2)}`)).toEqual([])
   })
 }
 

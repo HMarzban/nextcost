@@ -4,9 +4,30 @@
 
 import type { On, SessionUsage } from 'claude-code'
 import type { Engine, MockClock } from 'claude-code/testing'
-import { TTL_MS, type Ttl } from '../hooks/cache'
+import { TTL_MS } from '../hooks/cache'
+import type { Ttl } from '../hooks/prices'
 import {
-  BUILD_155K, DEFAULT_MAX_ROWS, HOUR, HOUR_1, MIN, SPEND_LIMIT, START, SUMMARY, USAGE, FRESH, breakdown, engine, mountBand, pacing, respond, setup, turn, usageAt, type Node,
+  BUILD_155K,
+  DEFAULT_MAX_ROWS,
+  FRESH,
+  HOME,
+  HOUR,
+  HOUR_1,
+  MIN,
+  SPEND_LIMIT,
+  START,
+  SUMMARY,
+  USAGE,
+  breakdown,
+  engine,
+  mountBand,
+  pacing,
+  resp,
+  respond,
+  setup,
+  turn,
+  usageAt,
+  type Node,
 } from './helpers'
 
 export type Appearance = 'dark' | 'light' | 'plain'
@@ -46,7 +67,7 @@ const contextAt = (tokens: number, compactAt: number | undefined): SessionUsage[
 /** A reply, then a measure: the band reads the compaction breakdown there. */
 const measured = (context: SessionUsage['context']) => async ($: Engine): Promise<void> => {
   await replied($)
-  await $.session.measure({ context, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: [] })
+  await $.session.measure({ context, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: ['context'] })
 }
 /** A reply, then the cache's lifetime and a minute more: cold. */
 const cooled = async ($: Engine, clock: MockClock, ttlMs: number): Promise<void> => {
@@ -64,7 +85,7 @@ export const SCENARIOS = {
   warming: { usage: FRESH, drive: started, amber: [] },
   // Its last reply 20 minutes ago, as the band remembered it; HOME lets it
   // look for the transcript's cost record too.
-  recalled: { store: { sessions: { s1: { lastAt: 0 } } }, now: 20 * MIN, env: { HOME: '/Users/me' }, drive: started, amber: [] },
+  recalled: { store: { sessions: { s1: { lastAt: 0 } } }, now: 20 * MIN, env: HOME, drive: started, amber: [] },
   cold: { drive: cooled, amber: [] },
   lastMinute: { drive: async ($, clock, ttlMs) => { await replied($); await clock.advance(ttlMs - 30_000) }, amber: ['cacheLastMinute'] },
   working: { drive: replied, isWorking: true, amber: [] },
@@ -88,7 +109,8 @@ export const SCENARIOS = {
   fullHistory: {
     drive: async $ => {
       await replied($)
-      for (let i = 1; i <= 30; i++) await turn($, `t${i}`, 2.41 + (i - 1) * 0.2, 2.41 + i * 0.2)
+      // As the real ledger moves: each turn's bill lands in its step.
+      for (let i = 1; i <= 30; i++) await turn($, `t${i}`, 2.41 + (i - 1) * 0.2, 2.41 + i * 0.2, { usage: resp(200, 155_000, 1_000, 500) })
     },
     amber: [],
   },

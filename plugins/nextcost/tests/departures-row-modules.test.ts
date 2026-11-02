@@ -92,7 +92,7 @@ for (const surface of ['desktop', 'terminal'] as const)
   test(`${surface}: an amber reading's cell in amber, LAST CALL and its time, its ITEM still its own`, () => {
     const row = rowOf({ surface, ...EXPIRING })
     const r = boardRow({ surface, ...EXPIRING }, 'cache')
-    expect(r?.cell).toMatch(/^LAST CALL /)
+    expect(r?.cell).toMatch(/^! LAST CALL /)
     expect(inked(surface, moduleOf(row, 'cache'))).toEqual(want(surface, [['CACHE', DARK.flapItemCache], [r?.cell, DARK.flapAmber]]))
     // A calm reading beside it keeps the white.
     const spend = boardRow({ surface, ...EXPIRING }, 'spend')
@@ -143,7 +143,7 @@ test('plain: no ground and no padding anywhere on the row, and modules at least 
 test('the ascii tier: modules in ascii alone, a real space between them', () => {
   const row = rowOf({ surface: 'terminal', glyphs: 'ascii', ...EXPIRING })
   expect(shown(row)).toMatch(ASCII_TIER)
-  expect(drawnText(row)).toMatch(/CACHE\s*LAST CALL \S+ SPEND/)
+  expect(drawnText(row)).toMatch(/CACHE\s*! LAST CALL \S+ SPEND/)
 })
 
 // ---- give-way --------------------------------------------------------------
@@ -161,7 +161,7 @@ for (const surface of ['desktop', 'terminal'] as const)
       // Once gone, a reading stays gone at every narrower width.
       for (const k of gone) expect(`${columns} ${k} ${moduleOf(row, k) === undefined}`).toBe(`${columns} ${k} true`)
       // A reading goes only once the remarks have.
-      if (gone.length > 0) expect(`${columns} ${wordsOf(row)}`).not.toMatch(/ON PACE|FULL|RESET/)
+      if (gone.length > 0) expect(`${columns} ${wordsOf(row)}`).not.toMatch(/AT AVG PACE|FULL|RESET/)
     }
     // SPEND and CONTEXT go by 60; 5H, if at all, after them.
     expect(gone.length).toBeGreaterThanOrEqual(2)
@@ -204,7 +204,7 @@ const STATES: ReadonlyArray<readonly [string, Partial<BandSnapshot>]> = [
   ['all amber', { ...EXPIRING, ...NEAR, fiveHour: { ...limitAt(88, 3), etaMs: null }, sevenDay: limitAt(85, 67) }],
   ['all amber, filling', { ...EXPIRING, ...NEAR, fiveHour: { ...limitAt(88, 3), etaMs: 20 * 60_000 }, sevenDay: limitAt(85, 67) }],
   ['all amber, no zone', { ...EXPIRING, ...NEAR, fiveHour: { ...limitAt(88, 3), etaMs: null }, sevenDay: limitAt(85, 67), zone: undefined }],
-  ['all amber, compaction off', { ...EXPIRING, context: { tokens: 180_000, window: 200_000, percent: 90, compactAt: undefined, autoCompactOff: true }, fiveHour: { ...limitAt(88, 3), etaMs: null }, sevenDay: limitAt(85, 67) }],
+  ['all amber, compaction off', { ...EXPIRING, context: { tokens: 180_000, window: 200_000, percent: 90, compactAt: undefined }, fiveHour: { ...limitAt(88, 3), etaMs: null }, sevenDay: limitAt(85, 67) }],
   ['calm, a large spend', { costUsd: 1234.56 }],
   ['all amber, other limits', { ...EXPIRING, ...NEAR, fiveHour: { ...limitAt(88, 3), etaMs: null }, sevenDay: limitAt(85, 67), otherLimits: [{ kind: 'spend_limit', percentUsed: 92, resetsAt: undefined }] }],
 ]

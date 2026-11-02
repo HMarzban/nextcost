@@ -7,7 +7,8 @@ import type { RenderChildren } from 'claude-code'
 import { expect, test, type Engine } from 'claude-code/testing'
 import { DEFAULT_MAX_ROWS, HOUR, LONG, MIN, USAGE, fakeEl, firstRow, runCommand, shown, walk, wordsOf, type Node } from './helpers'
 import { drawBand, layoutAt } from '../hooks/band'
-import type { CacheView, Ttl } from '../hooks/cache'
+import type { CacheModel, CacheView } from '../hooks/cache'
+import type { Ttl } from '../hooks/prices'
 import { makeKit, type Kit } from '../hooks/kit'
 import { DESKTOP, ROW_SLACK, TERMINAL, cellsOf, isDrawn } from '../hooks/layout'
 import { DARK } from '../hooks/palette'
@@ -36,15 +37,16 @@ export const SNAP_PARTS: SnapshotParts = {
   now: 0,
   mount: { surface: 'terminal', columns: 120, maxRows: 13, isWorking: false },
   expanded: false,
-  band: { palette: DARK, layout: 'chips', glyphs: 'unicode', samples: [], workspace: undefined, compactAt: 190_000, autoCompactOff: false },
+  band: { palette: DARK, layout: 'chips', glyphs: 'unicode', samples: [], workspace: undefined, compactAt: 190_000 },
   cache: {
-    requests: 1, leftMs: 52 * MIN, coldAt: null, ttl: '1h', ttlPinned: true, window: 155_000, hitRatio: 0.96, misses: 0, reWarmUsd: 1.66,
-    savedUsd: 11.4, readShare: 0.05, fresh: true, compacted: false, idleCompacts: false, recalled: false, idleMs: null, recovered: false, tokens: { sent: 18_000, back: 9_000, cached: 198_000 },
-    wake: undefined,
+    requests: 1, leftMs: 52 * MIN, coldAt: null, ttl: '1h', ttlKnown: true, window: 155_000, hitRatio: 0.96, misses: 0, reWarmUsd: 1.66,
+    savedUsd: 11.4, readShare: 0.05, fresh: true, idleCompacts: false, recalled: false, idleMs: null, recovered: false, tokens: { sent: 18_000, back: 9_000, cached: 198_000 },
+    wake: undefined, interrupted: undefined, compactedIdle: false,
   },
   costUsd: 3.19,
   history: NO_HISTORY,
   etaMs: null,
+  readAt: undefined,
   zone: undefined,
 }
 
@@ -66,12 +68,17 @@ export const bandOf = (over: Partial<BandSnapshot> = {}): Node => drawBand(fakeE
 /** SNAP_PARTS' cache with `over`. */
 export const cacheWith = (over: Partial<CacheView>): CacheView => ({ ...SNAP_PARTS.cache, ...over })
 /** A cache gone cold. */
+/** The cache model `c`'s view at `now`: no ledger or context known and
+ *  auto-compaction on, unless `over` says otherwise. */
+export const cacheView = (c: CacheModel, now: number, over: Partial<Parameters<CacheModel['view']>[0]> = {}): CacheView =>
+  c.view({ now, ledger: undefined, contextTokens: 0, autoCompactOff: false, ...over }).cache
+
 export const COLD_CACHE = cacheWith({ leftMs: 0 })
 /** The 5-minute cache in its last minute, 30 s left: amber. */
 export const LAST_MINUTE_CACHE = cacheWith({ leftMs: 30_000, ttl: '5m' })
 
 /** 180k of a 200k window with compaction at 190k: 95% of the way, ~10k left, amber. */
-export const NEAR_COMPACTION: BandSnapshot['context'] = { tokens: 180_000, window: 200_000, percent: 90, compactAt: 190_000, autoCompactOff: false }
+export const NEAR_COMPACTION: BandSnapshot['context'] = { tokens: 180_000, window: 200_000, percent: 90, compactAt: 190_000 }
 
 /** A window `pct` used, resetting `h` hours after `now`. */
 export const limitAt = (pct: number, h: number, now = 0): LimitUse => ({ percentUsed: pct, resetsAt: now + h * HOUR })
@@ -221,7 +228,7 @@ const SVG_BARRED = /<(linearGradient|radialGradient|pattern|clipPath)\b|\bid=/
  *  left, or a landing without its figure. */
 const MISSTATED = new RegExp(`\\b(hit rate|${SPLIT_LABELS.join('|')}) \\d+% (used|left)|(?<!\\d percent) at its reset`)
 /** A price or a fill time drawn without its `~` (the band-layouts spec §2.4). */
-const UNMARKED = /re-warm \$|next message \$|full (in |at )?\d|on pace for \d/i
+const UNMARKED = /re-warm \$|next message \$|full (in |at )?\d|(?<![~\d])\d+% at avg pace/i
 
 /** Whether a Text leaves its cut to the surface, which ends it with `…`:
  *  East-Asian-Ambiguous, so the ascii tier never may (the band-layouts spec §3.2). */
@@ -357,7 +364,7 @@ export const invariantErrors = (tree: Node, ctx: InvariantContext): string[] => 
   for (const reason of amber)
     if ((ctx.expanded || !OPEN_ONLY.has(reason)) && !AMBER_WORDS[reason].test(text)) fail('amber', `no words for ${reason}`)
   if (UNMARKED.test(text)) fail('estimate', 'an estimate without ~')
-  // A landing of 100% or more says `full before reset` (the band-layouts spec §2.1).
+  // A landing of 100% or more says `full`, at the average's pace (the band-layouts spec §2.1).
   if (/~\d{3,}%/.test(text)) fail('projection', 'a landing of 100% or more')
   // No scenario holds an empty context, so 0% is only ever an unreported one.
   if (/\b(context|ctx) 0%/i.test(text)) fail('unknown', 'context 0% where it is unknown')

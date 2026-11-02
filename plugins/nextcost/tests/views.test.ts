@@ -72,7 +72,7 @@ test('every layout that says an empty state draws it in a label\'s ink', () => {
           const snap = snapOf({
             layout, surface, expanded, columns, maxRows: 40,
             history: NO_HISTORY,
-            context: { tokens: undefined, window: 200_000, percent: undefined, compactAt: undefined, autoCompactOff: false },
+            context: { tokens: undefined, window: 200_000, percent: undefined, compactAt: undefined },
             fiveHour: undefined, sevenDay: undefined,
           })
           walk(drawView(VIEWS[layout], makeKit(fakeEl, snap), readingsOf(snap), NO_ACT), n => {

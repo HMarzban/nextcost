@@ -1,10 +1,10 @@
-// When the band speaks a toast, and what it says: the 5-hour limit's and the
+// When the band speaks a toast, and what it says: the limits' and the
 // context's, each once per threshold crossed. Pure: register.tsx speaks the
 // texts and keeps the levels reached.
 
-import { SEVERE_AT, WARN_AT, contextPressure, fmtPct, toCompaction } from './format'
-import { FIVE_HOUR } from './snapshot'
-import { roomOf } from './words'
+import { SEVERE_AT, WARN_AT, contextPressure, fmtPct, shownFrac, toCompaction } from './format'
+import { FIVE_HOUR, SEVEN_DAY } from './snapshot'
+import { LIMIT_TITLES, roomOf } from './words'
 
 /** Each toast's level reached, by its key, so it speaks once per crossing. */
 export type Warned = ReadonlyMap<string, number>
@@ -34,26 +34,39 @@ const escalate = (prev: number, frac: number, levels: readonly number[]): Readon
 /** One toast's figure `frac` against its `levels`, under `key`: the level
  *  it reaches, and its text, given the figure as a percent, when it speaks. */
 const note = (warned: Warned, key: string, frac: number, levels: readonly number[], text: (pct: string) => string): Toasts => {
-  const { level, speak } = escalate(warned.get(key) ?? 0, frac, levels)
-  return { warned: new Map(warned).set(key, level), say: speak ? [text(fmtPct(frac))] : [] }
+  // At the figure shown: 79.6% is `80%`, amber, and speaks.
+  const shown = shownFrac(frac)
+  const { level, speak } = escalate(warned.get(key) ?? 0, shown, levels)
+  return { warned: new Map(warned).set(key, level), say: speak ? [text(fmtPct(shown))] : [] }
 }
 
-/** The 5-hour limit's toasts, from the windows the engine reports. */
+/** What each window that speaks is called in its toast, by the kind the
+ *  engine reports it under, which is also the key its level is kept by. */
+const LIMIT_NAMES: ReadonlyMap<string, string> = new Map([
+  [FIVE_HOUR, LIMIT_TITLES['5h']],
+  [SEVEN_DAY, LIMIT_TITLES['7d']],
+  ['spend_limit', 'spend limit'],
+])
+
+/** The limits' toasts, from the windows the engine reports: the 5-hour and
+ *  weekly limits and a gateway's spend limit, each on its own count. */
 export const limitToasts = (warned: Warned, limits: ReadonlyArray<Readonly<{ kind: string; percentUsed: number }>>): Toasts =>
-  limits
-    .filter(l => l.kind === FIVE_HOUR)
-    .reduce<Toasts>(
-      (t, l) => {
-        const next = note(t.warned, FIVE_HOUR, l.percentUsed / 100, [WARN_AT, SEVERE_AT], pct => `You've used ${pct} of your 5-hour limit.`)
-        return { warned: next.warned, say: [...t.say, ...next.say] }
-      },
-      { warned, say: [] },
-    )
+  limits.reduce<Toasts>(
+    (t, l) => {
+      const name = LIMIT_NAMES.get(l.kind)
+      if (name === undefined) return t
+      const next = note(t.warned, l.kind, l.percentUsed / 100, [WARN_AT, SEVERE_AT], pct => `You've used ${pct} of your ${name}.`)
+      return { warned: next.warned, say: [...t.say, ...next.say] }
+    },
+    { warned, say: [] },
+  )
 
 /** The context as a toast reads it: the tokens in use, undefined when the
  *  engine reports none, the window, where auto-compaction runs when it is
- *  on and known, and whether it is off. */
-export type ContextNow = Readonly<{ used: number | undefined; window: number; compactAt: number | undefined; autoCompactOff: boolean }>
+ *  on and known, whether it is off, and whether that is known yet: before
+ *  it, the figure's scale isn't, and a toast on the window's would be
+ *  followed by one on the compaction point's. */
+export type ContextNow = Readonly<{ used: number | undefined; window: number; compactAt: number | undefined; autoCompactOff: boolean; scaleKnown: boolean }>
 
 /** The context's toast. It speaks where the context pill turns amber: by the
  *  same rule. A level counts on the scale it was reached on, and each scale
@@ -62,17 +75,17 @@ export type ContextNow = Readonly<{ used: number | undefined; window: number; co
  *  turns never speaks the same warning twice. */
 export const contextToasts = (warned: Warned, c: ContextNow): Toasts => {
   const { used, compactAt } = c
-  if (used === undefined) return { warned, say: [] }
+  if (used === undefined || !c.scaleKnown) return { warned, say: [] }
   const { frac, levels } = contextPressure(used, c.window, compactAt)
   return note(warned, compactAt === undefined ? CONTEXT.window : CONTEXT.compaction, frac, levels, pct =>
-    compactAt !== undefined ? `Auto-compaction in ${roomOf(toCompaction(used, compactAt))} tokens.`
+    compactAt !== undefined ? (used >= compactAt ? 'Auto-compaction is due.' : `Auto-compaction in ${roomOf(toCompaction(used, compactAt))} tokens.`)
     : c.autoCompactOff ? `Context is ${pct} full and auto-compaction is off, so the conversation will run out of room.`
     : `Context is ${pct} full.`,
   )
 }
 
 /** The warnings once a conversation ends: the context's start over; the
- *  5-hour limit is the account's, and /clear changes nothing about it. */
+ *  limits are the account's, and /clear changes nothing about them. */
 export const forgetConversation = (warned: Warned): Warned => {
   const kept = new Map(warned)
   kept.delete(CONTEXT.window)

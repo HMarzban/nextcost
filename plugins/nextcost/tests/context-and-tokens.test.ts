@@ -7,6 +7,7 @@ import {
   READ_100K,
   USAGE,
   START,
+  usage,
   respond,
   toasts,
   textOf,
@@ -39,15 +40,46 @@ test('near auto-compaction the context chip turns amber and counts down', async 
   }
   setup(on, { usage: near })
   await $.session.start(START)
-  await $.session.measure({ context: { tokens: 152_000, window: 200_000, percent: 76 }, rateLimits: near.rateLimits, cost: near.cost, changed: [] })
+  await $.session.measure({ context: { tokens: 152_000, window: 200_000, percent: 76 }, rateLimits: near.rateLimits, cost: near.cost, changed: ['context'] })
 
   const ui = await mountBand($, 'terminal', 110)
   const ctx = await ui.find({ type: 'Text', text: /compacts in ~8\.0k/ })
   expect(ctx).toBeDefined()
   expect(ctx?.props?.color).toBe(DARK.amberFg)
   // Its card leads with the figure, as every card does.
-  expect(cardText(hoverCardOf(await ui.drawn(), 'ctx'))).toBe('152k of 160k (95%); auto-compacts in ~8.0k')
+  expect(cardText(hoverCardOf(await ui.drawn(), 'ctx'))).toBe('152k of 160k (95%) toward compaction; window 200k; compacts in ~8.0k')
   await ui.unmount()
+})
+
+test("the compaction point is read at the session's start: the context reads toward it before any measure", async ($, on) => {
+  const near = { ...USAGE, context: { tokens: 152_000, window: 200_000, percent: 76, breakdown: breakdown({ autoCompactThreshold: 160_000, isAutoCompactEnabled: true }) } }
+  setup(on, { usage: near })
+  await $.session.start(START)
+  const ui = await mountBand($, 'terminal', 110)
+  expect(await ui.find({ type: 'Text', text: /compacts in ~8\.0k/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a resumed context past its compaction point waits for the point: no 85% of the window, then ~0 tokens', async ($, on) => {
+  const resumed = { ...USAGE, context: { tokens: 170_000, window: 200_000, percent: 85 } }
+  setup(on, { usage: resumed })
+  await $.session.start(START)
+  const measure = () => $.session.measure({ context: resumed.context, rateLimits: [], changed: ['context'] })
+  // The engine can't give the breakdown yet: the scale the toast would speak on isn't known.
+  await measure()
+  expect(toasts).toEqual([])
+  usage.current = { ...resumed, context: { ...resumed.context, breakdown: breakdown({ autoCompactThreshold: 167_000, isAutoCompactEnabled: true }) } }
+  await measure()
+  expect(toasts).toEqual(['Auto-compaction is due.'])
+})
+
+test("a breakdown the engine never gives doesn't silence the context's toast for good", async ($, on) => {
+  setup(on)
+  await $.session.start(START)
+  const at = (percent: number) => $.session.measure({ context: { window: 200_000, percent }, rateLimits: [], changed: ['context'] })
+  await at(70)
+  await at(82)
+  expect(toasts).toEqual(['Context is 82% full.'])
 })
 
 test('toasts fire once per threshold crossing and re-arm below 75%', async ($, on) => {
@@ -56,6 +88,7 @@ test('toasts fire once per threshold crossing and re-arm below 75%', async ($, o
   const at = async (percent: number) =>
     $.session.measure({ context: { window: 200_000, percent }, rateLimits: [], changed: [] })
 
+  await at(70) // the first measure, with the scale unknown, holds the toast
   await at(82)
   await at(84)
   expect(toasts).toHaveLength(1)
@@ -103,7 +136,7 @@ test('the tokens chip totals every token and breaks them down', async ($, on) =>
   const ui = await mountBand($, 'terminal', 140)
   const drawn = await ui.drawn()
   expect(textOf(pillOf(drawn, 'tokens'))).toMatch(/225k/)
-  expect(cardText(hoverCardOf(drawn, 'tokens'))).toBe('input 120k · output 5.0k · cache reads 100k')
+  expect(cardText(hoverCardOf(drawn, 'tokens'))).toBe('input 120k · output 5.0k · cache reads 100k · since the band loaded')
   await ui.press({ key: 'more' })
   const tree = await ui.drawn()
   expect(fact(tree, 'input')).toBe('120k')

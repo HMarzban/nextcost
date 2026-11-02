@@ -3,7 +3,7 @@
 // sits idle. Pure: register.tsx reads each variable and setting by name and
 // hands them here.
 
-import type { Ttl } from './cache'
+import type { Ttl } from './prices'
 
 const IDLE_COMPACT_TOKENS = 200_000
 const IDLE_COMPACT_FLOOR = 100_000
@@ -11,17 +11,17 @@ const IDLE_COMPACT_FLOOR = 100_000
 const truthy = (v: string | undefined): boolean => v !== undefined && ['1', 'true', 'yes', 'on'].includes(v.trim().toLowerCase())
 
 /** The context, in tokens, from which Claude Code compacts this session when
- *  it sits idle; undefined when it never does: outside an interactive
- *  terminal, `idleCompaction: false`, or compaction turned off. The threshold
- *  takes a positive whole number, raised to 100k, as Claude Code does. */
+ *  it sits idle; undefined when it never does: `idleCompaction: false`, or
+ *  compaction turned off. The threshold takes a positive whole number, raised
+ *  to 100k, as Claude Code does. Where it runs is the surface's to say, as the
+ *  band draws it. */
 export const idleCompactFrom = (o: {
-  terminal: boolean
   setting: unknown
   disableAuto: string | undefined
   disableAll: string | undefined
   minTokens: string | undefined
 }): number | undefined => {
-  if (!o.terminal || o.setting === false || truthy(o.disableAuto) || truthy(o.disableAll)) return undefined
+  if (o.setting === false || truthy(o.disableAuto) || truthy(o.disableAll)) return undefined
   const min = o.minTokens !== undefined && /^\d+$/.test(o.minTokens.trim()) ? Number(o.minTokens.trim()) : 0
   return min > 0 ? Math.max(IDLE_COMPACT_FLOOR, min) : IDLE_COMPACT_TOKENS
 }

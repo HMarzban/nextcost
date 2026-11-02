@@ -3,9 +3,11 @@
 
 import { test, expect } from 'claude-code/testing'
 import { fixedZone } from '../hooks/format'
+import { PLAIN } from '../hooks/palette'
 import { readingsOf } from '../hooks/reading'
-import { HOUR, MIN } from './helpers'
-import { snapOf } from './matrix'
+import type { BandSnapshot } from '../hooks/snapshot'
+import { HOUR, MIN, wordsOf } from './helpers'
+import { LAST_MINUTE_CACHE, bandOf, cacheWith, snapOf } from './matrix'
 
 const UTC = fixedZone(0)
 const cacheAt = (over: object) => ({ ...snapOf().cache, ...over })
@@ -30,7 +32,7 @@ test('a calm last call names its clock; the last minute is amber seconds', () =>
   const calm = row({ cache: cacheAt({ requests: 1, ttl: '1h', leftMs: 5 * MIN, coldAt: 5 * MIN }) }, 'cache')
   expect([calm?.cell, calm?.tone]).toEqual(['LAST CALL 00:05', 'calm'])
   const amber = row({ cache: cacheAt({ requests: 1, leftMs: 47_000, coldAt: 47_000 }) }, 'cache')
-  expect([amber?.cell, amber?.cellShort, amber?.tone]).toEqual(['LAST CALL 47S', '! 47S', 'amber'])
+  expect([amber?.cell, amber?.cellShort, amber?.tone]).toEqual(['! LAST CALL 47S', '! 47S', 'amber'])
 })
 test('cold has departed: at its time when known, without it when not', () => {
   expect(row({ now: HOUR, cache: cacheAt({ requests: 1, leftMs: 0, coldAt: 10 * MIN }) }, 'cache')?.cell).toMatch(/^DEPARTED 00:10 · RE-WARM ~\$/)
@@ -41,6 +43,21 @@ test('working boards; unmeasured and warming check in; recalled carries ~', () =
   expect(row({ cache: cacheAt({ requests: 0, recalled: false, fresh: false }) }, 'cache')?.cell).toBe('CHECK-IN')
   expect(row({ cache: cacheAt({ requests: 0, recalled: false, fresh: true }) }, 'cache')?.cell).toBe('CHECK-IN')
   expect(row({ cache: cacheAt({ requests: 0, recalled: true, leftMs: 38 * MIN, coldAt: 38 * MIN }) }, 'cache')?.cell).toBe('DEPARTS ~00:38')
+})
+test('a cache gone cold or compacted mid-turn says so, as chips and pulse do', () => {
+  const cold = row({ isWorking: true, now: HOUR, cache: cacheAt({ requests: 1, leftMs: 0, coldAt: 10 * MIN }) }, 'cache')
+  expect(cold?.status).toBe('DEPARTED')
+  const compacted = row({ isWorking: true, now: HOUR, cache: cacheAt({ requests: 1, leftMs: 0, coldAt: 10 * MIN, interrupted: 'compacted' }) }, 'cache')
+  expect(compacted?.status).toBe('COMPACTED')
+})
+test('not caching and a pending model switch have their own lines, working or not', () => {
+  for (const isWorking of [false, true]) {
+    const off = row({ isWorking, cache: cacheAt({ requests: 1, leftMs: 0, interrupted: 'uncached' }) }, 'cache')
+    expect([off?.status, off?.time, off?.remarks]).toEqual(['NOT CACHING', undefined, ''])
+    const moved = row({ isWorking, cache: cacheAt({ requests: 1, leftMs: 38 * MIN, interrupted: 'switched' }) }, 'cache')
+    expect([moved?.status, moved?.time]).toEqual(['MODEL CHANGED', undefined])
+    expect(moved?.remarks).toBe('NEXT 155K TOKENS')
+  }
 })
 test('context: USED when calm; amber says COMPACTS IN, its short form the mark and value; never CTX', () => {
   expect(row({}, 'context')?.status).toMatch(/^\d+% USED$/)
@@ -63,6 +80,11 @@ test('a 5h pace that fills says when, by clock or, with no zone, by countdown', 
   const pace = { fiveHour: { ...limit(20, 3), etaMs: 40 * MIN } }
   expect(row(pace, '5h')?.cell).toMatch(/! FULL ~\d\d:\d\d$/)
   expect(row({ ...pace, zone: undefined }, '5h')?.cell).toMatch(/! FULL IN ~40 MIN$/)
+})
+test('a 5h fill on the board says its clock as its ETA is rounded', () => {
+  const now = Date.UTC(2026, 9, 9, 13, 40)
+  const r = row({ now, fiveHour: { percentUsed: 84, resetsAt: now + 4 * HOUR, etaMs: 43 * MIN } }, '5h')
+  expect(r?.status).toBe('! FULL ~14:25')
 })
 test('a 5h past 80% with a measured fill says when, as every layout does; without one, that it is near', () => {
   const pace = { fiveHour: { ...limit(84, 3), etaMs: 40 * MIN } }
@@ -110,7 +132,7 @@ test('an unknown zone: no clock anywhere on the board, and no empty time', () =>
 })
 test('a calm context row\'s remarks name the room and where compaction falls', () => {
   const calm = row({ context: { ...snapOf().context, tokens: 76_000, window: 200_000, compactAt: 190_000 } }, 'context')
-  expect(calm?.remarks).toMatch(/^~?\d+K LEFT · COMPACTS AT 190K$/)
+  expect(calm?.remarks).toMatch(/^TOWARD COMPACTION AT 190K · ~?\d+K LEFT$/)
 })
 test("an amber limit's short form keeps its mark: ! and its value; a calm one its value alone", () => {
   expect(row({ fiveHour: limit(82, 3) }, '5h')?.cellShort).toBe('! 82%')
@@ -126,4 +148,38 @@ test("with no zone, a reset under ten minutes off reads the same minute on the b
   const r = readingsOf(snapOf({ fiveHour: { percentUsed: 4, resetsAt: 4 * MIN + 30_000, etaMs: null } }))
   expect(r.fiveHour?.resetWhen).toBe('in 5m')
   expect(r.board().rows.find(row => row.key === '5h')?.time).toBe('IN 5 MIN')
+})
+
+// ── the amber last call carries its mark ───────────────────────────────
+
+const CALM_LAST_CALL = cacheWith({ ttl: '1h', leftMs: 5 * MIN, coldAt: 5 * MIN })
+
+test('the board: the last minute is `! LAST CALL`, the calm last call has no mark', () => {
+  const amber = readingsOf(snapOf({ cache: LAST_MINUTE_CACHE })).board().rows[0]
+  expect([amber?.status, amber?.cell, amber?.cellShort]).toEqual(['! LAST CALL', '! LAST CALL 30S', '! 30S'])
+  const calm = readingsOf(snapOf({ cache: CALM_LAST_CALL })).board().rows[0]
+  expect([calm?.status, calm?.tone]).toEqual(['LAST CALL', 'calm'])
+  expect(calm?.cell.startsWith('!')).toBe(false)
+})
+
+test('plain has no hue, so the amber last call says its mark in the collapsed row and the open board', () => {
+  for (const expanded of [false, true]) {
+    const tree = bandOf({ layout: 'departures', palette: PLAIN, columns: 120, expanded, cache: LAST_MINUTE_CACHE })
+    expect(wordsOf(tree)).toMatch(/CACHE\W*! LAST CALL \d+S/)
+  }
+})
+
+test("the board's REMARKS say the price is the cache rewrite; its collapsed cell is as short as ever", () => {
+  const cold = readingsOf(snapOf({ cache: cacheWith({ leftMs: 0, coldAt: 0 }) })).board().rows[0]
+  expect(cold?.remarks).toBe('RE-WARM ~$1.66 · CACHE REWRITE, NOT YOUR REPLY')
+  expect(cold?.cell).toBe('DEPARTED · RE-WARM ~$1.66')
+  expect(cold?.cellShort).toBe('RE-WARM ~$1.66')
+  const warm = readingsOf(snapOf({ cache: cacheWith({ coldAt: 52 * MIN }) })).board().rows[0]
+  expect(warm?.remarks).toMatch(/RE-WARM ~\$1\.66 IF MISSED · CACHE REWRITE, NOT YOUR REPLY$/)
+})
+
+test("the board's REMARKS say a calm context percentage is toward compaction; without compaction it is used of the window", () => {
+  const row = (context: BandSnapshot['context']) => readingsOf(snapOf({ context })).board().rows.find(r => r.key === 'context')
+  expect([row(snapOf().context)?.status, row(snapOf().context)?.remarks]).toEqual(['40% USED', 'TOWARD COMPACTION AT 190K · ~114K LEFT'])
+  expect([row({ ...snapOf().context, compactAt: undefined })?.status, row({ ...snapOf().context, compactAt: undefined })?.remarks]).toEqual(['38% USED', ''])
 })

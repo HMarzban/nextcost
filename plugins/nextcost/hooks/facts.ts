@@ -25,7 +25,6 @@ export type ContextFill = Readonly<{
   tone: Tone
   /** The tokens in context, as the engine reported them; undefined when it didn't. */
   tokens: number | undefined
-  autoCompactOff: boolean
   window: number
 }>
 
@@ -70,7 +69,9 @@ export type LiveLimit = LimitBase &
     tone: Tone
     etaMs: number | null
     /** 100 when a 5h fill is measured; else the average's landing, once 5% of
-     *  the window has gone and any of it is used. */
+     *  the 5h (a day of the week) has gone and any of it is used. The 5h's is
+     *  never 100 or more but by a measured fill: the average alone doesn't
+     *  say a window fills. */
     projectedPct: number | undefined
     /** Time to the reset. */
     resetInMs: number | undefined

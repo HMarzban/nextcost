@@ -53,7 +53,7 @@ test('at its fewest, 60 columns, calm with a cold cache: CACHE and 7D stay, the 
   // A terminal's flaps set ITEM and cell a gap apart, which the text holds no space for.
   expect(wordsOf(row)).toMatch(/CACHE[\s\S]*7D\W*41%/)
   expect(cellsOf(row as unknown as RenderChildren, TERMINAL)).toBeLessThanOrEqual(60 - ROW_SLACK)
-  if (['spend', 'context', '5h'].some(k => byKey(row, k, 'Box') === undefined)) expect(wordsOf(row)).not.toMatch(/ON PACE|FULL|RESET/)
+  if (['spend', 'context', '5h'].some(k => byKey(row, k, 'Box') === undefined)) expect(wordsOf(row)).not.toMatch(/AT AVG PACE|FULL|RESET/)
 })
 test('an unknown zone: no clock time on the row or the board', () => {
   for (const expanded of [false, true]) expect(wordsOf(band({ surface: 'terminal', zone: undefined, expanded }))).not.toMatch(/\d\d:\d\d/)
@@ -89,7 +89,7 @@ const NARROWING = Array.from({ length: 101 }, (_, i) => 160 - i)
 test("a calm 5H's remark gives way before 5H does: there is a width where it reads 5H 26% alone", () => {
   const forms = NARROWING.map(columns => groupOf(firstRow(band({ surface: 'terminal', columns })), '5h'))
   expect(forms.some(f => /RESET/.test(f))).toBe(true)
-  expect(forms.some(f => /ON PACE/.test(f) && !/RESET/.test(f))).toBe(true)
+  expect(forms.some(f => /AT AVG PACE/.test(f) && !/RESET/.test(f))).toBe(true)
   expect(forms).toContain('5H26%')
 })
 test("an amber limit keeps its RESET while calm pieces give way, until the amber step", () => {
@@ -117,12 +117,12 @@ test("the low case at 104 terminal columns: readings outrank remarks, so 5H's re
   expect(wordsOf(remarked)).not.toMatch(/RESET/)
   expect(['cache', 'spend', 'context', '5h', '7d'].map(k => cells(byKey(remarked, k, 'Box') as Node))).toEqual([21, 13, 13, 23, 25])
   expect(cells(remarked)).toBe(101)
-  // At 104, past the 100 its room holds: 5H's remark, ` ON PACE FOR ~8%`,
+  // At 104, past the 100 its room holds: 5H's remark, ` ~8% AT AVG PACE`,
   // 16 cells, goes; SPEND and 7D's remark stay, 85 cells.
   const at104 = rowAt(104)
   expect(['cache', 'spend', 'context', '5h', '7d'].every(k => byKey(at104, k, 'Box') !== undefined)).toBe(true)
-  expect(wordsOf(byKey(at104, '5h', 'Box'))).not.toMatch(/ON PACE/)
-  expect(wordsOf(byKey(at104, '7d', 'Box'))).toMatch(/ON PACE/)
+  expect(wordsOf(byKey(at104, '5h', 'Box'))).not.toMatch(/AT AVG PACE/)
+  expect(wordsOf(byKey(at104, '7d', 'Box'))).toMatch(/AT AVG PACE/)
   expect(cells(at104)).toBe(85)
 })
 test("below its 60 columns departures draws exactly chips' tree; at 60, the board", () => {
@@ -163,7 +163,7 @@ test('give-way: readings outrank calm remarks; both remarks go before SPEND, and
   for (const cols of widths) {
     const row = firstRow(drawn[caseKey({ surface: 'desktop', cols }, 'shut')]) as Node
     const has = (k: string) => byKey(row, k, 'Box') !== undefined
-    if (!has('spend')) expect(`${cols} ${wordsOf(row)}`).not.toMatch(/ON PACE|FULL/)
+    if (!has('spend')) expect(`${cols} ${wordsOf(row)}`).not.toMatch(/AT AVG PACE|FULL/)
     if (cols === 94) expect(['cache', 'spend', 'context', '5h', '7d'].filter(has)).toEqual(['cache', 'spend', 'context', '5h', '7d'])
   }
 })

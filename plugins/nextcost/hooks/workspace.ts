@@ -45,6 +45,16 @@ const worktreeName = (dirs: string): string | undefined => {
   return trimSlash(gitDir) === trimSlash(commonDir) ? undefined : basename(top) || undefined
 }
 
+/** Control characters, line and paragraph separators and the bidi controls
+ *  (embeddings, overrides, isolates and marks): one of them in a name breaks
+ *  a one-row strip, or draws the text after it reversed. */
+const UNPRINTABLE = /[\p{Cc}\u2028\u2029\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu
+
+/** A name from the file system or git as the band may draw it: each of
+ *  those characters a `?`, one column wide. Joiners and every script's
+ *  letters stay. */
+export const printable = (name: string): string => name.replace(UNPRINTABLE, '?')
+
 /** The git state in `status`, porcelain v2 with its branch headers, and
  *  `dirs`, rev-parse's three paths. Undefined without a `# branch.head`
  *  line: not a repo, or not porcelain v2. */
@@ -66,10 +76,11 @@ export const parseGitState = (status: string, dirs: string): GitState | undefine
     } else if (CHANGED.test(line)) changed++
   }
   if (head === undefined) return undefined
+  const worktree = worktreeName(dirs)
   return {
-    branch: head === '(detached)' ? undefined : head,
+    branch: head === '(detached)' ? undefined : printable(head),
     commit: oid && oid !== '(initial)' ? oid.slice(0, 7) : undefined,
-    worktree: worktreeName(dirs),
+    worktree: worktree === undefined ? undefined : printable(worktree),
     changed,
     ahead,
     behind,

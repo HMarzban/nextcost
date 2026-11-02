@@ -49,8 +49,8 @@ test('the spoken countdown counts the minutes the drawn one shows', () => {
 })
 test('pace speaks a measured rate first, then the average', () => {
   expect(paceText({ etaMs: 40 * MIN, projectedPct: 50 })).toBe('full in ~40m')
-  expect(paceText({ etaMs: null, projectedPct: 112 })).toBe('full before reset')
-  expect(paceText({ etaMs: null, projectedPct: 9.6 })).toBe('on pace for ~10%')
+  expect(paceText({ etaMs: null, projectedPct: 112 })).toBe('full at avg pace')
+  expect(paceText({ etaMs: null, projectedPct: 9.6 })).toBe('~10% at avg pace')
   expect(paceText({ etaMs: null, projectedPct: undefined })).toBe('')
 })
 test('every amber phrase, long and short, starts with "! " once', () => {

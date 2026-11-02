@@ -20,6 +20,7 @@ import {
   cards,
   contrast,
   engine,
+  firstRow,
   cardText,
   hoverCardOf,
   isCard,
@@ -28,13 +29,14 @@ import {
   walk,
   widthOf,
   type Node,
+  HOME,
   HOUR_1,
   LONG,
   setup,
   mountBand,
 } from './helpers'
 
-const HOME = { ...HOUR_1, HOME: '/Users/me' }
+const ENV = { ...HOUR_1, ...HOME }
 const DIRTY = `# branch.oid 1a2b3c4d5e6f\n# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -1\n1 .M N... 100644 100644 100644 a b src/a.ts\n1 M. N... 100644 100644 100644 a b src/b.ts\n? notes.md\n`
 const DETACHED = `# branch.oid 1a2b3c4d5e6f\n# branch.head (detached)\n`
 const WORKTREE = '/Users/me/workspace/nextcost/.claude/worktrees/band-strip'
@@ -56,7 +58,7 @@ const expanded = async ($: Engine, clock: MockClock, surface: 'desktop' | 'termi
 }
 
 test('the strip opens the expanded view: the project, home as ~, its name bold, and the branch', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   await $.session.start(DESKTOP_START)
   const tree = await expanded($, clock, 'desktop')
   const kids = ((tree as Node).children ?? []).filter(Boolean) as Node[]
@@ -72,7 +74,7 @@ test('the strip opens the expanded view: the project, home as ~, its name bold, 
 })
 
 test('the collapsed band has no strip', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   await $.session.start(START)
   await clock.settle()
   const ui = await mountBand($, 'desktop', 120)
@@ -81,7 +83,7 @@ test('the collapsed band has no strip', async ($, on) => {
 })
 
 test('a dirty tree counts its changes, and ahead/behind shows only what differs', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.git = { status: DIRTY, dirs: GIT_MAIN_TREE }
   await $.session.start(DESKTOP_START)
   const tree = stripOf(await expanded($, clock, 'desktop'))
@@ -97,7 +99,7 @@ test('a dirty tree counts its changes, and ahead/behind shows only what differs'
 })
 
 test('a detached HEAD says so, with its short commit', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.git = { status: DETACHED, dirs: GIT_MAIN_TREE }
   await $.session.start(DESKTOP_START)
   const strip = stripOf(await expanded($, clock, 'desktop'))
@@ -106,7 +108,7 @@ test('a detached HEAD says so, with its short commit', async ($, on) => {
 })
 
 test('a linked worktree names the repository it belongs to', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.root = WORKTREE
   engine.git = { status: GIT_CLEAN, dirs: WORKTREE_DIRS }
   await $.session.start(DESKTOP_START)
@@ -116,7 +118,7 @@ test('a linked worktree names the repository it belongs to', async ($, on) => {
 })
 
 test('outside a repository, or with git unable to run, the strip is the path alone', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   for (const git of ['none', 'fail'] as const) {
     engine.git = git
     await $.session.start(DESKTOP_START)
@@ -127,7 +129,7 @@ test('outside a repository, or with git unable to run, the strip is the path alo
 })
 
 test('the terminal strip is words, with no icons and no bare spaces', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.git = { status: DIRTY, dirs: GIT_MAIN_TREE }
   await $.session.start(START)
   const strip = stripOf(await expanded($, clock, 'terminal'))
@@ -136,7 +138,7 @@ test('the terminal strip is words, with no icons and no bare spaces', async ($, 
 })
 
 test('on the desktop no strip child is a whitespace-only string', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.git = { status: DIRTY, dirs: GIT_MAIN_TREE }
   await $.session.start(DESKTOP_START)
   const bare: string[] = []
@@ -148,7 +150,7 @@ test('on the desktop no strip child is a whitespace-only string', async ($, on) 
 
 for (const cols of [50, 70]) {
   test(`at ${cols} columns the strip fits one line and keeps the project and the branch`, async ($, on) => {
-    const clock = setup(on, { env: HOME })
+    const clock = setup(on, { env: ENV })
     engine.root = WORKTREE
     engine.git = { status: DIRTY.replace('branch.head main', 'branch.head claude/a-rather-long-feature-branch'), dirs: WORKTREE_DIRS }
     await $.session.start(START)
@@ -160,7 +162,7 @@ for (const cols of [50, 70]) {
 }
 
 test('a band too short for a strip row puts it in the footer, in place of the hint', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   await $.session.start(DESKTOP_START)
   const footerOf = (tree: unknown): Node | undefined => byKey(tree, 'actions', 'Box')
   // 13 rows, as the desktop gives: each card keeps one fact, so no row is spare
@@ -179,7 +181,7 @@ test('a band too short for a strip row puts it in the footer, in place of the hi
 })
 
 test("the strip has no ground of its own, so its text takes the host theme's colours", async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.git = { status: DIRTY, dirs: GIT_MAIN_TREE }
   await $.session.start(DESKTOP_START)
   const colors: string[] = []
@@ -205,7 +207,7 @@ test('the light palette label holds 4.5:1 on every light surface', () => {
 })
 
 test('a folder name too long for the line shortens, and the strip stays one row', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.root = '/Users/me/workspace/an-unusually-long-project-folder-name-here'
   engine.repoRoot = engine.root
   engine.git = { status: DIRTY, dirs: GIT_MAIN_TREE }
@@ -219,7 +221,7 @@ test('a folder name too long for the line shortens, and the strip stays one row'
 })
 
 test('a narrow strip never hides uncommitted changes', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.root = WORKTREE
   engine.git = { status: DIRTY.replace('branch.head main', 'branch.head claude/a-rather-long-feature-branch'), dirs: WORKTREE_DIRS }
   await $.session.start(START)
@@ -227,7 +229,7 @@ test('a narrow strip never hides uncommitted changes', async ($, on) => {
 })
 
 test('a clipped branch or path keeps its whole name for a reader', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   const long = 'claude/a-rather-long-feature-branch'
   engine.root = WORKTREE
   engine.git = { status: DIRTY.replace('branch.head main', `branch.head ${long}`), dirs: WORKTREE_DIRS }
@@ -238,7 +240,7 @@ test('a clipped branch or path keeps its whole name for a reader', async ($, on)
 })
 
 test("the path's hover card says the whole state, so nothing a narrow line drops is lost", async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.git = { status: DIRTY, dirs: GIT_MAIN_TREE }
   await $.session.start(DESKTOP_START)
   const card = hoverCardOf(stripOf(await expanded($, clock, 'desktop')), 'ws:path')
@@ -246,7 +248,7 @@ test("the path's hover card says the whole state, so nothing a narrow line drops
 })
 
 test("on a text surface the strip's hover cards are drawn after all of it, each sharing its own piece's scope", async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.root = WORKTREE
   engine.git = { status: DIRTY, dirs: WORKTREE_DIRS }
   await $.session.start(START)
@@ -268,7 +270,7 @@ test("on a text surface the strip's hover cards are drawn after all of it, each 
 })
 
 test("on the desktop each of the strip's hover cards sits inside its own piece, for the popover above it", async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.root = WORKTREE
   engine.git = { status: DIRTY, dirs: WORKTREE_DIRS }
   await $.session.start(START)
@@ -326,7 +328,7 @@ const expectStripCardsAt = (strip: Node | undefined, cols: number) => {
 }
 
 test("on the terminal a card on the path's side starts at its piece, and one on the state's side ends at its own", async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.root = WORKTREE
   engine.git = { status: DIRTY, dirs: WORKTREE_DIRS }
   await $.session.start(START)
@@ -336,7 +338,7 @@ test("on the terminal a card on the path's side starts at its piece, and one on 
 })
 
 test("on a narrow terminal a card on the state's side stops short of the path, whose own card still counts the changes", async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.root = WORKTREE
   engine.git = { status: DIRTY, dirs: WORKTREE_DIRS }
   await $.session.start(START)
@@ -352,7 +354,7 @@ test("on a narrow terminal a card on the state's side stops short of the path, w
 const LONG_BRANCH = DIRTY.replace('branch.head main', 'branch.head fix/hover-contrast')
 for (const [surface, glyphs] of [['terminal', 'unicode'], ['terminal', 'ascii'], ['desktop', 'unicode']] as const) {
   test(`on the ${surface} in ${glyphs}, at every width from 20 to 160, a strip card never reaches the other side's pieces`, LONG, async ($, on) => {
-    const clock = setup(on, { env: { ...HOME, NEXTCOST_GLYPHS: glyphs } })
+    const clock = setup(on, { env: { ...ENV, NEXTCOST_GLYPHS: glyphs } })
     engine.root = WORKTREE
     engine.git = { status: LONG_BRANCH, dirs: WORKTREE_DIRS }
     await $.session.start(START)
@@ -379,7 +381,7 @@ test('in the footer, in every layout, the strip takes all the room the buttons l
 })
 
 test('a footer strip with no room for its cards still draws, and shows no card too narrow to read', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.root = WORKTREE
   engine.git = { status: DIRTY, dirs: WORKTREE_DIRS }
   await $.session.start(START)
@@ -392,7 +394,7 @@ test('a footer strip with no room for its cards still draws, and shows no card t
 })
 
 test('one commit to push reads as one', async ($, on) => {
-  const clock = setup(on, { env: HOME })
+  const clock = setup(on, { env: ENV })
   engine.git = { status: DIRTY.replace('+2 -1', '+1 -0'), dirs: GIT_MAIN_TREE }
   await $.session.start(DESKTOP_START)
   const text: string[] = []
@@ -430,3 +432,33 @@ for (const glyphs of ['unicode', 'ascii'] as const) {
       }
   })
 }
+
+// ── names that would break a one-row strip ──────────────────────────────
+
+const UNSAFE = /[\p{Cc}\u2028\u2029\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u
+
+/** Every string a drawn tree holds, in its words and its props. */
+const strings = (tree: unknown): string[] =>
+  typeof tree === 'string' ? [tree] : Array.isArray(tree) ? tree.flatMap(strings) : typeof tree === 'object' && tree !== null ? Object.values(tree).flatMap(strings) : []
+
+test('a project, branch or repository named with control or bidi characters is drawn printable, on one row, the band intact', LONG, async ($, on) => {
+  const clock = setup(on, { env: ENV })
+  engine.root = '/Users/me/pro\u0007ject\nx'
+  engine.repoRoot = '/Users/me/re\u0001po'
+  engine.git = { status: GIT_CLEAN.replace('branch.head main', 'branch.head feat\u202Eevil'), dirs: '/Users/me/r/.git/worktrees/w\n/Users/me/r/.git\n/Users/me/wt\u2067x\n' }
+  await $.session.start(START)
+  await clock.settle()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const tree = await expanded($, clock, surface, 140)
+    const strip = shown(stripOf(tree))
+    expect(strip).toContain('pro?ject?x')
+    expect(strip).toContain('feat?evil')
+    expect(strip).toContain('re?po')
+    // Nowhere in the tree, the cards' words included, is one left.
+    const said = strings(tree)
+    expect(said.filter(text => UNSAFE.test(text))).toEqual([])
+    expect(said.join(' ')).toContain('worktree wt?x')
+    // The band around it still draws.
+    expect(shown(byKey(firstRow(tree), 'cache', 'Box'))).toMatch(/cache/)
+  }
+})

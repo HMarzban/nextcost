@@ -3,8 +3,8 @@
 // beside them, the board's and chips'. Pure, so readingsOf can be checked
 // without mounting the band.
 
-import { cacheFactsOf } from './cache'
-import type { CacheFacts } from './cache'
+import { cacheFactsOf } from './cache-facts'
+import type { CacheFacts } from './cache-facts'
 import { drawnWeekOf } from './calendar'
 import type { DrawnWeek, WindowNow } from './calendar'
 import type { ContextFacts, ContextFill, Frame, LimitBase, LimitFacts, LimitKey, LiveLimit, SpendFacts } from './facts'
@@ -19,6 +19,7 @@ import {
   fmtPct,
   fmtPercent,
   resetIn,
+  shownFrac,
   toCompaction,
 } from './format'
 import { lastCostOf, warmAverageOf } from './insights'
@@ -28,7 +29,7 @@ import { boardWords } from './board-words'
 import type { Board } from './board-words'
 import { chipsWords } from './chips-words'
 import type { ChipsWords } from './chips-words'
-import { cacheWords, contextWords, historyWords, limitWords, spendWords, weekWords } from './words'
+import { asOfWords, cacheWords, contextWords, historyWords, limitWords, spendWords, weekWords } from './words'
 import type { CacheWords, ContextWords, HistoryWords, LimitWords, SpendWords, WeekWords } from './words'
 
 // ---- the limits -------------------------------------------------------------
@@ -37,20 +38,26 @@ import type { CacheWords, ContextWords, HistoryWords, LimitWords, SpendWords, We
 const windowGone = (at: number | undefined, windowMs: number | undefined, now: number): number | undefined =>
   windowMs === undefined || at === undefined || at <= now ? undefined : clamp01(1 - (at - now) / windowMs)
 
-/** The share of a window gone before the average's landing is said: before
- *  it, the pace is too young to read. */
+/** The share of the 5-hour window gone before the average's landing is said:
+ *  before it, the pace is too young to read. */
 const PACE_MIN_GONE = 0.05
+/** The week's: a day of it. Use comes in bursts, workdays and weekends, so
+ *  an average over the first hours of a week says little of how it ends. */
+const WEEK_PACE_MIN_GONE = 1 / 7
 
 /** A window still to reset, from its `base`: where the average lands it,
  *  when it fills, its tone and the time to its reset. `etaMs` is a measured
  *  fill, set only for one that comes before the reset. */
 const paceOf = (base: LimitBase, windowMs: number | undefined, etaMs: number | null, now: number): LiveLimit => {
   const { percentUsed, gone, resetsAt: at } = base
-  // A measured fill lands it at 100, so the words and the amber agree; else
-  // the average's landing, once enough of the window has gone and any of it
+  // The average's landing, once enough of the window has gone and any of it
   // is used: with none, the window may not have begun.
-  const projectedPct =
-    etaMs !== null ? 100 : gone === undefined || gone < PACE_MIN_GONE || percentUsed <= 0 ? undefined : percentUsed / gone
+  const minGone = windowMs === SEVEN_DAY_MS ? WEEK_PACE_MIN_GONE : PACE_MIN_GONE
+  const average = gone === undefined || gone < minGone || percentUsed <= 0 ? undefined : percentUsed / gone
+  // A measured fill lands it at 100, so the words and the amber agree. The
+  // 5h's fill is claimed only by its measured pace: the window's average says
+  // nothing of an hour gone idle or flat, so it stands only as a landing short.
+  const projectedPct = etaMs !== null ? 100 : average === undefined || (base.key === '5h' && average >= 100) ? undefined : average
   // At the average's pace, what is left takes the time gone so far, scaled by what is left over what is used.
   const averageFill =
     projectedPct === undefined || projectedPct < 100 || gone === undefined || windowMs === undefined
@@ -61,7 +68,7 @@ const paceOf = (base: LimitBase, windowMs: number | undefined, etaMs: number | n
     ...base,
     passed: false,
     etaMs,
-    tone: base.frac >= WARN_AT || etaMs !== null ? 'amber' : 'calm',
+    tone: shownFrac(base.frac) >= WARN_AT || etaMs !== null ? 'amber' : 'calm',
     projectedPct,
     resetInMs: base.reset?.kind === 'in' && at !== undefined ? at - now : undefined,
     fillInMs,
@@ -109,6 +116,9 @@ export type Readings = Readonly<{
   sevenDay: LimitReading | undefined
   /** 5h, 7d, then every other window the engine reports. */
   limits: readonly LimitReading[]
+  /** That they are as of the last reply, and how long ago past a few minutes;
+   *  undefined while none is still to reset. */
+  asOf: string | undefined
   worstLimit: LimitReading | undefined
   workspace: BandSnapshot['workspace']
   /** Built the first time a view calls it, then kept, so chips never pays for it. */
@@ -128,7 +138,8 @@ const contextFacts = (snap: BandSnapshot): ContextFacts => {
   const used = contextUsed(ctx) ?? 0
   const pressure = contextPressure(used, ctx.window, ctx.compactAt)
   const frac = clamp01(pressure.frac)
-  const amber = frac >= (pressure.levels[0] ?? 1)
+  // Classed by the percent shown, so a figure at `80%` is amber whatever its decimals.
+  const amber = shownFrac(frac) >= (pressure.levels[0] ?? 1)
   const fill: ContextFill = {
     known: ctx.percent !== undefined || ctx.tokens !== undefined,
     used,
@@ -136,7 +147,6 @@ const contextFacts = (snap: BandSnapshot): ContextFacts => {
     pct: fmtPct(frac),
     tone: amber ? 'amber' : 'calm',
     tokens: ctx.tokens,
-    autoCompactOff: ctx.autoCompactOff,
     window: ctx.window,
   }
   return ctx.compactAt === undefined
@@ -234,6 +244,8 @@ export const readingsOf = (snap: BandSnapshot): Readings => {
   const worstLimit = limits
     .filter(l => !l.passed)
     .reduce<LimitReading | undefined>((top, l) => (top === undefined || l.percentUsed > top.percentUsed ? l : top), undefined)
+  // One reading of the account's limits, so one age for them all.
+  const asOf = limits.some(l => !l.passed) ? asOfWords(snap.limitsAt === undefined ? undefined : Math.max(0, snap.now - snap.limitsAt)) : undefined
   const fiveHour = limits.find(l => l.key === '5h')
   const sevenDay = limits.find(l => l.key === '7d')
   let history: HistoryReading | undefined
@@ -247,12 +259,13 @@ export const readingsOf = (snap: BandSnapshot): Readings => {
     fiveHour,
     sevenDay,
     limits,
+    asOf,
     worstLimit,
     workspace: snap.workspace,
     // Plain functions, not getters: reading a property never runs code.
     history: () => (history ??= historyReading(snap.history, context, spend)),
     week: () => (week ??= weekReading(snap, sevenDay, fiveHour)),
     board: () => (board ??= boardWords({ frame, cache, spend, context, limits })),
-    chips: chipsWords({ frame, cache, spend, context, limits }),
+    chips: chipsWords({ cache, spend, context, limits, asOf }),
   }
 }

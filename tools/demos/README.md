@@ -3,9 +3,10 @@
 Every demo in `docs/` is drawn from the band's own output: the film (an MP4
 and a GIF, each light and dark), the terminal GIFs (light and dark), the
 landing page's live band and its states, the social card and the stills.
-Nothing the build makes is mocked up. `docs/issue-toggle.png` is no demo: it
-is an annotated screenshot kept for an upstream issue, and the build leaves
-it alone.
+The drawings are the band's own; the sessions behind them are scripted by
+the captures, with the replies, costs and limits set by hand.
+`docs/issue-toggle.png` is no demo: it is an annotated screenshot kept for an
+upstream issue, and the build leaves it alone.
 
 ```bash
 tools/demos/build.sh            # rebuild everything into docs/ (about two minutes)
@@ -27,7 +28,10 @@ installs it; elsewhere, set `CHROME=/path/to/chrome`.
    `out/demo.txt`): four states, each one session and clock drawn in every
    layout in `LAYOUT_NAMES`, so switching layout never changes a figure.
    The captures are type-checked with `tsconfig.json` (`tsc -p tools/demos`),
-   which reads them as the plugin's own tests.
+   which reads them as the plugin's own tests. A capture bills its replies
+   as Claude Code's ledger does (a write on the hour's cache, which the
+   captures pin, at 2×), since the band solves its price per token from the
+   bill: a bill set any other way scales every re-warm it draws.
 2. **Draw.** `render.py` turns a terminal tree into HTML on a monospace grid;
    `render_desk.py` turns a desktop tree into HTML laid out like the Code tab
    (10px per column, 24px per text row), with the band's real SVG icons.
@@ -40,7 +44,9 @@ installs it; elsewhere, set `CHROME=/path/to/chrome`.
    and `{{demo-json}}`, drawn with `node(tree, site=True)`: real buttons,
    `alt=""` icons, the countdown in `<span class=cd>`), and with the layouts
    the capture drew: a line holding `{{layout-radio}}` is repeated with each
-   layout's button, and `{{layout-names}}` lists them in words; `stills.py`
+   layout's button, and `{{layout-names}}` lists them in words, and with the
+   JSON-LD FAQ (`{{faq-json}}`), built from the page's own fine print so the
+   two can't differ; `stills.py`
    the social card (from the real `chips amber` drawing), the chip row's
    anatomy, the expanded band, and the states and layouts galleries, each
    layout's row titled from `LAYOUT_LABELS`, which must name every layout the

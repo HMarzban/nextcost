@@ -52,8 +52,8 @@ and lints the tools once.
 It also runs nightly, so a new release that breaks the band shows within a
 day. Red on latest alone means a Claude Code release changed something:
 fix the band or its tests for it, then bump the pin to that release, in
-`ci.yml` and in both READMEs' Install sections, which name the pinned
-version. Red on both means the change itself.
+`ci.yml`, in both READMEs' Install sections and in the site's FAQ
+(`tools/demos/site/template.html`), which name the pinned version. Red on both means the change itself.
 
 To see a change live, add your clone as the marketplace and install from
 it. From the clone's parent folder:
@@ -88,16 +88,16 @@ quit the app with Cmd+Q and open it again; in the terminal, exit and start
 | `hooks/toast.ts` | When the band speaks a toast, and what it says: `limitToasts` for the 5-hour limit and `contextToasts` for the context, once per threshold crossed, each scale keeping its own level (`Warned`); `forgetConversation`, the levels a new conversation starts over. Pure: `register.tsx` speaks the texts and keeps the levels. |
 | `hooks/snapshot.ts` | The snapshot (`BandSnapshot`) and actions (`BandActions`): the one contract between `register.tsx` and the drawing, and `snapshotOf`, the one pure builder of it, which the tests build by too. With it, the layouts' names (`LAYOUT_NAMES`, `DEFAULT_LAYOUT`, `asLayoutName`), the removed ones a stored layout or the command may still name (`removedLayoutOf`, `REMOVED_IN`), the limits as the engine reports them (`limitOf`, `splitLimits`, `LimitUse`), and `resetsOf`, the resets the timer repaints by. |
 | `hooks/band.tsx` | `drawBand(elements, snapshot, actions)`: a pure function from a snapshot to a tree. It builds the kit and the readings and draws the layout `layoutAt` picks (chips below 40 columns, or below the layout's own `minColumns`), all inside one fallback: whatever throws, chips is drawn in its place, and where chips throws too, the hook steps aside. The ascii tier maps the tree last. |
-| `hooks/kit.tsx` | `makeKit`, the drawing kit made once per draw: the elements, `Svg` (undefined but on the desktop in a filled palette), the palette and measure, `oneLine` for a line that may be cut, the hover cards (`liftedCard` on the desktop, `hoverable` and `hoverCard` on a text surface), `gap` and `air`, `icon`, and `svg`, which builds every Svg. |
+| `hooks/kit.tsx` | `makeKit`, the drawing kit made once per draw: the elements, `Svg` (undefined but on the desktop in a filled palette), the palette and measure, `oneLine` for a line that may be cut, the hover cards (`explains`, and `hoverCard` on a text surface), `gap` and `air`, `icon`, `mark`, the text that stands for an icon (its glyph, or in the ascii tier its word), and `svg`, which builds every Svg. |
 | `hooks/facts.ts` | The facts each reading holds (`Tone`, and the context's, spend's and limits' facts) and `Frame`, what every layout draws by. Types alone, over `format.ts`'s, so any module imports them without a cycle. |
 | `hooks/reading.ts` | `readingsOf`: everything a view reads, built once per draw. Each section's facts beside its words from `words.ts` (a window's is a `LimitReading`), and chips' own from `chips-words.ts`; the history, the week and the board's rows (`board-words.ts`) are built the first time a view calls for them. |
-| `hooks/words.ts` | The phrasebook: every phrase a layout draws, built from the facts (`cacheWords`, `spendWords`, `contextWords`, `limitWords`, `historyWords`, `weekWords`), so amber, pace, resets, empty states and alt text read the same everywhere; and the primitives the board's and chips' words are built with. |
+| `hooks/words.ts` | The phrasebook: the phrases layouts share, built from the facts (`cacheWords`, `spendWords`, `contextWords`, `limitWords`, `historyWords`, `weekWords`), so amber, pace, resets, empty states and alt text read the same everywhere; and the primitives the board's and chips' words are built with. |
 | `hooks/chips-words.ts` | `chipsWords`, chips' own words: the cache pill's table by mood, its hover cards, the limits' titles and the context's amount. Built with the phrasebook's primitives, and frozen with chips' trees, so it keeps its own table. |
 | `hooks/board-words.ts` | `boardWords`, the departures board's words: a row per reading in the board's capitals, its statuses, short forms, remarks and alt sentences; and its headings and header (`BOARD_HEADINGS`, `BOARD_TITLE`, `BOARD_NOW`). Built with the phrasebook's primitives, so the board says what every layout says. |
 | `hooks/views/view.ts` | `View`: the rows a layout declares on each surface, its `minColumns` where it needs more than 40, its `collapsed` row and what it `open`s; and `rowsOf`, the rows it takes where it is drawn. |
 | `hooks/views/index.ts` | `VIEWS`: every layout by name, written as the views gate reads it. |
 | `hooks/views/frame.tsx` | What every layout's frame shares: `drawView` (a view's collapsed row with `toggleButton` at its end, and while open what opens beneath it), `bodyRowsFor`, `rowRoom`, `topStrip`, the `footer` (the workspace strip in `footerStripRoom`, the room the buttons leave, else the hint; then Collapse and Hide band), and the one give-way engine: `fitLine` squeezes a collapsed row by its view's order (`PieceOf`), telling its build what it `Keeps`. `line` lays pulse's and departures' pieces, and `groundOf` and `pieceGap` give a piece its ground and gap at each step. |
-| `hooks/views/shell.tsx` | The card family chips' and pulse's open views share: which cards there are and their marks, a limit's accent (`limitAccent`), a card's ground and edge, its title and headline, its fact rows, a line of cards' geometry (`cardLine`: how many a line holds, the room inside each and its edge), their grid, and the alert drawn where none fits. |
+| `hooks/views/shell.tsx` | The card family chips' and pulse's open views share: which cards there are and their marks, a limit's accent (`limitAccent`), a card's ground and edge, its title and headline, its fact rows, a line of cards' geometry (`cardLine`: how many a line holds, the room inside each and its edge), their grid, and the alert drawn where none fits. Fact rows' shared pieces: `factRoom`, `estimateRow`, `headWithTails`, `clippedNote`. |
 | `hooks/views/chips.tsx` | `chipsView`: chips' row of pills, the cache's led by the battery from `charts.tsx`, squeezed by `fitLine`. Exports its pill builders (`cachePill`, `limitPill`, `chipsPills`), its row (`pillRow`) and `CHIP_BAR` for its tests. |
 | `hooks/views/chips-open.tsx` | `chipsOpen`, chips' open view: its four cards on the shell, the workspace strip on top (`topStrip`) while every card still keeps a fact, else in the footer, then the footer. |
 | `hooks/views/pulse.tsx` | `pulseView`: pulse's collapsed row, a tile per reading, its name, its figure, then its chart. |
@@ -108,11 +108,13 @@ quit the app with Cmd+Q and open it again; in the terminal, exit and start
 | `hooks/flaps.tsx` | The split-flap tiles departures draws (`flaps`): one Svg per reading on the desktop, a coloured run of text in the terminal; the open board's flap columns (`flapColumns`), its rules (`boardRule`) and the height its lines take (`boardLineHeight`, `boardBudget`). |
 | `hooks/strip.tsx` | `drawStrip`, the workspace strip at the first squeeze that fits its room, on top or in the footer: project, branch or worktree, changes, ahead/behind. |
 | `hooks/charts.tsx` | The charts: `meter`, `splitBar`, `sparkline`, `barChart`, `dayCells` (`dayCellsFit` says whether they fit), `heartbeat`, `flatBeats`, `track`, and chips' cache battery (`batteryIcon`, `textBattery`), each an Svg on the desktop, built by `kit.svg`, and text elsewhere; and `braille`, the terminal's chart as a string. |
-| `hooks/glyphs.ts` | The terminal's glyph tier (`resolveGlyphs`, from `NEXTCOST_GLYPHS` or a CJK locale; `drawnTier`) and the ASCII mapping (`asciiText`, `asciiTree`). The ascii tier keeps a wide character, such as a Japanese name's, and every tier measures it two columns. |
+| `hooks/glyphs.ts` | The terminal's glyph tier (`resolveGlyphs`, from `NEXTCOST_GLYPHS` or a CJK locale; `drawnTier`) and the ASCII mapping (`asciiText`, `asciiTree`), with `ASCII_WORDS`, the words the icons it would drop are said as (`tok`, `ctx`, `resets`). The ascii tier keeps a wide character, such as a Japanese name's, and every tier measures it two columns. |
 | `hooks/calendar.ts` | The day and hour cells pulse draws, read off the limit samples (`weekOf`), and the week's cells as drawn, each guess stopped at the cap (`drawnWeekOf`). |
-| `hooks/layout.ts` | How the band measures a line: the one width rule (`textCells`: a wide character takes two columns), the clips that cut a line to its columns (`clipMiddle`, `clipWords`, `clipToTiles`), how many columns a drawn tree takes on each surface (`cellsOf`, `TERMINAL`, `DESKTOP`), the sizes it lays out by (`ROW_SLACK`, `CARD_TEXT`), and `squeezeToFit`, which `fitLine` and the strip run. Each view names its own give-way order. |
+| `hooks/layout.ts` | How the band measures a line: the one width rule (`textCells`: a wide character takes two columns), the clips that cut a line to its columns (`clipMiddle`, `clipWords`, `clipToTiles`), how many columns a drawn tree takes on each surface (`cellsOf`, `TERMINAL`, `DESKTOP`), the sizes it lays out by (`ROW_SLACK`, `CARD_TEXT`), and `squeezeToFit`, which `fitLine` and the strip run. Each view names its own give-way order. `longestThatFits` picks a phrase's longest form with room. |
 | `hooks/icons.ts` | The icons' SVG bodies (`ICON_PATHS`), glyphs (`GLYPH`) and names (`ALT`). |
-| `hooks/cache.ts` | The prompt-cache model, one per session (`newCache`), fed each hook's facts in that hook's own shape: TTL, misses, recall, a resume, re-warm and savings estimates, and the cache's view for the band. `cacheFactsOf` says what the view means: its mood, its charge, its last call, whether idle compaction is near, whether it is `untimed`. |
+| `hooks/cache.ts` | The prompt-cache model, one per session (`newCache`), fed each hook's facts in that hook's own shape: TTL (and the lifetime the transcript says a write was made for, `wroteFor`), misses, recall, a resume, and the cache's view for the band. What the view means and what it bills are the next two rows'. |
+| `hooks/cache-facts.ts` | What the cache's view means: its moods and the facts a layout draws by (`cacheFactsOf`): its charge, its last call, whether idle compaction is near, whether it is `untimed`. Types and one pure function, so any module imports them without a cycle. |
+| `hooks/cache-bill.ts` | The cache model's bill: the per-model ledger (`books`), each model's rate solved from its own steps (`ratePerToken`) and what that prices: the re-warm and what the cache saved. |
 | `hooks/prices.ts` | What each kind of token costs against base input, as Anthropic lists it: `WRITE_MULT`, `readMultiplier` by model, `tierFactor` for the price tiers a long prompt pays, `weightedTokens`, and `modelName`, the model a name bills as; with `TokenCounts`. |
 | `hooks/cache-settings.ts` | What the environment and settings say of the cache: `resolveTtl`, the lifetime they pin, if any, and `idleCompactFrom`, where idle compaction runs. Pure: `register.tsx` reads each variable and setting by name. |
 | `hooks/insights.ts` | `newInsights`, one set per session, made beside the cache model: the trails pulse draws, each message's cost and the context; the last message's cost, the cost trail's newest entry (`lastCostOf`); and the 5-hour pace. |
@@ -124,9 +126,9 @@ quit the app with Cmd+Q and open it again; in the terminal, exit and start
 | `types/index.d.ts` | The plugin's state contract: the two atoms. |
 | `tests/` | Tests, one file per behaviour, named for it; the files below are shared. |
 | `tests/globals.d.ts` | Declares `console`, which the tests have at run time and the type check's es2023 lib lacks. `test-only.sh` and the demo build copy it with the shared files. |
-| `tests/helpers.ts` | The engine's fake and what most tests start from: `setup()` starts a test from a fresh engine, `mountBand()` draws the band, `runCommand()` types a command, `byKey()` finds a node, `wordsOf()` reads a tree's words; the named responses (`resp`, `respond`, `BUILD_155K`, `BUILD_100K`, `READ_100K`, `BUILD_80K`), `TURN_START`, `TURN_DONE` and `SPEND_LIMIT`; the `LONG` budget; and the transcript fixtures (`jsonl`, `replyLine`, `costRecord`, `transcriptOf`). |
+| `tests/helpers.ts` | The engine's fake and what most tests start from: `setup()` starts a test from a fresh engine, `mountBand()` draws the band, `runCommand()` types a command, `byKey()` finds a node, `wordsOf()` reads a tree's words; the named responses (`resp`, `respond`, `BUILD_155K`, `BUILD_100K`, `READ_100K`, `BUILD_80K`), `ledgerGrows`, which moves the ledger with no step to show for it, `TURN_START`, `TURN_DONE` and `SPEND_LIMIT`; the `LONG` budget; and the transcript fixtures (`jsonl`, `replyLine`, `requestLines`, `costRecord`, `transcriptOf`). `listBill`, a bill at list price from its own table; `expectNear`; `shutAndOpen`; `factsOf`. |
 | `tests/cases.ts` | The states every layout is drawn in (`SCENARIOS`) and `drawCases`, which draws them: one setup and one drive, then each mount shut and open; and golden's scenarios, appearances and mounts. |
-| `tests/matrix.ts` | All of `cases.ts`, and for a pure test, `SNAP_PARTS` and `snapOf`, which builds its snapshot through `snapshotOf`, `kitOf` and `bandOf`, which make the kit and draw the band from it with `NO_ACT`, and the snapshot fixtures the tests share (`NO_HISTORY`, `HISTORY`, `CALM_LIMITS`, `COLD_CACHE` and the rest); the invariant checks and `ASCII_TIER`; and `viewSuite`, which each layout's `view-<name>` test file runs (chips' trees are golden's). |
+| `tests/matrix.ts` | All of `cases.ts`, and for a pure test, `SNAP_PARTS` and `snapOf`, which builds its snapshot through `snapshotOf`, `kitOf` and `bandOf`, which make the kit and draw the band from it with `NO_ACT`, and the snapshot fixtures the tests share (`NO_HISTORY`, `HISTORY`, `CALM_LIMITS`, `COLD_CACHE` and the rest); the invariant checks and `ASCII_TIER`; and `viewSuite`, which each layout's `view-<name>` test file runs (chips' trees are golden's). `cacheView`, a cache model's view at a moment. |
 | `tests/cover.ts` | `partCovered`, the whole-pieces check: in a text surface's frame a hover card shows in, every piece of its row is covered whole or left whole. The desktop's cards open above their piece and cover none. |
 | `tests/golden/chips.ts` | Chips' frozen trees: `GOLDEN`, a hash per case, and `GOLDEN_TREES`, ten of them whole; see the rule below. |
 | `tests/golden/hash.ts` | `treeHash`, a tree's fingerprint: its `canon`ical form, every clock time read alike and the engine's own marks dropped, hashed by `fnv1a`, and that form's length. |
@@ -153,13 +155,19 @@ quit the app with Cmd+Q and open it again; in the terminal, exit and start
   resolves to the first, so a drawing rounds its own ends rather than clip.
 - **A hover card has no key.** A keyed Box is its own hover scope, and a
   hidden one could never be hovered.
+- **The cache's lifetime is read, not guessed, where it can be.** Claude Code
+  doesn't hand a mod a reply's cache-write split, so after a turn that wrote
+  to the cache (`writeUnreadSince` in `cache.ts`), `readLifetime` reads it off
+  the transcript's end, up to three looks while Claude Code logs the turn's
+  line; the inference from a short read is what's left when that read fails.
+  What it reads, and when, is in [SECURITY.md](SECURITY.md).
 - **On the desktop a hover card sits inside the keyed Box it explains.** The
-  kit's `liftedCard`, a hidden placed Box with a hover and no scope, is what
-  the desktop raises to a popover above that Box. It names no size, place,
-  ground or ink: the desktop drops them and gives it its own card's.
+  `card` of the kit's `explains`, a hidden placed Box with a hover and no
+  scope, is what the desktop raises to a popover above that Box. It names no
+  size, offset, ground or ink: the desktop drops them and gives it its own card's.
 - **On a text surface a hover card is drawn after the pieces of its row.** A placed Box paints
   over those before it, so a card inside its piece would sit under the
-  pieces after. The kit's `hoverable` and `hoverCard` join the two by a hover
+  pieces after. The kit's `explains` and `hoverCard` join the two by a hover
   scope. The pointer on a showing card keeps it showing, so a card sits at
   its piece and covers whole pieces: its text, then the rest of any piece it
   enters, never part of one. A control the card may reach, like the band's

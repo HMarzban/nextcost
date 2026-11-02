@@ -52,8 +52,8 @@ test('each card: its title in label ink, its headline from the readings, its fac
   })
   expect(titles).toEqual(['CACHE|label', 'SPEND|label', 'CONTEXT|label', 'LIMITS|label'])
   const heads = CARDS.map(k => shown(byKey(byKey(tree, k, 'Box'), 'head', 'Box')))
-  expect(heads).toEqual(['CACHE52m left', 'SPEND$3.19', 'CONTEXT40% full', 'LIMITS5h 26% · 7d 41%'])
-  expect(shown(cardOf(tree, 'cache'))).toMatch(/re-warm if cold~\$1\.66$/)
+  expect(heads).toEqual(['CACHE52m left', 'SPEND$3.19', 'CONTEXT40% toward compaction', 'LIMITS5h 26% · 7d 41%'])
+  expect(shown(cardOf(tree, 'cache'))).toMatch(/re-warm if cold~\$1\.66 · cache rewrite only$/)
   expect(shown(cardOf(tree, 'spend'))).toMatch(/last message · avg\$0\.21 · ~\$0\.20$/)
   expect(shown(cardOf(tree, 'context'))).toMatch(/in context76k of 200k · compacts at 190k$/)
   expect(shown(cardOf(tree, 'limits'))).toMatch(/5h resets03:00[\s\S]*7d resetsSat 19:00/)
@@ -113,7 +113,7 @@ test("the cache's track is inked by its mood: warm green while warm, amber in it
   // Unknown, its note says when it will be.
   expect(shown(cardOf(open({ surface: 'terminal', cache: moods[4]![1] }), 'cache'))).toContain('First message builds the cache.')
   // Cold, the estimate is the next message's.
-  expect(shown(cardOf(open({ surface: 'terminal', cache: moods[2]![1] }), 'cache'))).toMatch(/next message~\$1\.66$/)
+  expect(shown(cardOf(open({ surface: 'terminal', cache: moods[2]![1] }), 'cache'))).toMatch(/next message~\$1\.66 · cache rewrite only$/)
 })
 
 test('short of rows, the charts step down, two rows, then one, then none, before any card gives way', () => {
@@ -198,7 +198,7 @@ test('more amber than the body holds: the amber cards give way in pulse\'s order
 test("an amber card says so in words: its headline led by '! '", () => {
   const tree = open({ surface: 'terminal', cache: LAST_MINUTE_CACHE, context: NEAR_COMPACTION, ...AMBER_WEEK_LIMITS })
   expect(shown(byKey(cardOf(tree, 'cache'), 'head', 'Box'))).toMatch(/^CACHE! 0:30 left$/)
-  expect(shown(byKey(cardOf(tree, 'context'), 'head', 'Box'))).toMatch(/^CONTEXT! 95% full$/)
+  expect(shown(byKey(cardOf(tree, 'context'), 'head', 'Box'))).toMatch(/^CONTEXT! 95% toward compaction$/)
   expect(shown(byKey(cardOf(tree, 'limits'), 'head', 'Box'))).toMatch(/^LIMITS! 5h 26% · 7d 85%$/)
   expect(shown(cardOf(tree, 'context'))).toMatch(/compacts in ~10k$/)
 })
@@ -312,4 +312,18 @@ test("the cards' words: each figure from the readings, phrase by phrase", () => 
   expect(limitsHead(r.limits)).toEqual([['5h ', 'label'], ['4%', 'value'], [' · 7d ', 'label'], ['30%', 'value']])
   expect(markedHead([['93%', 'value']], 'amber')).toEqual([['! ', 'amber'], ['93%', 'value']])
   expect(markedHead([['38%', 'value']], 'calm')).toEqual([['38%', 'value']])
+})
+
+test("Limits says its reading is as of the last reply on a row of its own where the body has one to spare, and gives it up first, never overflowing", () => {
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const said = (maxRows: number, columns = 94) => /as of your last reply/.test(shown(cardOf(open({ surface, maxRows, columns, limitsAt: -12 * MIN }), 'limits') as Node))
+    expect(said(40)).toBe(true)
+    // Sooner than a chart steps down or a card gives way: the rows it would take are not the body's.
+    let tight = 40
+    while (said(tight - 1)) tight--
+    expect(tight).toBeGreaterThan(5)
+    for (let rows = 4; rows <= 40; rows++) expect(visualRows(open({ surface, maxRows: rows, limitsAt: -12 * MIN }), surface)).toBeLessThanOrEqual(Math.max(rows, visualRows(open({ surface, maxRows: rows }), surface)))
+    // With the age said, the card says how long ago in its own words.
+    expect(shown(cardOf(open({ surface, maxRows: 40, limitsAt: -12 * MIN }), 'limits') as Node)).toContain('as of your last reply, 12m ago')
+  }
 })

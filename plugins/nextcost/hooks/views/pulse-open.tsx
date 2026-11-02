@@ -18,7 +18,7 @@ import type { BandActions } from '../snapshot'
 import { EMPTY, limitsHead, markedHead, type Say } from '../words'
 import { bodyRowsFor, footer } from './frame'
 import { beatsChart, chartsDraw, weekCells, windowTrail } from './pulse-charts'
-import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, factRow, headHolds, headline, linesOf } from './shell'
+import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, clippedNote, estimateRow, factRoom, factRow, fitForm, headHolds, headWithTails, headline, linesOf } from './shell'
 import type { CardLine, CardName } from './shell'
 
 const DOT = ' · '
@@ -49,20 +49,8 @@ const DAY_CELL_PX = 32
 /** The columns between Limits' two halves. */
 const HALF_GAP = 2
 
-/** The phrases joined by DOT, as many as fit `room` from the first; the
- *  first always, which the surface cuts if it must. */
-const fitWords = (kit: Kit, phrases: readonly string[], room: number): string => {
-  let words = phrases[0] ?? ''
-  for (const p of phrases.slice(1)) {
-    const longer = `${words}${DOT}${p}`
-    if (cellsOf(longer, kit.measure) > room) break
-    words = longer
-  }
-  return words
-}
-
 /** Whether a fact's label and value fit `room` side by side, two columns apart. */
-const factFits = (kit: Kit, label: string, value: string, room: number): boolean => cellsOf(label, kit.measure) + 2 + cellsOf(value, kit.measure) <= room
+const factFits = (kit: Kit, label: string, value: string, room: number): boolean => cellsOf(value, kit.measure) <= factRoom(kit, label, room)
 
 /** Everything the plan and the cards read, worked out once a draw. */
 type Facts = Readonly<{
@@ -105,8 +93,9 @@ const factsOf = (kit: Kit, read: Readings): Facts => {
 }
 
 /** What a step keeps: its units, and its charts' rows; `wakeRow`, a row in
- *  the cache's card for who restarted the countdown. */
-type Plan = Readonly<{ kept: ReadonlySet<Unit>; chart: ChartRows; wakeRow?: boolean }>
+ *  the cache's card for who restarted the countdown; `asOfRow`, one in
+ *  Limits' for the age of its reading. */
+type Plan = Readonly<{ kept: ReadonlySet<Unit>; chart: ChartRows; wakeRow?: boolean; asOfRow?: boolean }>
 
 /** The cards a plan's units draw, in the one order. */
 const cardsOf = (f: Facts, kept: ReadonlySet<Unit>): CardName[] => {
@@ -128,7 +117,7 @@ const cardRows = (kit: Kit, f: Facts, card: CardName, p: Plan, line: CardLine): 
   const across = halvesAcross(kit, f, line.inner)
   // Side by side, one chart and one fact row; else one over the other.
   const halfRows = halves === 0 ? 0 : across ? chartRows + 1 : halves * (chartRows + 1)
-  return line.edgeRows + 1 + halfRows + (p.kept.has('other') && f.others.length > 0 ? 1 : 0)
+  return line.edgeRows + 1 + halfRows + (p.kept.has('other') && f.others.length > 0 ? 1 : 0) + (p.asOfRow === true ? 1 : 0)
 }
 
 /** The lines of cards a plan draws, `perLine` to a line, and its rows: each
@@ -161,24 +150,28 @@ const planFor = (kit: Kit, f: Facts, body: number): Plan | undefined => {
   return undefined
 }
 
-/** The cache's headline with who restarted the countdown, where its card of
- *  `inner` columns holds it whole; undefined where it doesn't, or the user
- *  typed the turn. */
-const wokenHead = (kit: Kit, read: Readings, inner: number): Say | undefined => {
-  const { cache } = read
-  if (cache.wakeHead === undefined) return undefined
-  const woken = [...markedHead(cache.cardHead, cache.tone), ...cache.wakeHead]
-  return headHolds(kit, 'cache', woken, cache.tone, inner) ? woken : undefined
+/** The plan with `more`, if it still fits `body` rows. */
+const ifRoom = (kit: Kit, f: Facts, p: Plan, more: Partial<Plan>, body: number): Plan => {
+  const roomy = { ...p, ...more }
+  return planLines(kit, f, roomy).rows <= body ? roomy : p
 }
+
+/** The cache's headline, before who restarted the countdown. */
+const cacheHead = ({ cache }: Readings): Say => markedHead(cache.cardHead, cache.tone)
 
 /** Who restarted the countdown costs no chart or card: the headline says it,
  *  and where it can't, a row of its own only if `body` has one to spare. */
 const withWake = (kit: Kit, read: Readings, f: Facts, p: Plan, body: number): Plan => {
+  const { woken, tone } = read.cache
   const line = planLines(kit, f, p).lines.find(cards => cards.includes('cache'))
-  if (line === undefined || read.cache.wakeRow === undefined || wokenHead(kit, read, cardLine(kit, line.length).inner) !== undefined) return p
-  const roomy = { ...p, wakeRow: true }
-  return planLines(kit, f, roomy).rows <= body ? roomy : p
+  if (line === undefined || woken === undefined || headHolds(kit, 'cache', [...cacheHead(read), ...woken.head], tone, cardLine(kit, line.length).inner)) return p
+  return ifRoom(kit, f, p, { wakeRow: true }, body)
 }
+
+/** The age of the limits' reading costs no chart or card: it takes a row of
+ *  Limits' own only if `body` has one to spare. */
+const withAsOf = (kit: Kit, read: Readings, f: Facts, p: Plan, body: number): Plan =>
+  read.asOf === undefined || !cardsOf(f, p.kept).includes('limits') ? p : ifRoom(kit, f, p, { asOfRow: true }, body)
 
 /** What a card on a line is built at: the facts and the plan; the columns
  *  inside it, `inner`, and on the desktop `px`, so a chart spans its card to
@@ -208,16 +201,6 @@ const plot = (kit: Kit, chart: RenderChildren): RenderChildren => {
   return chart === null || Svg ? chart : <Box key="plot" overflow="hidden">{chart}</Box>
 }
 
-/** A line of words in a label's ink, cut to its row. */
-const clippedNote = (kit: Kit, key: string, text: string): RenderElement => {
-  const { Box, palette, oneLine } = kit
-  return <Box key={key}>{oneLine({ color: palette.label }, text)}</Box>
-}
-
-/** A fact, its value's phrases as many as fit beside its label. */
-const fact = (kit: Kit, at: CardAt, label: string, values: readonly string[]): RenderElement =>
-  factRow(kit, label, fitWords(kit, values, at.inner - cellsOf(label, kit.measure) - 2))
-
 /** What fills a card's height past its chart, so its fact sits on the line's last row. */
 const fill = (kit: Kit): RenderElement => {
   const { Box } = kit
@@ -235,9 +218,9 @@ const cacheCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
   // warming, its hour isn't known: no track, and its note says when it will be.
   const ink = onTone(cache.tone, cache.mood === 'warm' ? palette.warm : palette.label)
   const chart = at.size === undefined || !at.f.charted.cache ? null : track(kit, { key: 'chart', alt: cache.alt, frac: 1 - cache.charge, color: ink, px: at.px, ...at.size, cells: at.inner })
-  const said = cache.untimed && cache.cardNote !== undefined ? clippedNote(kit, 'fact', cache.cardNote) : fact(kit, at, cache.estimateLabel, [cache.estimate])
-  const head = wokenHead(kit, read, at.inner) ?? markedHead(cache.cardHead, cache.tone)
-  const woken = at.p.wakeRow === true && cache.wakeRow !== undefined ? factRow(kit, cache.wakeRow.label, cache.wakeRow.value) : null
+  const said = cache.untimed && cache.cardNote !== undefined ? clippedNote(kit, 'fact', cache.cardNote) : estimateRow(kit, cache, at.inner)
+  const head = headWithTails(kit, 'cache', cacheHead(read), [cache.woken?.head], cache.tone, at.inner)
+  const woken = at.p.wakeRow === true && cache.woken !== undefined ? factRow(kit, cache.woken.row.label, cache.woken.row.value) : null
   return card(kit, 'cache', head, cache.tone, [plot(kit, chart), fill(kit), woken, said])
 }
 
@@ -258,13 +241,16 @@ const contextCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
   const { Svg, palette, onTone } = kit
   const { context } = read
   const hist = read.history()
+  const { label, values: phrases } = context.fact
+  // As many of its phrases as fit beside its label, from the first.
+  const forms = phrases.map((_, i) => phrases.slice(0, phrases.length - i).join(DOT))
   // Its trail under the compaction line; fewer than two turns, flat at its
   // level now, which is known. In text two turns to a cell.
   const turns = Svg ? hist.context.length : 2 * at.inner
   const values = hist.context.length > 1 ? hist.context.slice(-turns) : Array.from({ length: Math.max(2, Svg ? 2 : turns) }, () => context.used)
   const chart = at.size === undefined || !at.f.charted.context ? null
     : sparkline(kit, { key: 'chart', alt: hist.contextTrailAlt, values, color: onTone(context.tone, palette.label), px: at.px, ...at.size, headroom: at.headroom, max: context.compactAt ?? context.window, levelFrac: context.compactAt === undefined ? undefined : 1 })
-  return card(kit, 'context', markedHead(context.cardHead, context.tone), context.tone, [plot(kit, chart), fill(kit), fact(kit, at, context.fact.label, context.fact.values)])
+  return card(kit, 'context', markedHead(context.cardHeadNamed, context.tone), context.tone, [plot(kit, chart), fill(kit), factRow(kit, label, fitForm(kit, forms, factRoom(kit, label, at.inner)))])
 }
 
 /** A window's half of Limits: its chart, `halfPx` wide, then its fact;
@@ -306,6 +292,7 @@ const limitsCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
     others.length === 0 ? null : (
       <Box key="others">{oneLine({ color: onTone(othersAmber ? 'amber' : 'calm', palette.cardValue) }, others.map(l => l.line).join(DOT))}</Box>
     ),
+    at.p.asOfRow === true && read.asOf !== undefined ? clippedNote(kit, 'as-of', read.asOf) : null,
   ])
 }
 
@@ -338,7 +325,7 @@ export const pulseOpen = (kit: Kit, read: Readings, act: BandActions, collapsedR
   const body = bodyRowsFor(read.frame.maxRows, collapsedRows, 0)
   const f = factsOf(kit, read)
   const planned = planFor(kit, f, body)
-  const p = planned === undefined ? undefined : withWake(kit, read, f, planned, body)
+  const p = planned === undefined ? undefined : withAsOf(kit, read, f, withWake(kit, read, f, planned, body), body)
   const cards = p !== undefined ? drawCards(kit, read, f, p) : body < 1 ? null : alertLine(kit, read)
   return [cards, footer(kit, act, read.workspace)].filter(e => e !== null)
 }

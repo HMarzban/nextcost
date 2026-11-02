@@ -10,6 +10,7 @@ import {
   BUILD_100K,
   DESKTOP_START,
   BUILD_155K,
+  USAGE,
   LONG,
   START,
   respond,
@@ -144,21 +145,22 @@ test('every pill explains itself on hover: over the row at its pill on the termi
     expect(found.map(([key]) => key)).toEqual(PILLS)
     if (surface === 'terminal') expectCardsAt(firstRow(tree), found, cols)
     else for (const [, card] of found) expectLifted(card)
-    for (const [, card] of found) expect(cardText(card).length).toBeLessThan(70)
+    for (const [, card] of found) expect(cardText(card).length).toBeLessThan(80)
     // Each leads with its value, then what changes, then what it means, so a
     // short row's cut only ever takes the description.
     expect(cardText(found[0]?.[1])).toBe('1h 00m left; warm cache bills input at 5%, expires 1h after a request')
     expect(cardText(found[1]?.[1])).toBe('$0.41 spent during your last message, subagents included')
     expect(cardText(found[2]?.[1])).toBe('76k of 200k (38%); older turns get summarized near full')
-    expect(cardText(found[3]?.[1])).toBe('Resets in 3h 00m; 5-hour limit, all your Claude use')
-    expect(cardText(found[4]?.[1])).toBe('Resets in 2d 19h; weekly limit, all your Claude use')
-    expect(cardText(found[5]?.[1])).toBe('input 196k · output 12k · cache reads 0')
+    expect(cardText(found[3]?.[1])).toBe('Resets in 3h 00m; 5-hour limit, all your Claude use; as of your last reply')
+    expect(cardText(found[4]?.[1])).toBe('Resets in 2d 19h; weekly limit, all your Claude use; as of your last reply')
+    expect(cardText(found[5]?.[1])).toBe('input 196k · output 12k · cache reads 0 · since the band loaded')
     await ui.unmount()
   }
 })
 
 test('on a wide terminal row each card starts a column before its own pill, its ▐ in the gap, so it covers none to its left', async ($, on) => {
-  setup(on)
+  // A conversation that began here: the tokens card has no `since the band loaded` to slide it back.
+  setup(on, { usage: { ...USAGE, cost: { usd: 0 } } })
   await $.session.start(START)
   await respond($, BUILD_155K)
   const ui = await mountBand($, 'terminal', 160)
@@ -205,7 +207,7 @@ test('a cold cache explains what the next message rebuilds', LONG, async ($, on)
   await clock.advance(61 * 60_000)
   const ui = await mountBand($, 'terminal', 110)
   const cache = cards(await ui.drawn()).find(([key]) => key === 'cache')
-  expect(cardText(cache?.[1])).toMatch(/^Cold: next message rebuilds 112k tokens \(~\$\d+\.\d\d\)$/)
+  expect(cardText(cache?.[1])).toMatch(/^Cold: ~\$\d+\.\d\d rewrites 112k tokens to the cache, plus your reply$/)
   await ui.unmount()
 })
 
@@ -315,14 +317,14 @@ test('a desktop whose element table holds no Svg still lifts its cards', () => {
   const { Box, Text, Button } = fakeEl
   const kit = makeKit({ Box, Text, Button } as unknown as ElementTable, snapOf({ surface: 'desktop' }))
   // The fake element table keeps `hover` among the props.
-  expect((kit.liftedCard('what it cost') as Node).props).toMatchObject({ position: 'absolute', display: 'none', hover: { display: 'flex' } })
+  expect((kit.explains('cost', 'what it cost').card as Node).props).toMatchObject({ position: 'absolute', display: 'none', hover: { display: 'flex' } })
 })
 
 test('the desktop draws no card after its row, and a text surface lifts none', () => {
   const desktop = kitOf({ surface: 'desktop' })
   const terminal = kitOf({ surface: 'terminal' })
   expect(desktop.hoverCard('cost', 'what it cost', { left: 0, room: 40, pieces: [] })).toBeNull()
-  expect(terminal.liftedCard('what it cost')).toBeNull()
+  expect(terminal.explains('cost', 'what it cost').card).toBeNull()
 })
 
 // The desktop lifts a card into a popover above its piece only where the card

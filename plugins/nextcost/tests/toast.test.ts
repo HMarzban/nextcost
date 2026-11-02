@@ -19,7 +19,7 @@ const fiveHourSays = (percents: readonly number[], from: Warned = NO_WARNINGS): 
 const contextSays = (steps: ReadonlyArray<Partial<ContextNow>>, from: Warned = NO_WARNINGS): string[][] => {
   let warned = from
   return steps.map(step => {
-    const t = contextToasts(warned, { used: undefined, window: 200_000, compactAt: undefined, autoCompactOff: false, ...step })
+    const t = contextToasts(warned, { used: undefined, window: 200_000, compactAt: undefined, autoCompactOff: false, scaleKnown: true, ...step })
     warned = t.warned
     return [...t.say]
   })
@@ -27,6 +27,11 @@ const contextSays = (steps: ReadonlyArray<Partial<ContextNow>>, from: Warned = N
 
 test('crossing a threshold speaks once, at the level reached', () => {
   expect(fiveHourSays([50, 82, 85, 96])).toEqual([[], ["You've used 82% of your 5-hour limit."], [], ["You've used 96% of your 5-hour limit."]])
+})
+
+test('a toast speaks at the figure the chip shows: 79.6% is 80%', () => {
+  expect(fiveHourSays([79.4, 79.6])).toEqual([[], ["You've used 80% of your 5-hour limit."]])
+  expect(contextSays([{ used: 158_000 }, { used: 159_200 }])).toEqual([[], ['Context is 80% full.']])
 })
 
 test('jumping two thresholds at once speaks once, at the higher', () => {
@@ -37,8 +42,26 @@ test('falling back holds the level until under the re-arm share, then re-arms', 
   expect(fiveHourSays([96, 78, 81, 70, 81])).toEqual([["You've used 96% of your 5-hour limit."], [], [], [], ["You've used 81% of your 5-hour limit."]])
 })
 
-test('only the 5-hour window speaks', () => {
-  expect(limitToasts(NO_WARNINGS, [{ kind: 'seven_day', percentUsed: 99 }]).say).toEqual([])
+test('the weekly limit and a gateway spend limit speak where their chips turn amber, each once per crossing on its own count', () => {
+  const says = (limits: ReadonlyArray<{ kind: string; percentUsed: number }>, from: Warned = NO_WARNINGS) => limitToasts(from, limits)
+  const week = says([{ kind: 'seven_day', percentUsed: 82 }])
+  expect(week.say).toEqual(["You've used 82% of your weekly limit."])
+  expect(says([{ kind: 'seven_day', percentUsed: 84 }], week.warned).say).toEqual([])
+  expect(says([{ kind: 'seven_day', percentUsed: 96 }], week.warned).say).toEqual(["You've used 96% of your weekly limit."])
+  const spend = says([{ kind: 'spend_limit', percentUsed: 92 }])
+  expect(spend.say).toEqual(["You've used 92% of your spend limit."])
+  // One count each: the week at 82% leaves the 5 hours to speak at 82% too.
+  expect(says([{ kind: 'five_hour', percentUsed: 82 }, { kind: 'seven_day', percentUsed: 82 }, { kind: 'spend_limit', percentUsed: 82 }]).say).toHaveLength(3)
+  expect(says([{ kind: 'five_hour', percentUsed: 82 }], week.warned).say).toEqual(["You've used 82% of your 5-hour limit."])
+  // Under the line they say nothing; a window the band doesn't name, nothing at any level.
+  expect(says([{ kind: 'seven_day', percentUsed: 79 }]).say).toEqual([])
+  expect(says([{ kind: 'something_else', percentUsed: 99 }]).say).toEqual([])
+})
+
+test("a conversation's end leaves the weekly and spend limits' levels alone", () => {
+  const warned = limitToasts(NO_WARNINGS, [{ kind: 'seven_day', percentUsed: 85 }, { kind: 'spend_limit', percentUsed: 85 }]).warned
+  const forgot = forgetConversation(warned)
+  expect(limitToasts(forgot, [{ kind: 'seven_day', percentUsed: 86 }, { kind: 'spend_limit', percentUsed: 86 }]).say).toEqual([])
 })
 
 test('the context speaks its fill toward the window, and that compaction is off when it is', () => {
@@ -53,13 +76,13 @@ test('near compaction the context speaks the room before it', () => {
 })
 
 test('a context the engine reports none of says nothing and keeps the levels', () => {
-  const t = contextToasts(NO_WARNINGS, { used: undefined, window: 200_000, compactAt: undefined, autoCompactOff: false })
+  const t = contextToasts(NO_WARNINGS, { used: undefined, window: 200_000, compactAt: undefined, autoCompactOff: false, scaleKnown: true })
   expect(t).toEqual({ warned: NO_WARNINGS, say: [] })
 })
 
 test("a conversation's end forgets the context's level, not the 5-hour limit's", () => {
   const five = limitToasts(NO_WARNINGS, [{ kind: 'five_hour', percentUsed: 85 }]).warned
-  const both = contextToasts(five, { used: 170_000, window: 200_000, compactAt: undefined, autoCompactOff: false }).warned
+  const both = contextToasts(five, { used: 170_000, window: 200_000, compactAt: undefined, autoCompactOff: false, scaleKnown: true }).warned
   const forgot = forgetConversation(both)
   expect(contextSays([{ used: 170_000 }], forgot)).toEqual([['Context is 85% full.']])
   expect(fiveHourSays([86], forgot)).toEqual([[]])
@@ -94,4 +117,10 @@ test('a compaction point the engine gives and drops by turns, at 85% of the wind
 
 test('a window of 0 speaks no toast, never an Infinity%', () => {
   expect(contextSays([{ used: 76_000, window: 0 }])).toEqual([[]])
+})
+
+test('a context whose scale is not known yet says nothing and keeps its levels; once it is, the compaction point past says so', () => {
+  const held = contextToasts(NO_WARNINGS, { used: 170_000, window: 200_000, compactAt: undefined, autoCompactOff: false, scaleKnown: false })
+  expect(held).toEqual({ warned: NO_WARNINGS, say: [] })
+  expect(contextSays([{ used: 170_000, compactAt: 167_000 }])).toEqual([['Auto-compaction is due.']])
 })

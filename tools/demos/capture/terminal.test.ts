@@ -1,16 +1,18 @@
 // Demo capture, not a test: the band's real terminal output at seven moments.
 // tools/demos/build.sh runs it in a scratch copy of the plugin.
 import { test } from 'claude-code/testing'
-import { LONG, MIN, START, mountBand, resp, respond, setup, usage, FRESH, HOUR_1 } from './helpers'
+import { LONG, MIN, START, listBill, mountBand, resp, respond, setup, usage, FRESH, HOUR_1 } from './helpers'
 
 test('capture: terminal frames', LONG, async ($, on) => {
   const clock = setup(on, { usage: FRESH, env: { ...HOUR_1, CLAUDE_CODE_PROMPT_CACHE_TTL: '1h' } })
   await $.session.start(START)
   await $.turn.start({ text: 'hi', turnId: 't1' })
-  await respond($, resp(2_000, 0, 298_000, 3_000))
+  // Billed as Claude Code's ledger bills it, a write on the hour's cache (pinned
+  // above) at 2×: the band solves its rate from this bill.
+  const reply = resp(2_000, 0, 298_000, 3_000)
+  await respond($, reply, { billsTo: listBill(reply) })
   usage.current = {
     ...usage.current,
-    cost: { usd: 1.56 },
     context: { tokens: 303_000, window: 1_000_000, percent: 30 },
     rateLimits: [
       { kind: 'five_hour', percentUsed: 42, resetsAt: new Date(2 * 60 * MIN + 61 * MIN).toISOString() },
