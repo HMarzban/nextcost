@@ -210,6 +210,24 @@ test("what a turn's end reads of the lifetime moves a model's own writes", () =>
   expect(Math.abs(rate - 2e-6) < 1e-9).toBe(true)
 })
 
+test("what a turn's end reads of the lifetime moves the writes of a step with no bill told, in its own book", () => {
+  const c = newCache()
+  c.turnStarted({ priceModel: undefined, ledger: 0 })
+  const opus = resp(500, 0, 100_000, 800)
+  const opusBill = billOf(opus, OPUS, 1.25)
+  c.responded({ ...opus, model: OPUS }, 0, true, { ledger: opusBill, ledgerBefore: 0 })
+  c.turnEnded(opusBill)
+  // Sonnet's bill is left to tell: the ledger read failed, and it solves from what's left over.
+  const sonnet = resp(500, 0, 100_000, 800)
+  const whole = opusBill + billOf(sonnet, SONNET, 1.25)
+  c.turnStarted({ priceModel: undefined, ledger: opusBill })
+  c.responded({ ...sonnet, model: SONNET }, MIN, true, { ledger: undefined, ledgerBefore: opusBill })
+  c.turnEnded(whole)
+  c.wroteFor('5m')
+  const { reWarmUsd, window } = c.view({ now: 2 * MIN, ledger: whole, contextTokens: 0, autoCompactOff: false }).cache
+  expect(near(reWarmUsd, 1.25 * window * 2e-6, 1e-6)).toBe(true)
+})
+
 // ---- a whole bill over steps on another model -------------------------------
 
 /** A model that has only heard /model name `named`, and no main reply yet. */

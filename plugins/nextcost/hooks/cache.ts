@@ -135,21 +135,29 @@ export type CacheView = Readonly<{
   wake: Wake | undefined
 }>
 
-/** Main-loop writes by the lifetime they were weighed at. */
-type UnreadWrites = Readonly<Record<Ttl, Readonly<{ tokens: number; tiered: number }>>>
+/** Where a step stands on the rate's books. Told: the ledger told its bill.
+ *  Untold: no read of the ledger told it, so it takes what the bill leaves over.
+ *  Off the books: a server-side tool loop's bill holds a tool round the usage
+ *  never shows, so neither its dollars nor its weight go in. */
+type Standing = 'told' | 'untold' | 'offBook'
 
-/** One model's own bill: what its steps cost by the ledger, what
- *  they weigh, what those with no bill to tell weigh, its reads at the lower
- *  tier's prices, and its writes since the lifetime was read, by the lifetime
- *  they were weighed at. A step with a server-side tool loop stays out of its
- *  dollars and its weight, as it does out of the session's. */
+/** A model's main-loop writes since the lifetime was last read, at one lifetime
+ *  they were weighed at: their tokens, and what they weigh with their price
+ *  tier, as they stand on the book. A read that says otherwise moves them. */
+type UnreadWrites = Readonly<{ tokens: number; told: number; untold: number }>
+
+/** One model's own bill: what its told steps cost by the ledger and what they
+ *  weigh, what its untold steps weigh, its reads at the lower tier's prices,
+ *  what its reads weigh in the step's own read share, off the books or on, and
+ *  its writes not yet read. */
 type ModelBook = Readonly<{
   model: string | undefined
   usd: number
   weight: number
   untold: number
   tieredReads: number
-  unreadWrites: Readonly<Record<Ttl, number>>
+  ownReads: number
+  unread: Readonly<Record<Ttl, UnreadWrites>>
 }>
 
 /** A cache model's facts, plain data, for a reload to carry on from. */
@@ -170,10 +178,6 @@ export type CacheState = {
    *  whose last step only read still wrote earlier, and one that wrote nothing
    *  has nothing new to read. */
   writeUnreadSince: number | undefined
-  /** The main loop's writes since that read, by the lifetime they were
-   *  weighed at: each plain, and with its price tier's factor. A read that
-   *  says otherwise moves them to the lifetime they really had. */
-  unreadWrites: UnreadWrites
   /** The context, in tokens, from which Claude Code compacts this session
    *  when it sits idle; undefined when it never does (idleCompactFrom). */
   idleCompactFrom: number | undefined
@@ -190,26 +194,18 @@ export type CacheState = {
   requests: number
   /** Every token since the conversation began, subagents included. */
   tokens: TokenCounts
-  /** What requests in an upper price tier weigh beyond their tokens at the
-   *  base rate, so the rate solved is still the lower tier's. */
-  premium: number
-  /** Cache reads counted at the lower tier's prices: an upper-tier request's
-   *  reads count `factor` times, so what reading saved is priced as billed. */
-  tieredReads: number
-  /** What steps with a server-side tool loop (the advisor) were billed, and
-   *  their weighted tokens: the tool's own round is billed but never in the
-   *  usage, so the rate is solved without them. The dollars also hold what
-   *  the ledger grew by outside any step: a compaction's request raises no
-   *  step, and has no tokens here. */
+  /** What steps with a server-side tool loop (the advisor) were billed: the
+   *  tool's own round is billed but never in the usage, so the rate is solved
+   *  without them. It also holds what the ledger grew by outside any step: a
+   *  compaction's request raises no step, and has no tokens here. */
   offBookUsd: number
-  offBookWeight: number
   /** The ledger as the last step or turn start read it, from which a step's
    *  bill is told; undefined after a step it couldn't be read at, whose bill
    *  no later step should take. A redraw's read leaves it, so it never hides
    *  a step's. */
   ledgerSeen: number | undefined
-  /** Each model's own bill, by its base name. Only with two can the session's
-   *  bill not speak for one. */
+  /** Each model's own bill, by its base name: the one ledger of what the
+   *  steps weigh. Only with two can the session's bill not speak for one. */
   books: Readonly<Record<string, ModelBook>>
   /** Requests that missed a cache that should have been warm. */
   misses: number
@@ -270,7 +266,7 @@ export type CacheState = {
   billedModel: string | undefined
 }
 
-const NO_UNREAD_WRITES: UnreadWrites = { '5m': { tokens: 0, tiered: 0 }, '1h': { tokens: 0, tiered: 0 } }
+const NO_UNREAD_WRITES: ModelBook['unread'] = { '5m': { tokens: 0, told: 0, untold: 0 }, '1h': { tokens: 0, told: 0, untold: 0 } }
 
 const INITIAL: Readonly<CacheState> = {
   ttl: '1h',
@@ -279,7 +275,6 @@ const INITIAL: Readonly<CacheState> = {
   ttlSeen: undefined,
   ttlRead: false,
   writeUnreadSince: undefined,
-  unreadWrites: NO_UNREAD_WRITES,
   idleCompactFrom: undefined,
   turnOpen: false,
   turnWaker: undefined,
@@ -287,10 +282,7 @@ const INITIAL: Readonly<CacheState> = {
   lastWake: undefined,
   requests: 0,
   tokens: NO_TOKENS,
-  premium: 0,
-  tieredReads: 0,
   offBookUsd: 0,
-  offBookWeight: 0,
   ledgerSeen: undefined,
   books: {},
   misses: 0,
@@ -369,12 +361,18 @@ const bookKey = (s: CacheState, model: string | undefined): string => {
 const billedInSteps = (s: CacheState, sessionCost: number): number =>
   (s.baselined && s.ledgerSeen !== undefined ? Math.min(sessionCost, s.ledgerSeen) : sessionCost) - s.costBase - s.offBookUsd
 
+/** The least one token weighs. Below it the whole bill's sum is rounding left
+ *  where all its steps went off the books, not a weight to divide by. */
+const LEAST_WEIGHT = 0.025
+
 /** The rate the session's whole bill solves to, every token at the priced
- *  model's read share: one model's, when it is the only one. */
+ *  model's read share: one model's, when it is the only one. Each book's weight
+ *  holds its reads at its own share, so those are taken back out for every read
+ *  at the priced model's, off the books or on. */
 const wholeBillRate = (s: CacheState, sessionCost: number): number | null => {
-  const weighted = weightedTokens(s.tokens, pricedModel(s)) + s.premium - s.offBookWeight
+  const weighted = Object.values(s.books).reduce((sum, book) => sum + book.weight + book.untold - book.ownReads, readMultiplier(pricedModel(s)) * s.tokens.read)
   const billed = billedInSteps(s, sessionCost)
-  return weighted > 0 && billed > 0 ? billed / weighted : null
+  return weighted >= LEAST_WEIGHT && billed > 0 ? billed / weighted : null
 }
 
 /** Whether the session's whole bill speaks for the model priced: no other
@@ -399,12 +397,12 @@ const leftOverRate = (s: CacheState, sessionCost: number): number | null => {
  *  No pricing table is available to a mod, so the rate is solved from the
  *  session's own bill since its baseline, which leaves one unknown:
  *
- *    cost - costBase = r * (weightedTokens(tokens) + premium)
+ *    cost - costBase = r * (what the books weigh)
  *
- *  where premium weighs each upper-tier request again, so r is the lower
- *  tier's rate on a model with two, and a step with a server-side tool loop
- *  is left out of both sides, its tool's round billed with no tokens shown, as
- *  is what the ledger grew by outside a step.
+ *  where each upper-tier request weighs its tier's factor over, so r is the
+ *  lower tier's rate on a model with two, and a step with a server-side tool
+ *  loop is left out of both sides, its tool's round billed with no tokens shown,
+ *  as is what the ledger grew by outside a step.
  *
  *  The ledger doesn't say which model each dollar is for, but what it grows by
  *  across a step is that step's: with two models in the bill, each solves from
@@ -434,7 +432,7 @@ const rememberedRate = (s: CacheState, sessionCost: number | undefined): number 
 const savedUsdOf = (s: CacheState, sessionCost: number | undefined, rate: number | null): number | null => {
   const share = readMultiplier(pricedModel(s))
   const priorSaved = rate === null ? 0 : rate * (1 - share) * (s.prior?.tokens.read ?? 0)
-  if (sessionCost === undefined || wholeBillSpeaks(s)) return rate === null ? null : rate * (1 - share) * s.tieredReads + priorSaved
+  if (sessionCost === undefined || wholeBillSpeaks(s)) return rate === null ? null : rate * (1 - share) * Object.values(s.books).reduce((sum, book) => sum + book.tieredReads, 0) + priorSaved
   const leftOver = leftOverRate(s, sessionCost)
   const books = Object.values(s.books).map(book => ({ rate: toldRate(book) ?? leftOver, saved: (1 - readMultiplier(book.model)) * book.tieredReads }))
   if (rate === null && books.every(book => book.rate === null)) return null
@@ -612,47 +610,30 @@ const weighResponse = (usage: Response, rounds: number, ttl: Ttl): Readonly<{ re
   return { request, factor, weighted: factor * weightedTokens(request, usage.model) }
 }
 
-/** A response's tokens toward the bill: every response's, a subagent's
- *  included, since the session's bill includes every subagent and the rate
- *  is solved from it. Its writes last `ttl`, its bucket's. Returns the
- *  response's weighted tokens. */
-const billResponse = (s: CacheState, usage: Response, rounds: number, ttl: Ttl): number => {
-  const { request, factor, weighted } = weighResponse(usage, rounds, ttl)
-  s.tokens = addTokens(s.tokens, request)
-  s.premium += weighted - weightedTokens(request, usage.model)
-  s.tieredReads += factor * usage.cache_read_input_tokens
-  return weighted
-}
-
-/** A response on its model's book: its bill and weight where the ledger told
- *  it, its reads either way, and for the main loop, the writes `unread` of
- *  `ttl`, which a read of the lifetime may move. A step with a tool loop keeps
- *  its bill and weight off, with the session's. */
-const bookResponse = (s: CacheState, usage: Response, rounds: number, bill: number | undefined, ttl: Ttl, isMain: boolean): void => {
-  const { factor, weighted } = weighResponse(usage, rounds, ttl)
+/** A response on its model's book, every response's, a subagent's included,
+ *  since the session's bill includes every subagent and the rate is solved from
+ *  it: its bill and weight by where it stands, its reads either way, and for the
+ *  main loop, its writes unread at `ttl`. A step with a tool loop stays as
+ *  weighed, on the books or off, whatever a read of the lifetime says. */
+const bookResponse = (s: CacheState, usage: Response, weighed: Readonly<{ request: TokenCounts; factor: number; weighted: number }>, standing: Standing, bill: number, ttl: Ttl, unread: boolean): void => {
+  const { request, factor, weighted } = weighed
   if (weighted <= 0) return
   const key = bookKey(s, usage.model)
-  const was = s.books[key] ?? { model: usage.model ?? pricedModel(s), usd: 0, weight: 0, untold: 0, tieredReads: 0, unreadWrites: { '5m': 0, '1h': 0 } }
-  const told = bill !== undefined && rounds === 1
+  const was = s.books[key] ?? { model: usage.model ?? pricedModel(s), usd: 0, weight: 0, untold: 0, tieredReads: 0, ownReads: 0, unread: NO_UNREAD_WRITES }
+  const tiered = factor * request.written
+  const writes = was.unread[ttl]
   s.books = {
     ...s.books,
     [key]: {
       ...was,
-      usd: was.usd + (told ? bill : 0),
-      weight: was.weight + (told ? weighted : 0),
-      untold: was.untold + (bill === undefined ? weighted : 0),
-      tieredReads: was.tieredReads + factor * usage.cache_read_input_tokens,
-      unreadWrites: isMain && told ? { ...was.unreadWrites, [ttl]: was.unreadWrites[ttl] + factor * usage.cache_creation_input_tokens } : was.unreadWrites,
+      usd: was.usd + (standing === 'told' ? bill : 0),
+      weight: was.weight + (standing === 'told' ? weighted : 0),
+      untold: was.untold + (standing === 'untold' ? weighted : 0),
+      tieredReads: was.tieredReads + factor * request.read,
+      ownReads: was.ownReads + readMultiplier(usage.model) * request.read,
+      unread: unread ? { ...was.unread, [ttl]: { tokens: writes.tokens + request.written, told: writes.told + (standing === 'told' ? tiered : 0), untold: writes.untold + (standing === 'untold' ? tiered : 0) } } : was.unread,
     },
   }
-}
-
-/** Notes a main-loop write, weighed at `ttl`, as not yet read off the
- *  transcript. A step with a tool loop stays as weighed, on or off the rate's
- *  books with its tokens. */
-const noteUnreadWrite = (s: CacheState, written: number, factor: number, ttl: Ttl): void => {
-  const was = s.unreadWrites[ttl]
-  s.unreadWrites = { ...s.unreadWrites, [ttl]: { tokens: was.tokens + written, tiered: was.tiered + written * factor } }
 }
 
 /** The lifetime the transcript's last cache write was made for, as read at a
@@ -664,16 +645,15 @@ const noteWrittenFor = (s: CacheState, ttl: Ttl): void => {
   if (s.ttlPinned || s.turnOpen) return
   s.ttl = ttl
   s.ttlRead = true
-  const moved = s.unreadWrites[ttl === '1h' ? '5m' : '1h']
+  const other = ttl === '1h' ? '5m' : '1h'
   const sign = ttl === '1h' ? 1 : -1
-  const weight = WRITE_MULT['1h'] - WRITE_MULT['5m']
-  s.tokens = { ...s.tokens, writtenHour: s.tokens.writtenHour + sign * moved.tokens }
-  s.premium += sign * weight * (moved.tiered - moved.tokens)
-  s.unreadWrites = NO_UNREAD_WRITES
+  const weight = sign * (WRITE_MULT['1h'] - WRITE_MULT['5m'])
+  const tokens = Object.values(s.books).reduce((sum, book) => sum + book.unread[other].tokens, 0)
+  s.tokens = { ...s.tokens, writtenHour: s.tokens.writtenHour + sign * tokens }
   s.books = Object.fromEntries(
     Object.entries(s.books).map(([key, book]) => [
       key,
-      { ...book, weight: book.weight + sign * weight * book.unreadWrites[ttl === '1h' ? '5m' : '1h'], unreadWrites: { '5m': 0, '1h': 0 } },
+      { ...book, weight: book.weight + weight * book.unread[other].told, untold: book.untold + weight * book.unread[other].untold, unread: NO_UNREAD_WRITES },
     ]),
   )
 }
@@ -885,15 +865,12 @@ export const newCache = (kept?: CacheState): CacheModel => {
       // Its writes last as long as its bucket's TTL: the main loop's as just
       // measured, a subagent's its own.
       const ttl = isMain ? effectiveTtl(s) : s.subagentTtl
-      const weighted = billResponse(s, usage, rounds, ttl)
-      if (isMain && rounds === 1) noteUnreadWrite(s, usage.cache_creation_input_tokens, tierFactor(usage.model, sent), ttl)
-      bookResponse(s, usage, rounds, bill, ttl, isMain)
-      // A tool loop's bill stays off the rate's books with its tokens. Only a
-      // bill that grew is kept off: with nothing to tell it by, the step stays on.
-      if (rounds > 1 && bill !== undefined) {
-        s.offBookUsd += bill
-        s.offBookWeight += weighted
-      }
+      const weighed = weighResponse(usage, rounds, ttl)
+      // Only a bill that grew is kept off: with nothing to tell it by, the step stays on.
+      const standing: Standing = bill === undefined ? 'untold' : rounds === 1 ? 'told' : 'offBook'
+      s.tokens = addTokens(s.tokens, weighed.request)
+      if (standing === 'offBook') s.offBookUsd += bill ?? 0
+      bookResponse(s, usage, weighed, standing, bill ?? 0, ttl, isMain && rounds === 1)
     },
     compacted: ({ now, sizeAfter, manual = false }) => {
       const idle = !s.turnOpen && !manual && s.requests > 0 && now - s.lastAt >= IDLE_GAP_MS
