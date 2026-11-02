@@ -267,6 +267,6 @@ export const readingsOf = (snap: BandSnapshot): Readings => {
     history: () => (history ??= historyReading(snap.history, context, spend)),
     week: () => (week ??= weekReading(snap, sevenDay, fiveHour)),
     board: () => (board ??= boardWords({ frame, cache, spend, context, limits })),
-    chips: chipsWords({ frame, cache, spend, context, limits, asOf: asOf ?? asOfWords(undefined) }),
+    chips: chipsWords({ frame, cache, spend, context, limits, asOf }),
   }
 }

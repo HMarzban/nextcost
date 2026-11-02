@@ -117,7 +117,7 @@ export type ChipsWords = Readonly<{
 }>
 
 /** Chips' words, from the facts and the words the other layouts share. */
-export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend: SpendWords; context: ContextFacts; limits: readonly LimitFacts[]; asOf: string }>): ChipsWords => {
+export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend: SpendWords; context: ContextFacts; limits: readonly LimitFacts[]; asOf: string | undefined }>): ChipsWords => {
   const { spend, context: x } = r
   const limitHover = (key: keyof typeof CHIP_TITLES): string | undefined => {
     const l = r.limits.find(w => w.key === key)
@@ -129,7 +129,7 @@ export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend:
     // fills the window sooner, so the hover says what it rests on.
     const paced = l.etaMs === null ? about : `${about}; ${paceText(l)} at the current pace`
     // Last, so a short row's cut takes it before the reset or the pace.
-    return `${paced}; ${r.asOf}`
+    return saidJoined([paced, r.asOf], '; ')
   }
   return {
     cache: cacheCopy(r.cache, r.frame),
