@@ -23,8 +23,8 @@ claude plugin install nextcost --marketplace HMarzban/nextcost
 It loads in your next session, or run `/reload-plugins` in an open one.
 
 The band needs Claude Code with mods (function-hooks plugins). CI tests
-every change on 2.1.299 and the latest release (2.1.316 at 0.21.0), so
-2.1.299 is the oldest version tested. The one-line form needs Claude Code
+every change on 2.1.299 and the latest release, so 2.1.299 is the oldest
+version tested. The one-line form needs Claude Code
 2.1.292 or later; on an older one, add the marketplace first
 (`claude plugin marketplace add HMarzban/nextcost`), then
 `claude plugin install nextcost@hossein-mods`.
@@ -38,8 +38,7 @@ compact an idle session; before 2.1.275, `/plugin install` inside a session
 isn't there.
 
 The desktop app bundles its own Claude Code, so a surface's version can differ
-from the terminal's (2.1.309 against 2.1.316 on one machine here). What counts
-is the version the surface you use runs.
+from the terminal's. What counts is the version the surface you use runs.
 
 It draws in the terminal and the desktop app's Code tab, which are the
 surfaces with a band above the prompt. WSL sessions don't load plugins. The
@@ -120,8 +119,9 @@ On the desktop each piece has an icon and a hover explanation. As the line
 narrows, the path and branch shorten and the extras drop, least important
 first. When the band is too short to give it a row of its own, it moves
 to the footer, beside the buttons, in place of the hint. Outside a
-repository, or if git is missing or slow, it shows the path alone. git is read when the session starts, after each of your
-messages and when you open the cards, never while the band draws.
+repository, or if git is missing or slow, it shows the path alone. [What it
+runs](#what-it-runs-reads-and-sends) says when git is read, never while the
+band draws.
 
 Then come four cards with every fact labelled:
 
@@ -173,8 +173,8 @@ Every layout turns amber at the same moments, by the same rules.
 Departures' board also says `LAST CALL`, calm, ten minutes before an
 hour's cache goes cold; only its last minute is amber, and it says `! LAST CALL`, so plain, which has no hue, tells them apart. Pulse and
 departures draw their readings in one order: cache, spend, context, 5h,
-7d. On the desktop, chips explains each pill on hover with its own cards.
-Open, chips puts the workspace line, with its hover cards, above its cards
+7d. Hover cards belong to chips' pills and the workspace line; pulse and
+departures have them on the workspace line alone. Open, chips puts the workspace line, with its hover cards, above its cards
 when the band has the rows, else in the footer beside `Collapse` and
 `Hide band`; pulse and departures keep it in the footer.
 
@@ -302,8 +302,8 @@ been idle, whether its cache has likely expired, and what re-caching it
 would cost. The band takes its word: the countdown runs from that idle
 time, the cache reads cold when Claude Code says it has likely expired, and
 the price shown is Claude Code's own when it gives one. The band also
-reads the session's transcript once, never while it draws, for two more
-facts:
+reads the session's transcript, once and again after your first turn if
+that showed no cost record, never while it draws, for two more facts:
 
 - What the session spent before you resumed it: its last cost record, and
   each reply logged after it, priced at its model's rate in that record.
@@ -393,14 +393,17 @@ It's always shown with `~`.
 - **Growth outside a step is left out of `r`.** A compaction's own request
   raises no step, and adds to the ledger with no tokens to weigh. It still
   counts in what the session has cost.
-- **Fast mode** bills every price at 2× from a cache of its own, and a mod
-  isn't told a reply's speed. So turning it on counts as an unexpected rebuild
-  and the re-warm lags: it reads low until the bill catches up, and high for a
+- **Fast mode** bills Opus 5.5 at 2× every price, and switching speed
+  invalidates the cache's messages. A mod isn't told a reply's speed, so the
+  band doesn't see fast mode: turning it on or off counts as an unexpected
+  rebuild, and the re-warm lags, since it prices at the rate the bill has
+  solved so far. It reads low until the bill catches up, and high for a
   while after you turn it off. A rate solved in fast mode may be remembered for
   the model's other sessions.
 - **The re-warm prices the whole context.** A cold rebuild often finds the
   system prompt other sessions in the folder keep warm, about 30k to 45k tokens,
-  so it can read a little high: 5 to 7% typically on real sessions. After a
+  so it can read a little high; in a replay on real sessions its median error
+  was about 7%. After a
   compaction it's the other way: it prices the summary, and the next request
   also writes the system prompt, so it reads low, though by little in dollars.
 - **After `/clear` or a resume,** the rate is solved from what
@@ -414,11 +417,13 @@ It's always shown with `~`.
   cache saved, at the tier each request paid. A reopened session's cost
   record doesn't say which requests crossed, so there the last reply's
   prompt stands for them all.
-- **A reply that used the advisor** runs a tool loop on Anthropic's side:
-  its usage adds up every round, each reading the conversation again, and
-  the advisor's own round is billed without appearing in it. The band
-  measures the cache by one round's share and keeps that reply's bill out of
-  `r`, so neither the re-warm nor the rate doubles.
+- **A reply that used a server-side tool**, the advisor for one, runs a tool
+  loop on Anthropic's side: its usage adds up every round, each reading the
+  conversation again, and the advisor's own round is billed without
+  appearing in it. A mod isn't told the rounds, so the band counts no miss
+  from that reply, prices the re-warm at the context Claude Code reports
+  where it reports one, and keeps that reply's bill out of `r`, so neither
+  the re-warm nor the rate doubles.
 - **A reply Claude Code wrote itself,** an API error such as a limit hit or
   no connection, sent nothing, so it never restarts the countdown, and a
   reopened session's last reply is the last one that reached the API.
@@ -477,9 +482,9 @@ the expanded cards carry the same facts.
 The default lifetime depends on billing: an hour on a subscription within
 plan usage, five minutes on usage credits, an API key or a cloud provider. A
 mod can't read which applies, and Claude Code doesn't hand a mod the lifetime
-of a reply's cache write, so at the end of each turn that reached the API the
-band reads it off the session's transcript. Your first reply counts down
-what was really written, and a subscription moving onto usage credits counts
+of a reply's cache write, so after a turn that wrote to the cache the band
+reads it off the session's transcript ([what it reads](#what-it-runs-reads-and-sends)).
+Your first reply counts down what was really written, and a subscription moving onto usage credits counts
 down five minutes from that turn on.
 
 Once a read has succeeded, a short read never changes the lifetime. Until
@@ -559,12 +564,13 @@ it, each given 3 seconds, and never while the band draws:
 | --- | --- | --- |
 | `git -c core.fsmonitor=false --no-optional-locks status --porcelain=v2 --branch` | the session's project folder | the workspace line: branch, changes, ahead and behind. It never takes git's index lock. `-c core.fsmonitor=false` is git's own option for setting one value for this run: it stops git from starting the repository's fsmonitor program, and only that. Git still honours the repository's other config, some of which can start programs (a filter's `clean` command, for one), as any git command run in that folder does. The band starts no shell. |
 | `git rev-parse --path-format=absolute --git-dir --git-common-dir --show-toplevel` | the same | whether the folder is a linked worktree, and of which repository |
-| `tail -c 1048576 <transcript>` | that session's own transcript: at the path Claude Code gave when it said the session was resumed, else `~/.claude/projects/<project>/<session id>.jsonl`, `<project>` being the project's path with every character but a letter or digit a dash | at the end of each turn that reached the API, unless a setting pins the cache's lifetime: how long its last cache write was made for, and nothing else. Also when a conversation is resumed, or the band loads into one it can't tell is new and its own store doesn't know the last reply's time or its model's rate: when that reply was, so the cache countdown starts from it, the model it was billed under, and the rate its cost record solves to; on a resume, also how long its cache was written for |
-| `grep -a -b -F '"type":"cost-state"' <transcript>`, then `tail -c +<offset> <transcript>` | the same | only when a conversation is resumed, and again after its first turn where that found nothing, as a fork's file fills only after its first prompt: what it spent before this process, so the session's cost includes it |
+| `tail -c 1048576 <transcript>` | that session's own transcript: at the path Claude Code names for the session, else `~/.claude/projects/<project>/<session id>.jsonl`, `<project>` being the project's path with every character but a letter or digit a dash | after a main-conversation turn that wrote to the prompt cache (a turn nobody typed counts; a subagent's writes don't), unless a setting pins the cache's lifetime: how long its last cache write was made for, and nothing else. Claude Code logs the turn's line a moment late, so it looks up to three times, waiting 0.5, 2 and 8 seconds in turn, and stops at the first look that finds the write. Also when a conversation is resumed, or the band loads into one it can't tell is new and its own store doesn't know the last reply's time or its model's rate: when that reply was, so the cache countdown starts from it, the model it was billed under, and the rate its cost record solves to; on a resume, also how long its cache was written for. Where `tail` can't run, the whole file is read through Claude Code (`$.fs`) if it is 4 MiB or smaller |
+| `grep -a -b -F '"type":"cost-state"' <transcript>`, then `tail -c +<offset> <transcript>` | the same | only when a conversation is resumed, and again after its first turn where that found nothing (up to three looks, waiting 0.5, 2 and 8 seconds in turn, as a fork's file fills only after its first prompt): what it spent before this process, so the session's cost includes it |
 
 **It reads** the session's id, model and usage from Claude Code (cost, token
 counts, context fill and rate-limit percentages), how many messages each
-request carries (never their content), where each prompt came
+request carries and how many tool calls Anthropic ran in it (counts, never
+their content), where each prompt came
 from (never its text), the clock, the project's
 folder and repository root, three keys of your Claude Code settings
 (`promptCacheTtl`, `subagentPromptCacheTtl` and `idleCompaction`), and these
@@ -602,14 +608,15 @@ carry on from.
 
 | Hook | What it does |
 | --- | --- |
-| `session.start` | Starts a once-a-second timer that repaints only when the drawing would change and registers `/nextcost` (and its old name, `/usage-band`), then resets the band, or after a reload carries on from the session's own state, reads its stored limit readings and layout, then its settings, where auto-compaction runs and git. Loaded into a conversation it can't tell is new, it recalls the last reply, from its store or the transcript's end as above. |
-| `session.end` | On `/clear` or a resume, starts the next conversation's count and reads git again. |
-| `classic.SessionStart` | On a resume or fork, notes that the conversation isn't new and reads its transcript as above. |
-| `turn.start`, `turn.complete` | Note the session's cost as each main turn starts and ends, the turn's cost, the context, and a limit reading; then read the layout and git again. After a resumed conversation's first turn, read its transcript again if it showed no cost record at its start. A subagent's turn is left alone. |
+| `session.start` | Starts a once-a-second timer that repaints only when the drawing would change and registers `/nextcost` (and its old name, `/usage-band`), then resets the band, or after a reload carries on from the session's own state. Reads its stored limit readings, where auto-compaction runs, the layout, then its look (the environment), its settings and the model, and reads git. Loaded into a conversation it can't tell is new, it recalls the last reply, from its store or the transcript's end as above. |
+| `session.end` | Closes the conversation's count so the next starts afresh. Reads git again on `/clear` or a resume only, never when Claude Code exits. |
+| `classic.SessionStart` | Notes where Claude Code keeps the session's transcript, for every main conversation's start; on a resume or fork, also notes that the conversation isn't new and reads its transcript as above. |
+| `turn.start` | Notes the model `/model` names, the session's cost as a main turn starts, and what started it. It reads neither git nor the transcript. A subagent's turn is left alone. |
+| `turn.complete` | After a main turn (yours or not; a subagent's is left alone): notes the session's cost, the turn's cost, the context and a limit reading, and keeps the session's last reply, its rate and the limit reading in the store. If the turn wrote to the cache and no setting pins its lifetime, reads the transcript's end for it, as above; after a resumed conversation's first turn, reads its transcript again if it showed no cost record. Then reads the layout and git again. |
 | `prompt.submit` | Notes where a prompt that starts a turn came from (your own, a background task, another session, a schedule), never its text, so each layout's open view can say who restarted the countdown. |
-| `turn.step` | Reads each response's token counts, how many tool calls Anthropic ran in it (the advisor), and how many messages the request carried (a count, never their content), for the cache model and the price per token. |
+| `turn.step` | Reads each response's token counts, the ledger before and after the step, how many tool calls Anthropic ran in it (the advisor's, for one) and how many messages the request carried (counts, never their content), for the cache model and the price per token; notes a step that ended in a compaction. |
 | `session.compact` | Notes that the conversation was compacted, so the cache reads `compacted` at the summary's size until the next reply. |
-| `session.measure` | Reads where auto-compaction runs, and shows a toast as the context or a limit (5-hour, weekly, a gateway's spend) crosses its warning levels. |
+| `session.measure` | Reads where auto-compaction runs, notes a moved 5-hour reading for the pace, and shows a toast as the context or a limit (5-hour, weekly, a gateway's spend) crosses its warning levels. |
 | `command.run` | Answers `/nextcost` and `/usage-band`, and no other command; `/nextcost more` reads git. |
 | `ui.render` (above the prompt) | Draws the band, reading the model `/model` names to tell a pending switch; steps aside while a survey holds the space or the band is hidden. Opening the cards with `▵` reads git. |
 

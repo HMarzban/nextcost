@@ -44,7 +44,9 @@ installs it; elsewhere, set `CHROME=/path/to/chrome`.
    and `{{demo-json}}`, drawn with `node(tree, site=True)`: real buttons,
    `alt=""` icons, the countdown in `<span class=cd>`), and with the layouts
    the capture drew: a line holding `{{layout-radio}}` is repeated with each
-   layout's button, and `{{layout-names}}` lists them in words; `stills.py`
+   layout's button, and `{{layout-names}}` lists them in words, and with the
+   JSON-LD FAQ (`{{faq-json}}`), built from the page's own fine print so the
+   two can't differ; `stills.py`
    the social card (from the real `chips amber` drawing), the chip row's
    anatomy, the expanded band, and the states and layouts galleries, each
    layout's row titled from `LAYOUT_LABELS`, which must name every layout the

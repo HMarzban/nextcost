@@ -7,8 +7,10 @@ no Node and no network of its own. It only reaches what the engine hands
 it:
 
 - **Reads** the session's id, model and usage (cost, token counts, context
-  fill and rate limits), the clock, the session's project root and
-  repository root, and these environment variables: `HOME`,
+  fill and rate limits), how many messages each request carries and how many
+  tool calls Anthropic ran in it (both counts, never the messages or the
+  calls), the clock, the session's project root and repository root, and
+  these environment variables: `HOME`,
   `NEXTCOST_APPEARANCE`, `NO_COLOR`,
   `NEXTCOST_GLYPHS` (and their names before 0.18.0, `CC_BAND_APPEARANCE`
   and `CC_BAND_GLYPHS`), `LC_ALL`, `LC_CTYPE`, `LANG`,
@@ -25,9 +27,11 @@ it:
   - `git -c core.fsmonitor=false --no-optional-locks status --porcelain=v2 --branch`
   - `git rev-parse --path-format=absolute --git-dir --git-common-dir --show-toplevel`
 
-  They run at session start, after each of your messages, on a new
-  conversation and when you open the cards. They never run while the band
-  draws, and they have a 3-second timeout. The engine runs git with
+  They run when a session starts, after each main-conversation turn (one
+  nobody typed, such as a background task's, included; a subagent's own turn
+  is left out), on `/clear` and when a conversation is resumed, and when you
+  open the cards (`▵` or `/nextcost more`). They don't run when Claude Code
+  exits, and never while the band draws, and they have a 3-second timeout. The engine runs git with
   repository hooks off. `core.fsmonitor=false` stops git from starting the
   repository's fsmonitor program, and nothing else: git still honours the
   rest of the repository's config, some of which can start programs (a
@@ -48,15 +52,23 @@ it:
   billed under, and the cost record's dollars and token counts for that
   model (else the current one), to price a token. Nothing else in the
   transcript is kept, shown or sent.
-- **Reads**, at the end of each turn that reached the API, unless a setting
-  pins the cache's lifetime, the same last megabyte of the session's own
-  transcript, by the same command with the same timeout. It keeps one fact:
-  whether the last main-conversation cache write was for five minutes or an
-  hour. Nothing else in the transcript is kept, shown or sent.
+- **Reads**, after a main-conversation turn that wrote to the prompt cache
+  (a turn nobody typed counts; a subagent's writes don't), unless a setting
+  pins the cache's lifetime, the last megabyte of the session's own
+  transcript, by the same `tail -c 1048576 <transcript>` with the same
+  3-second timeout, at the path Claude Code names for the session, else the
+  path above. Claude Code logs a turn's last line a moment after the turn
+  ends, so it looks up to three times, waiting 0.5, 2 and 8 seconds in turn,
+  and stops at the first look that finds that write. Where `tail` can't run,
+  it reads the whole file through `$.fs` instead, if it is 4 MiB or smaller.
+  It keeps one fact: whether the last main-conversation cache write was for
+  five minutes or an hour. Nothing else in the transcript is kept, shown or
+  sent.
 - **Reads**, once when Claude Code says a session was resumed or forked, and
-  again after its first turn where that found no cost record,
-  that session's transcript, at the path Claude Code names or else at the
-  path above, with the same 3-second timeout:
+  again after its first turn where that found no cost record (up to three
+  looks, waiting 0.5, 2 and 8 seconds in turn, stopping at the first that
+  finds one), that session's transcript, at the path Claude Code names or
+  else at the path above, with the same 3-second timeout:
   - its cost records, by `grep -a -b -F '"type":"cost-state"' <transcript>`,
     then what was logged from the last on, by `tail -c +<N> <transcript>`;
     where grep can't run, the whole file if it is 4 MiB or smaller;

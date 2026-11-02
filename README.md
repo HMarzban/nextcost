@@ -44,21 +44,11 @@ the summary.
 
 **Needs** Claude Code with mods (function-hooks plugins), outside WSL, which
 doesn't load plugins. CI tests every change, in the terminal's engine, on
-Claude Code 2.1.299 and the latest release (2.1.316 at 0.21.0), so 2.1.299 is
-the oldest version tested. The one-line install below needs 2.1.292 or later
-(`claude --version`); on an older one, use the two steps underneath.
-
-Older than 2.1.299 isn't tested. Known differences there: before 2.1.292, no
-one-line install; before 2.1.290, Claude Code doesn't tell a mod how many tool
-calls Anthropic ran, so for a session that uses the advisor the band's re-warm
-quotes run about 58% high (replayed on real transcripts), which makes 2.1.290
-the floor for an accurate price (idle compaction is also a 2.1.290 feature, so
-older versions never compact an idle session); before 2.1.275,
-`/plugin install` inside a session isn't there.
-
-The desktop app bundles its own Claude Code, so a surface's version can differ
-from the terminal's (2.1.309 against 2.1.316 on one machine here). What counts
-is the version the surface you use runs.
+Claude Code 2.1.299 and the latest release, so 2.1.299 is the oldest version
+tested. The one-line install below needs 2.1.292 or later (`claude --version`);
+on an older one, use the two steps underneath. What differs on versions older
+than 2.1.299, and between the desktop app's Claude Code and the terminal's, is
+in the [plugin README](plugins/nextcost/README.md#install).
 
 One command, in any terminal:
 
@@ -213,20 +203,11 @@ no build step and over 1,200 tests.
 
 - **The price comes from your own bill.** No pricing table is reachable from
   a mod, so the band solves the base rate from the session's cost and token
-  counts. Each kind of token is a fixed multiple of input:
-
-  ```
-  cost = rate × (uncached + 1.25 × written for 5m + 2 × written for 1h + read share × read + 5 × output)
-  ```
-
-  where read share is the cache-read multiple: 0.1, or 0.05 on Opus 5.5 and
-  Sonnet 5.5 and 0.025 on Fable 5.1 and Mythos 5.1. Claude Haiku 5.5 pays
-  5× every price on a prompt over 100k tokens, so the band weighs each
-  request at its own tier.
-
-  A re-warm is then the whole context written to the cache again, at 2× on
-  the hour's cache and 1.25× on five minutes, or the summary after a
-  compaction.
+  counts, each kind of token being a fixed multiple of input, and prices a
+  re-warm as the whole context written to the cache again (the summary, after
+  a compaction). The formula, the multiples and what each case does to it are
+  in the plugin README's
+  [What a cold cache costs](plugins/nextcost/README.md#what-a-cold-cache-costs).
 - **It remembers across sessions:** the layout you chose, when each session
   last had a reply and the model it was billed under, the rate it solved
   for each model, and a week of 5-hour and weekly readings for pulse's day
@@ -262,9 +243,10 @@ your Console's usage page is the real one. The plugin README's
 the table.
 
 **How does it know if my cache lasts 5 minutes or an hour?** Claude Code
-doesn't hand a mod the lifetime of a reply's cache write, so at the end of
-each turn that reached the API the band reads it off the session's own
-transcript, and the countdown runs on it. Until a read succeeds it assumes an
+doesn't hand a mod the lifetime of a reply's cache write, so after a turn
+that wrote to the cache the band reads it off the session's own transcript
+([what it reads](plugins/nextcost/README.md#what-it-runs-reads-and-sends)),
+and the countdown runs on it. Until a read succeeds it assumes an
 hour. Set `CLAUDE_CODE_PROMPT_CACHE_TTL=5m` or `1h`, or `"promptCacheTtl"` in
 settings.json, to pin it instead.
 

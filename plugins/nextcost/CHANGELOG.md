@@ -7,7 +7,7 @@ and versions follow [Semantic Versioning](https://semver.org/). Before
 
 ## [0.22.0] - 2026-11-02
 
-A full audit of what the band shows, by seven reviews, among them the real engine and 1,383 real transcripts. On them, the hour's cache expired on schedule, and a cold cache's re-warm was usually within 5 to 9%. This release fixes what they found wrong.
+An audit of what the band shows, against the real engine and 1,383 real transcripts. In a replay on real sessions, the hour's cache expired on schedule and a cold cache's re-warm read about 7% off at the median. This release fixes what it found wrong.
 
 ### Added
 - The README says what the dollars mean on each plan: list-price estimates, not your bill. On a subscription they tell you how much of your limits a message will use.
@@ -18,26 +18,29 @@ A full audit of what the band shows, by seven reviews, among them the real engin
 ### Changed
 - The price's words say what it covers. The pill still says `next message ~$2.44`; its hover says `~$2.44 rewrites 208k tokens to the cache, plus your reply`, and the card's row says `cache rewrite`. `saved by cache` is `saved on cache reads`, which is what it counts.
 - A limit's average-based forecast says so: `~10% at avg pace`, `full at avg pace`. The 5-hour limit claims a fill only from its measured pace, and the weekly limit's average waits for a day of the window.
-- Pulse's and the board's context say `toward compaction`, and the chip's hover names the window too. A background subagent's message, which reads like another session's, reads `a message`.
+- Pulse's and the board's context say `toward compaction`, and the chip's hover names the window too. A background subagent's message, which read like another session's, reads `a message`.
 - In the ascii tier, the marks that were dropped are words: `tok 225k`, `resets 3h 00m`, `ahead 2 behind 1`. The board's amber last call is `! LAST CALL` in every appearance.
 - Counts that began when the band loaded into a session under way say `since the band loaded`, beside a cost that counts the whole session.
 - The site's demo is billed as the ledger bills it, so its $2.11 re-warm reads $2.52, as its calculator always did, and says its session is simulated.
 
 ### Fixed
-- The cache's lifetime is read, not guessed. Claude Code hands a mod no split of a reply's cache write, so on an API key, a cloud provider or after moving onto usage credits, the band could count about 40 minutes on a cold cache. It now reads the last write's lifetime off the session's transcript after each turn that reached the API, unless a setting pins it. `SECURITY.md` and the README say what this reads. Until a read succeeds, the lifetime says `· assumed`, in the card's row, its headline and the hover, whether the hour or an inferred five minutes. The fallback now moves to `5m` only when a read finds near nothing beyond the shared system prompt: on real transcripts, it had moved 10 times and never been right.
-- A partial change to the prompt, as `/rewind` or cleared tool results make, no longer reads as a five-minute cache, where a warm cache could then read cold. `/rewind` no longer counts as an unexpected rebuild. Cleared tool results still do, since a mod can't tell them apart, and the README says so.
-- A model switch no longer blends the re-warm's rate. It is solved from each model's own bill, step by step: after 40 Opus turns, a re-warm on Haiku read $3.85 where it costs $0.37, and that rate was remembered for Haiku. Subagents on another model no longer skew it, and `saved on cache reads` prices each model's reads at that model's rate, so it can't fall with a switch, but for the part a resumed conversation brought, which is priced at the rate in force.
-- A step with a server tool no longer halves the context the re-warm prices, where Claude Code reports it; a recalled cache with no context known says `unknown`, not `0 tokens` or `<$0.01`.
+- The cache's lifetime is read, not guessed. Claude Code hands a mod no split of a reply's cache write, so on an API key, a cloud provider or after moving onto usage credits the band could keep counting down from an hour on a five-minute cache. After a turn that wrote to the cache, it now reads the last write's lifetime off the session's transcript, unless a setting pins it; a turn's line is logged a moment late, so it looks up to three times. `SECURITY.md` and the README say what this reads. Until a read succeeds, the lifetime says `· assumed`, in the card's row, its headline and the hover, whether the hour or an inferred five minutes. The fallback now moves to `5m` only when a read finds near nothing beyond the shared system prompt: on real transcripts, it had moved 10 times and never been right.
+- A partial change to the prompt, as `/rewind` or cleared tool results make, no longer reads as a five-minute cache, where a warm cache could then read cold. `/rewind` no longer counts as an unexpected rebuild. Cleared tool results still do, since a mod can't tell them apart.
+- A model switch no longer blends the re-warm's rate. It is solved from each model's own bill, step by step: after 40 Opus turns, a re-warm on Haiku read $3.85 where it costs $0.37, and that rate was remembered for Haiku. Subagents on another model no longer skew it, and `saved on cache reads` prices each model's reads at that model's rate, so a switch can't lower it, bar the part a resumed conversation brought, which is priced at the rate in force.
 - Spend no reply reports no longer raises the rate. A compaction's own request is on the ledger with no step, which read 33% high on a real session.
-- Provider model ids (`us.anthropic.claude-opus-5-5-v1:0`) price as their model. The rate read off a cost record uses its lifetime split, since 2.1.310.
+- A step with a server tool, which a mod is told nothing of the rounds of, no longer halves the context the re-warm prices: where Claude Code reports the context, the re-warm prices that. A recalled cache with no context known says `unknown`, not `0 tokens` or `<$0.01`.
+- Provider model ids (`us.anthropic.claude-opus-5-5-v1:0`) price as their model. A cost record's writes are read by lifetime, as Claude Code logs them since 2.1.310.
 - After a manual or mid-turn compaction, the cache reads `compacted` until the next reply, not the old countdown. A cold cache mid-turn reads `DEPARTED`, not `BOARDING`.
 - Idle compaction is expected on the desktop and in VS Code too, as Claude Code's docs say. A recalled countdown runs from the request, not the end of its reply. A fork reads its spend after its first turn, since its file is empty before.
 - A week's or an hour's cell no longer holds a rise from several slices as if measured. A plan with no 5-hour limit records its history. A 5-hour forecast hides once its time has passed or its reading is stale, and a clock time rounds as its forecast does. A limit's amber and its shown percent agree: `80%` is amber.
 - A fresh session reads where compaction runs at its start, so its percent doesn't jump, and past that point the toast says `Auto-compaction is due.`
-- A time after now, a VM's or a stored one, no longer counts down `277286786h`. Missing or negative figures no longer draw `NaN` or `$-3.00`. A control character in a folder's name no longer blanks the band, and bidi characters are shown as `?`. Git runs at most once at a time, not at exit, and a truncated status counts as unknown.
+- A time after now, a VM's or a stored one, no longer counts down `277286786h`. Missing or negative figures no longer draw `NaN` or `$-3.00`. A control character in a folder's name no longer blanks the band, and bidi characters are shown as `?`.
+- Git no longer runs when Claude Code exits (only on `/clear` and a resume), runs one read at a time, and a truncated status counts as unknown.
 
 ### Docs
-- `core.fsmonitor=false` stops fsmonitor only; other git config can still run programs, as any git command in that folder does. The plugin keeps a store through Claude Code and writes no file of its own. The README states the versions tested, and that an accurate price with the advisor needs 2.1.290.
+- `SECURITY.md` and the README say when git runs, and when and how the transcript is read, retries and fallback included.
+- `core.fsmonitor=false` stops fsmonitor only; other git config can still run programs, as any git command in that folder does. The plugin keeps a store through Claude Code and writes no file of its own.
+- The README states the versions tested, that an accurate price with the advisor needs 2.1.290, and what fast mode does to the estimate: a mod isn't told a reply's speed, so the band doesn't see it.
 
 ## [0.21.0] - 2026-11-02
 
