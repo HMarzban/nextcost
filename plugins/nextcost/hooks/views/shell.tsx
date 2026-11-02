@@ -184,6 +184,14 @@ const cardTitle = (kit: Kit, name: CardName): RenderElement => {
 export const headHolds = (kit: Kit, name: CardName, say: Say, tone: Tone, inner: number): boolean =>
   cellsOf(cardTitle(kit, name), kit.measure) + 1 + cellsOf(headline(kit, say, tone), kit.measure) <= inner
 
+/** A card's headline with each of `tails` after it that its card of `inner`
+ *  columns still holds whole, in their order. */
+export const headWithTails = (kit: Kit, name: CardName, head: Say, tails: ReadonlyArray<Say | undefined>, tone: Tone, inner: number): Say =>
+  tails.reduce<Say>((say, tail) => {
+    const longer = tail === undefined ? undefined : [...say, ...tail]
+    return longer !== undefined && headHolds(kit, name, longer, tone, inner) ? longer : say
+  }, head)
+
 type CardSpec = Readonly<{
   /** The card's key, `card:cache`. */
   key: string

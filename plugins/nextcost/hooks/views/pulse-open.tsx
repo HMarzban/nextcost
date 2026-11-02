@@ -18,7 +18,7 @@ import type { BandActions } from '../snapshot'
 import { EMPTY, limitsHead, markedHead, type Say } from '../words'
 import { bodyRowsFor, footer } from './frame'
 import { beatsChart, chartsDraw, weekCells, windowTrail } from './pulse-charts'
-import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, clippedNote, factRow, fitForm, headHolds, headline, linesOf } from './shell'
+import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, clippedNote, factRow, fitForm, headHolds, headWithTails, headline, linesOf } from './shell'
 import type { CardLine, CardName } from './shell'
 
 const DOT = ' · '
@@ -162,32 +162,28 @@ const planFor = (kit: Kit, f: Facts, body: number): Plan | undefined => {
   return undefined
 }
 
-/** The cache's headline with who restarted the countdown, where its card of
- *  `inner` columns holds it whole; undefined where it doesn't, or the user
- *  typed the turn. */
-const wokenHead = (kit: Kit, read: Readings, inner: number): Say | undefined => {
-  const { cache } = read
-  if (cache.woken === undefined) return undefined
-  const woken = [...markedHead(cache.cardHead, cache.tone), ...cache.woken.head]
-  return headHolds(kit, 'cache', woken, cache.tone, inner) ? woken : undefined
+/** The plan with `more`, if it still fits `body` rows. */
+const ifRoom = (kit: Kit, f: Facts, p: Plan, more: Partial<Plan>, body: number): Plan => {
+  const roomy = { ...p, ...more }
+  return planLines(kit, f, roomy).rows <= body ? roomy : p
 }
+
+/** The cache's headline, before who restarted the countdown. */
+const cacheHead = ({ cache }: Readings): Say => markedHead(cache.cardHead, cache.tone)
 
 /** Who restarted the countdown costs no chart or card: the headline says it,
  *  and where it can't, a row of its own only if `body` has one to spare. */
 const withWake = (kit: Kit, read: Readings, f: Facts, p: Plan, body: number): Plan => {
+  const { woken, tone } = read.cache
   const line = planLines(kit, f, p).lines.find(cards => cards.includes('cache'))
-  if (line === undefined || read.cache.woken === undefined || wokenHead(kit, read, cardLine(kit, line.length).inner) !== undefined) return p
-  const roomy = { ...p, wakeRow: true }
-  return planLines(kit, f, roomy).rows <= body ? roomy : p
+  if (line === undefined || woken === undefined || headHolds(kit, 'cache', [...cacheHead(read), ...woken.head], tone, cardLine(kit, line.length).inner)) return p
+  return ifRoom(kit, f, p, { wakeRow: true }, body)
 }
 
 /** The age of the limits' reading costs no chart or card: it takes a row of
  *  Limits' own only if `body` has one to spare. */
-const withAsOf = (kit: Kit, read: Readings, f: Facts, p: Plan, body: number): Plan => {
-  if (read.asOf === undefined || !cardsOf(f, p.kept).includes('limits')) return p
-  const roomy = { ...p, asOfRow: true }
-  return planLines(kit, f, roomy).rows <= body ? roomy : p
-}
+const withAsOf = (kit: Kit, read: Readings, f: Facts, p: Plan, body: number): Plan =>
+  read.asOf === undefined || !cardsOf(f, p.kept).includes('limits') ? p : ifRoom(kit, f, p, { asOfRow: true }, body)
 
 /** What a card on a line is built at: the facts and the plan; the columns
  *  inside it, `inner`, and on the desktop `px`, so a chart spans its card to
@@ -239,7 +235,7 @@ const cacheCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
   const ink = onTone(cache.tone, cache.mood === 'warm' ? palette.warm : palette.label)
   const chart = at.size === undefined || !at.f.charted.cache ? null : track(kit, { key: 'chart', alt: cache.alt, frac: 1 - cache.charge, color: ink, px: at.px, ...at.size, cells: at.inner })
   const said = cache.untimed && cache.cardNote !== undefined ? clippedNote(kit, 'fact', cache.cardNote) : factRow(kit, cache.estimateLabel, fitForm(kit, cache.estimateForms, at.inner - cellsOf(cache.estimateLabel, kit.measure) - 2))
-  const head = wokenHead(kit, read, at.inner) ?? markedHead(cache.cardHead, cache.tone)
+  const head = headWithTails(kit, 'cache', cacheHead(read), [cache.woken?.head], cache.tone, at.inner)
   const woken = at.p.wakeRow === true && cache.woken !== undefined ? factRow(kit, cache.woken.row.label, cache.woken.row.value) : null
   return card(kit, 'cache', head, cache.tone, [plot(kit, chart), fill(kit), woken, said])
 }

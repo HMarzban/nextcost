@@ -12,7 +12,7 @@ import type { LimitReading, Readings } from '../reading'
 import type { BandActions } from '../snapshot'
 import { SINCE_LOADED, SPLIT_LABELS, type Say } from '../words'
 import { bodyRowsFor, footer, topStrip } from './frame'
-import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, clippedNote, factRow, fitForm, headHolds, headline, limitAccent, linesOf } from './shell'
+import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, clippedNote, factRow, fitForm, headWithTails, headline, limitAccent, linesOf } from './shell'
 import type { CardName } from './shell'
 
 const SPLIT_ALT = `token split: ${SPLIT_LABELS.join(', ')}`
@@ -110,10 +110,7 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
     fit.bodyRows <= ahead ? cache.assumedHead : undefined,
     fit.bodyRows <= ahead + (assumed ? 1 : 0) ? cache.woken?.head : undefined,
   ]
-  const head = tails.reduce<Say>((say, tail) => {
-    const longer = tail === undefined ? undefined : [...say, ...tail]
-    return longer !== undefined && headHolds(kit, 'cache', longer, cache.tone, fit.inner) ? longer : say
-  }, cache.cardHead)
+  const head = headWithTails(kit, 'cache', cache.cardHead, tails, cache.tone, fit.inner)
   // A guessed lifetime outranks every row that may be cut: it sits right
   // after the price. A known one is the card's last row.
   const expires = factRow(kit, 'expires', cache.lastsText)
