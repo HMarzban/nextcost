@@ -758,7 +758,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
 
 /** A response, as turn.step has it. */
 type Response = Pick<ModelUsage, 'input_tokens' | 'output_tokens' | 'cache_read_input_tokens' | 'cache_creation_input_tokens'> &
-  Readonly<{ model?: string; iterations?: unknown }>
+  Readonly<{ model?: string }>
 
 /** What a session remembers of a turn, for when it is reopened or the band
  *  reloads: when its last reply was sent, the rate its bill solves to, the

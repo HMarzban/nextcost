@@ -106,7 +106,7 @@ test('the hovers say the price is the cache rewrite, and what comes on top', () 
   const hover = (cache: BandSnapshot['cache']) => readingsOf(snapOf({ cache })).chips.cache.hover
   expect(hover(cacheWith({ leftMs: 0 }))).toBe('Cold: ~$1.66 rewrites 155k tokens to the cache, plus your reply')
   expect(hover({ ...cacheWith({ leftMs: 0 }), reWarmUsd: null })).toBe('Cold: next message rewrites 155k tokens to the cache, plus your reply')
-  expect(hover(cacheWith({ leftMs: 0, compacted: true }))).toBe('Compacted while idle: ~$1.66 rewrites the 155k summary, plus your reply')
+  expect(hover(cacheWith({ leftMs: 0, compacted: true, compactedIdle: true }))).toBe('Compacted while idle: ~$1.66 rewrites the 155k summary, plus your reply')
   expect(hover(cacheWith({ leftMs: 30_000 }))).toBe('0:30 left; if cold, ~$1.66 rewrites the cache, plus your reply')
   // A warm pill shows no price, so its hover names none.
   expect(hover(cacheWith({}))).not.toMatch(/rewrite|extra/)

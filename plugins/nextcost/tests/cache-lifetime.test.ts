@@ -233,32 +233,16 @@ test('no read yet: a /rewind infers nothing, even reading near nothing', () => {
 
 // ---- a tool loop's rounds -----------------------------------------------------
 
-/** An advisor reply reading all 100k: one server tool block, its usage over `rounds`. */
-const advisor = (read: number, iterations?: readonly object[]) => {
+/** An advisor reply after a 100k cache. Claude Code hands a mod a step's four
+ *  token counts alone, never `iterations`, so its rounds are a guess. */
+const advisor = (read: number) => {
   const c = newCache()
   c.configured({ ttl: '1h', idleCompactFrom: undefined })
   c.responded({ ...resp(100, 0, 100_000, 100), ...OPUS }, 0, true)
-  c.responded({ ...resp(100, read, 500, 100), ...OPUS, ...(iterations === undefined ? {} : { iterations }) }, MIN, true, { serverTools: 1 })
+  c.responded({ ...resp(100, read, 500, 100), ...OPUS }, MIN, true, { serverTools: 1 })
   return c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache
 }
-const MESSAGE = { type: 'message' }
-const ADVISOR = { type: 'advisor_message' }
 
-test('a tool block with one round in its usage reads the whole prefix: no miss, as its usage lists', () => {
-  const cache = advisor(100_000, [MESSAGE])
-  expect([cache.misses, cache.window]).toEqual([0, 100_700])
-})
-
-test('two rounds listed read the prefix twice: no miss, and the window is one round', () => {
-  const cache = advisor(200_000, [MESSAGE, ADVISOR, MESSAGE])
-  expect(cache.misses).toBe(0)
-  expect(cache.window).toBeLessThan(101_000)
-})
-
-test('two rounds listed that each read half are a miss', () => {
-  expect(advisor(100_000, [MESSAGE, ADVISOR, MESSAGE]).misses).toBe(1)
-})
-
-test('with no rounds listed, a read halved by the tool blocks counts no miss', () => {
+test('a read a server tool may have halved counts no miss', () => {
   expect(advisor(100_000).misses).toBe(0)
 })
