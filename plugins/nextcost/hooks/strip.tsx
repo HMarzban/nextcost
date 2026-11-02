@@ -63,7 +63,7 @@ const keyOf = (n: RenderChildren): string | undefined => {
 type Said = Readonly<{ where: RenderChildren[]; state: RenderChildren[]; explained: ReadonlyMap<string, string> }>
 
 const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said => {
-  const { Box, Text, Svg, oneLine, hoverable, liftedCard, icon } = kit
+  const { Box, Text, Svg, oneLine, explains, icon } = kit
   const git = ws.git
   const { parent, name: fullName } = splitPath(ws.path)
   /** A name cut in the middle as the squeeze shortens it: whole, then 24
@@ -80,10 +80,11 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
   /** A piece keyed `key` that draws `body` and reveals `text` on hover. */
   const explaining = (key: string, text: string, ...body: RenderChildren[]): RenderElement => {
     explained.set(key, text)
+    const { props, card } = explains(key, text)
     return (
-      <Box key={key} flexDirection="row" {...hoverable(key)}>
+      <Box key={key} flexDirection="row" {...props}>
         {body}
-        {liftedCard(text)}
+        {card}
       </Box>
     )
   }

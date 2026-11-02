@@ -53,7 +53,7 @@ type PillSpec = Readonly<{
  *  open view says it all. A pill never shrinks: the squeeze drops
  *  pieces instead, so its text never wraps. */
 const pill = (kit: Kit, { key, tone, body, hover, paintsOwnBg, bg }: PillSpec): RenderElement => {
-  const { Box, Text, palette, onTone, hoverable, liftedCard } = kit
+  const { Box, Text, palette, onTone, explains } = kit
   if (!palette.filled) {
     const fg = onTone(tone, palette.value)
     return (
@@ -65,10 +65,11 @@ const pill = (kit: Kit, { key, tone, body, hover, paintsOwnBg, bg }: PillSpec): 
     )
   }
   const fill = paintsOwnBg ? {} : { backgroundColor: onTone(tone, bg ?? palette.surface, palette.amberBg), paddingX: 1 }
+  const { props, card } = explains(key, hover)
   return (
-    <Box key={key} flexShrink={0} {...fill} {...(hover === undefined ? {} : hoverable(key))}>
+    <Box key={key} flexShrink={0} {...fill} {...props}>
       {body}
-      {hover === undefined ? null : liftedCard(hover)}
+      {card}
     </Box>
   )
 }

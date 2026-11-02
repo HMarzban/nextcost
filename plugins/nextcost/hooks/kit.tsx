@@ -56,6 +56,11 @@ export const makeKit = (el: ElementTable, snap: BandSnapshot) => {
    *  piece is measured here where its cards are placed. */
   const asDrawn = (n: RenderChildren): RenderChildren => (glyphs === 'ascii' ? asciiTree(n) : n)
 
+  /** How this surface draws a hover card: `lifted`, the desktop's, inside its
+   *  piece; `placed`, a text surface's, after the pieces of its row; `none` in
+   *  plain, whose open view says it all. */
+  const cards = !palette.filled ? 'none' : snap.surface === 'desktop' ? 'lifted' : 'placed'
+
   // On a text surface, a piece and its card share this hover scope; see
   // hoverCard and CONTRIBUTING's hover-card rules.
   const scopeOf = (key: string) => `band-${key}`
@@ -80,22 +85,23 @@ export const makeKit = (el: ElementTable, snap: BandSnapshot) => {
     )
   }
 
-  /** The props that make a keyed Box reveal the hover card a text surface
-   *  draws for `key`. The desktop's card is inside its piece: see liftedCard. */
-  const hoverable = (key: string) => (palette.filled && snap.surface !== 'desktop' ? { hover: { scope: scopeOf(key) } } : {})
-
-  /** The desktop's one-line explanation, as the last child of the keyed Box
-   *  it explains. A hidden placed Box, with no scope of its own, inside a
-   *  keyed Box above the prompt is what the desktop lifts into a popover: it
-   *  opens above its piece, or below where there's no room above, wraps at
-   *  360px, and takes the surface's own card ground and ink, which is why it
-   *  names no size, ground or colour. */
-  const liftedCard = (text: string): RenderChildren =>
-    palette.filled && snap.surface === 'desktop' ? (
-      <Box position="absolute" display="none" hover={{ display: 'flex' }}>
-        <Text>{text}</Text>
-      </Box>
-    ) : null
+  /** What a keyed Box takes to explain itself, `text` being its one-line
+   *  explanation, if any. `props` go on the Box: on a text surface they reveal
+   *  the hoverCard drawn for `key`. `card` is the Box's last child: on the
+   *  desktop, a hidden placed Box, with no scope of its own, inside a keyed
+   *  Box above the prompt, is what the desktop lifts into a popover: it opens
+   *  above its piece, or below where there's no room above, wraps at 360px,
+   *  and takes the surface's own card ground and ink, which is why it names
+   *  no size, ground or colour. */
+  const explains = (key: string, text: string | undefined): Readonly<{ props: Readonly<{ hover?: { scope: string } }>; card: RenderChildren }> => ({
+    props: text !== undefined && cards === 'placed' ? { hover: { scope: scopeOf(key) } } : {},
+    card:
+      text !== undefined && cards === 'lifted' ? (
+        <Box position="absolute" display="none" hover={{ display: 'flex' }}>
+          <Text>{text}</Text>
+        </Box>
+      ) : null,
+  })
 
   /** A text surface's one-line explanation of `key`'s piece, for after the
    *  pieces of its row, placed as `place` says. It has no key: a keyed Box is
@@ -107,7 +113,7 @@ export const makeKit = (el: ElementTable, snap: BandSnapshot) => {
    *  card with no room past its padding and caps for one character isn't
    *  drawn. */
   const hoverCard = (key: string, text: string, place: CardPlace): RenderChildren => {
-    if (!palette.filled || snap.surface === 'desktop') return null
+    if (cards !== 'placed') return null
     // The columns around the text: its padding and its caps.
     const chrome = 4
     // Sized in the glyphs it is drawn in: the ascii tier's are narrower.
@@ -174,7 +180,7 @@ export const makeKit = (el: ElementTable, snap: BandSnapshot) => {
     return mark(name) ? [<Text key={`i-${name}`} color={color}>{`${mark(name)} `}</Text>] : []
   }
 
-  return { Box, Button, Text, Svg, palette, measure, columns: snap.columns, glyphs, asDrawn, onTone, oneLine, hoverable, liftedCard, hoverCard, gap, air, svg, icon, mark }
+  return { Box, Button, Text, Svg, palette, measure, columns: snap.columns, glyphs, asDrawn, onTone, oneLine, explains, hoverCard, gap, air, svg, icon, mark }
 }
 
 export type Kit = ReturnType<typeof makeKit>
