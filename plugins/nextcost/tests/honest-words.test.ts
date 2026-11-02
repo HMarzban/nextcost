@@ -6,8 +6,10 @@
 import { test, expect } from 'claude-code/testing'
 import { readingsOf } from '../hooks/reading'
 import { PLAIN } from '../hooks/palette'
-import { MIN, byKey, cardOf, fact, shown, walk, wordsOf, type Node } from './helpers'
-import { LAST_MINUTE_CACHE, NEAR_COMPACTION, SNAP_PARTS, bandOf, cacheWith, snapOf } from './matrix'
+import { MIN, byKey, cardOf, fact, fakeEl, firstRow, shown, walk, wordsOf, type Node } from './helpers'
+import { makeKit } from '../hooks/kit'
+import { cachePill } from '../hooks/views/chips'
+import { ASCII_TIER, CALM_LIMITS, LAST_MINUTE_CACHE, NEAR_COMPACTION, SNAP_PARTS, bandOf, cacheWith, snapOf } from './matrix'
 import type { BandSnapshot } from '../hooks/snapshot'
 
 // ---- the departures board: an amber last call carries its mark ----------------
@@ -184,7 +186,7 @@ test('pulse names what its context percentage is of, and chips\' hover names bot
   expect(head({})).toBe('CONTEXT40% toward compaction')
   expect(head({ context: NEAR_COMPACTION })).toBe('CONTEXT! 95% toward compaction')
   // With compaction off the percentage is of the window, which the fact beside it says.
-  expect(head({ context: { ...SNAP_PARTS.usage.context, tokens: 170_000, window: 200_000, compactAt: undefined, autoCompactOff: true } })).toBe('CONTEXT! 85%! full')
+  expect(head({ context: { ...snapOf().context, tokens: 170_000, window: 200_000, percent: 85, compactAt: undefined, autoCompactOff: true } })).toBe('CONTEXT! 85%! full')
   const hover = (context: BandSnapshot['context']) => readingsOf(snapOf({ context })).chips.contextHover
   expect(hover(snapOf().context)).toBe('76k of the 190k auto-compaction point (40%); model window 200k; auto-compacts in ~114k')
   expect(hover({ ...snapOf().context, compactAt: undefined })).toBe('76k of 200k (38%); older turns get summarized near full')
@@ -194,4 +196,48 @@ test("the board's REMARKS say a calm context percentage is toward compaction; wi
   const row = (context: BandSnapshot['context']) => readingsOf(snapOf({ context })).board().rows.find(r => r.key === 'context')
   expect([row(snapOf().context)?.status, row(snapOf().context)?.remarks]).toEqual(['40% USED', 'TOWARD COMPACTION AT 190K · ~114K LEFT'])
   expect([row({ ...snapOf().context, compactAt: undefined })?.status, row({ ...snapOf().context, compactAt: undefined })?.remarks]).toEqual(['38% USED', ''])
+})
+
+// ---- the ASCII tier keeps its words -------------------------------------------
+
+const GIT = { branch: 'main', commit: undefined, worktree: undefined, changed: 3, ahead: 2, behind: 1 } as const
+const ASCII_WORKSPACE = { path: '/u/nextcost', repoName: undefined, git: GIT }
+
+test('the ASCII row says tok, ctx and resets where the unicode row has Σ, ◔ and ↻', () => {
+  const row = (glyphs: 'ascii' | 'unicode') => shown(firstRow(bandOf({ glyphs, columns: 200, ...CALM_LIMITS })))
+  const ascii = row('ascii')
+  expect(ascii).toMatch(ASCII_TIER)
+  expect(ascii).toMatch(/tok 225k/)
+  expect(ascii).toMatch(/ctx .*40% full/)
+  expect(ascii).toMatch(/5h .* \| resets 3h 00m/)
+  expect(ascii).toMatch(/7d .* \| resets 2d 19h/)
+  // The unicode tier is as it was.
+  expect(row('unicode')).toMatch(/│ ↻ 3h 00m.*Σ 225k/)
+})
+
+test('the ASCII tier never draws a bare span after a bar, nor a bare token count, at any width', () => {
+  for (const columns of [40, 60, 80, 100, 120, 160, 200]) {
+    const text = shown(firstRow(bandOf({ glyphs: 'ascii', columns, ...CALM_LIMITS })))
+    // A time after a bar's divider is a reset only if it says so.
+    expect(`${columns} ${/\|\s*\d/.test(text)}`).toBe(`${columns} false`)
+    if (/225k/.test(text)) expect(`${columns} ${/tok 225k/.test(text)}`).toBe(`${columns} true`)
+  }
+})
+
+test('the short cache pill keeps the word cache in the ASCII tier, where the clock glyph was its only mark', () => {
+  for (const cache of [LAST_MINUTE_CACHE, cacheWith({ leftMs: 0 }), cacheWith({ leftMs: 0, compacted: true })]) {
+    const snap = snapOf({ glyphs: 'ascii', cache })
+    const pill = cachePill(makeKit(fakeEl, snap), readingsOf(snap), true)
+    expect(shown({ children: pill.body })).toMatch(/cache/)
+  }
+  // The long forms already say it once.
+  const snap = snapOf({ glyphs: 'ascii', cache: LAST_MINUTE_CACHE })
+  expect(shown({ children: cachePill(makeKit(fakeEl, snap), readingsOf(snap), false).body }).match(/cache/g)).toHaveLength(1)
+})
+
+test('the ASCII strip says ahead and behind, not +2 -1, which reads like a diff', () => {
+  const strip = (glyphs: 'ascii' | 'unicode') => shown(byKey(bandOf({ glyphs, columns: 120, maxRows: 40, expanded: true, workspace: ASCII_WORKSPACE }), 'strip'))
+  expect(strip('ascii')).toMatch(/ahead 2 behind 1$/)
+  expect(strip('ascii')).toMatch(ASCII_TIER)
+  expect(strip('unicode')).toMatch(/↑2 ↓1$/)
 })
