@@ -33,12 +33,6 @@ const BOARD_CAPS = 1
 export const boardCells = (text: string, m: Measure): number =>
   m.text >= 1 ? textCells(text) * m.text : [...text].reduce((n, c) => n + (/[A-Z0-9]/.test(c) ? BOARD_CAPS : charCells(c) * m.text), 0)
 
-/** Columns a desktop hover card's text takes a character: about 0.8, as
- *  measured on the desktop on 0.12.0's wording (its 57-character 7d card ran
- *  about 453px), a little over the measure's 0.75 so a card never cuts its
- *  own words. */
-export const DESKTOP_CARD_TEXT = 0.8
-
 /** East Asian Wide and Fullwidth, by block: Hangul Jamo, CJK and its
  *  punctuation, kana, Hangul syllables, CJK compatibility forms, the
  *  fullwidth forms and the ideographs' supplementary planes, which draw two

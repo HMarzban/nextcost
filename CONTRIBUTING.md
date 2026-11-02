@@ -153,7 +153,11 @@ quit the app with Cmd+Q and open it again; in the terminal, exit and start
   resolves to the first, so a drawing rounds its own ends rather than clip.
 - **A hover card has no key.** A keyed Box is its own hover scope, and a
   hidden one could never be hovered.
-- **A hover card is drawn after the pieces of its row.** A placed Box paints
+- **On the desktop a hover card sits inside the keyed Box it explains.** The
+  kit's `liftedCard`, a hidden placed Box with a hover and no scope, is what
+  the desktop raises to a popover above that Box. It names no size, place,
+  ground or ink: the desktop drops them and gives it its own card's.
+- **On a text surface a hover card is drawn after the pieces of its row.** A placed Box paints
   over those before it, so a card inside its piece would sit under the
   pieces after. The kit's `hoverable` and `hoverCard` join the two by a hover
   scope. The pointer on a showing card keeps it showing, so a card sits at

@@ -84,8 +84,9 @@ red: a cold cache or a full meter is a price, not an error. Colour is
 never the only signal, since escalation always adds words or `!` / `!!`.
 
 On the desktop (not in `plain`), hover any chip for a one-line
-explanation that covers it, so it leads with the chip's figure (`Resets in
-3h 00m; 5-hour limit, all your Claude use`). Claude Code's VS Code and
+explanation that opens above it (`Resets in 3h 00m; 5-hour limit, all your
+Claude use`); on a terminal it covers the chip, so it leads with the chip's
+figure. Claude Code's VS Code and
 Cursor panels draw the band but don't show a mod's hover cards yet. `▵`
 opens the expanded view.
 It starts with a line that says where you are:

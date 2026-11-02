@@ -47,13 +47,14 @@ type PillSpec = Readonly<{
   bg?: string
 }>
 
-/** A pill carries its own foreground and background, never one of each. It
+/** A pill carries its own foreground and background, never one of each. On
+ *  the desktop it holds its card, which opens above it; on a text surface it
  *  reveals its card, drawn after every pill, through the hover scope they
- *  share; one line, since a collapsed band is one row. Plain has no cards;
- *  the open view says it all. A pill never shrinks: the squeeze drops
+ *  share, one line since a collapsed band is one row. Plain has no cards; the
+ *  open view says it all. A pill never shrinks: the squeeze drops
  *  pieces instead, so its text never wraps. */
 const pill = (kit: Kit, { key, tone, body, hover, paintsOwnBg, bg }: PillSpec): RenderElement => {
-  const { Box, Text, palette, onTone, hoverable } = kit
+  const { Box, Text, palette, onTone, hoverable, liftedCard } = kit
   if (!palette.filled) {
     const fg = onTone(tone, palette.value)
     return (
@@ -66,8 +67,9 @@ const pill = (kit: Kit, { key, tone, body, hover, paintsOwnBg, bg }: PillSpec): 
   }
   const fill = paintsOwnBg ? {} : { backgroundColor: onTone(tone, bg ?? palette.surface, palette.amberBg), paddingX: 1 }
   return (
-    <Box key={key} flexShrink={0} {...fill} {...(hover === undefined ? {} : hoverable(key, fill.backgroundColor))}>
+    <Box key={key} flexShrink={0} {...fill} {...(hover === undefined ? {} : hoverable(key))}>
       {body}
+      {hover === undefined ? null : liftedCard(hover)}
     </Box>
   )
 }
@@ -258,8 +260,9 @@ export const chipsPills = (kit: Kit, read: Readings, k: Keeps<Piece>): PillSpec[
   ]
 }
 
-/** Pills in a row, each revealing its card, then air and the toggle. A card
- *  ends short of ▵ and the gap before it, and covers whole pills. */
+/** Pills in a row, then air and, on a text surface, each pill's card, then
+ *  the toggle. A text surface's card ends short of ▵ and the gap before it,
+ *  and covers whole pills. */
 export const pillRow = (kit: Kit, toggle: RenderElement, specs: readonly PillSpec[]): RenderElement => {
   const { Box, measure, asDrawn, hoverCard } = kit
   const pills = specs.map(spec => pill(kit, spec))
