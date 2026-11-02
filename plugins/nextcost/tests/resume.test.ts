@@ -5,7 +5,7 @@
 
 import { test, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { BUILD_155K, FRESH, HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, cardOf, cardText, engine, fact, hoverCardOf, jsonl, pillOf, promptLine, resp, respond, shown, transcriptOf, usage, setup, mountBand } from './helpers'
+import { BUILD_155K, FRESH, HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, cardOf, cardText, costRecord, engine, fact, hoverCardOf, jsonl, pillOf, promptLine, replyLine, requestLines, resp, respond, shown, transcriptOf, usage, setup, mountBand } from './helpers'
 
 const ENV = { ENABLE_PROMPT_CACHING_1H: '1', HOME: '/Users/me' }
 const MODEL = 'claude-opus-5-5'
@@ -86,6 +86,13 @@ test('a session from before the band reads its last reply off its transcript, ne
   await $.session.start(START)
   expect(engine.ran.find(argv => argv[0] === 'tail')?.at(-1)).toBe('/Users/me/.claude/projects/-Users-me-workspace-nextcost/s1.jsonl')
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold/)
+})
+
+test("a transcript with 2 MB of the request's blobs before its last reply is read all the same", async ($, on) => {
+  setup(on, { env: ENV, now: 3 * HOUR })
+  engine.transcript = jsonl(promptLine(-5_000), ...requestLines(-3_000, 2 * 1024 * 1024), replyLine(0), costRecord('claude-opus-5-5'))
+  await $.session.start(START)
+  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold · next message ~\$/)
 })
 
 test("its price comes from the transcript's own cost record, per model", async ($, on) => {

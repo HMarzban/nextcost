@@ -105,7 +105,11 @@ type EngineFake = {
   model: string
   /** When set, the engine can't say the session's id. */
   sessionIdFails: boolean
-  /** The session's transcript as Claude Code writes it; undefined when it isn't there. */
+  /** The session's transcript as Claude Code writes it; undefined when it isn't there.
+   *  The fake answers with whatever it holds at the call, so a turn's own line is
+   *  there the instant the turn completes unless a test sets it later, as
+   *  tests/cache-lifetime.test.ts does: the real line lands about 100ms after
+   *  turn.complete, on a timer. */
   transcript: string | undefined
   /** Its size on disk, when a test needs it larger than its text. */
   transcriptBytes: number | undefined
@@ -659,24 +663,71 @@ export const breakdown = (fields: Pick<SessionContextBreakdown, 'isAutoCompactEn
 /** A transcript of `lines`, one to a line: an object as its JSON, a string
  *  as it is, so a test can write a line cut short. */
 export const jsonl = (...lines: unknown[]): string => lines.map(line => (typeof line === 'string' ? line : JSON.stringify(line))).join('\n') + '\n'
-/** A main-loop reply's line, logged at `ms`, billed under Opus 5.5. */
-export const replyLine = (ms: number) => ({ type: 'assistant', timestamp: new Date(ms).toISOString(), message: { role: 'assistant', model: 'claude-opus-5-5', content: [] } })
+/** What a reply's usage holds when it bills nothing: every count the engine
+ *  writes, at zero, so no test's sums move. */
+const NO_USAGE = {
+  input_tokens: 0,
+  cache_creation_input_tokens: 0,
+  cache_read_input_tokens: 0,
+  output_tokens: 0,
+  cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 },
+}
+let replies = 0
+/** A main-loop reply's line, logged at `ms`, billed under Opus 5.5, as the
+ *  engine writes one (2.1.316): its message has an `id`, one to a reply, and
+ *  a `usage`, here billing nothing. Each call is a reply of its own. */
+export const replyLine = (ms: number) => ({
+  type: 'assistant',
+  isSidechain: false,
+  timestamp: new Date(ms).toISOString(),
+  message: { id: `msg_${++replies}`, role: 'assistant', model: 'claude-opus-5-5', content: [], usage: NO_USAGE },
+})
+/** The lines the engine logs as it sends a request, before the reply's: its
+ *  shape, its messages as blobs (one of `blobBytes`, an assistant's, as the
+ *  engine logs a long history in whole: up to 2 MB), then the request. */
+export const requestLines = (ms: number, blobBytes = 0) => {
+  const at = new Date(ms).toISOString()
+  const hash = 'f'.repeat(64)
+  return [
+    { type: 'api-request-shape', sessionId: 's1', shapeHash: hash, timestamp: at, version: '2.1.316', shape: { system: [{ type: 'text', text: 'You are Claude Code.' }], tools: [{ name: 'Read', description: 'Reads a file.', input_schema: {}, eager_input_streaming: true }] } },
+    { type: 'api-request-blob', sessionId: 's1', hash, message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } },
+    { type: 'api-request-blob', sessionId: 's1', hash, message: { role: 'assistant', content: [{ type: 'text', text: 'x'.repeat(blobBytes) }] } },
+    { type: 'api-request', sessionId: 's1', id: `req_${ms}`, timestamp: at, version: '2.1.316', querySource: 'repl_main_thread', shapeHash: hash, params: { model: 'claude-opus-5-5', max_tokens: 128000 }, keep: 0, tail: [hash], requestDigest: hash },
+  ]
+}
 /** A prompt's line, logged at `ms`. */
 export const promptLine = (ms: number) => ({ type: 'user', timestamp: new Date(ms).toISOString(), message: { role: 'user', content: 'hi' } })
-/** A cost record as Claude Code writes one: $20 over 1M input, 400k written,
- *  20M read and 100k output, per model named. */
+/** A cost record as Claude Code writes one (2.1.316), at exit, not when a
+ *  session is opened: $20 over 1M input, 400k written, 20M read and 100k
+ *  output, per model named, with its writes split by lifetime (since 2.1.310)
+ *  as five minutes'. */
 export const costRecord = (...models: string[]) => ({
   type: 'cost-state',
+  sessionId: 's1',
   totalCostUSD: 20,
   modelUsage: Object.fromEntries(
-    models.map(model => [model, { inputTokens: 1_000_000, cacheCreationInputTokens: 400_000, cacheReadInputTokens: 20_000_000, outputTokens: 100_000, costUSD: 20 }]),
+    models.map(model => [
+      model,
+      {
+        inputTokens: 1_000_000,
+        outputTokens: 100_000,
+        thinkingTokens: 0,
+        cacheReadInputTokens: 20_000_000,
+        cacheCreationInputTokens: 400_000,
+        cacheCreationEphemeral5mInputTokens: 400_000,
+        cacheCreationEphemeral1hInputTokens: 0,
+        webSearchRequests: 0,
+        costUSD: 20,
+      },
+    ]),
   ),
+  hasUnknownModelCost: false,
 })
 /** Whether a rate solved from a transcript is `b`, to within float error. */
 export const rateNear = (a: number | null, b: number): boolean => a !== null && Math.abs(a - b) < 1e-15
 
 /** A transcript as Claude Code writes one: a user line, an assistant reply at
- *  `replyAt`, and the cost-state line it adds when a session is opened. */
+ *  `replyAt`, and the cost-state line it adds when the session exits. */
 export const transcriptOf = (replyAt: number, modelUsage: Record<string, Record<string, number>> = {}): string =>
   jsonl(promptLine(replyAt - 5000), replyLine(replyAt), { type: 'last-prompt', lastPrompt: 'hi' }, { type: 'cost-state', totalCostUSD: 1, modelUsage })
 

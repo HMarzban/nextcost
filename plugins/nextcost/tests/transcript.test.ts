@@ -9,13 +9,14 @@ import {
   isRecord,
   lastReplyAt,
   lastReplyModel,
+  lastWrite,
   lastWriteTtl,
   rateFromTranscript,
   sessionCostRecord,
   transcriptPath,
   transcriptSpend,
 } from '../hooks/transcript'
-import { costRecord, jsonl, promptLine, rateNear, replyLine } from './helpers'
+import { costRecord, jsonl, promptLine, rateNear, replyLine, requestLines } from './helpers'
 
 const iso = (ms: number): string => new Date(ms).toISOString()
 /** A Haiku 5.5 reply whose request sent `prompt` input tokens. */
@@ -184,6 +185,18 @@ test("a subagent's write says nothing of the main loop's cache, and no write is 
   expect(lastWriteTtl(jsonl(wrote(0, 50), wrote(100, 0, true)))).toBe('5m')
   expect(lastWriteTtl(jsonl(replyLine(1_000), promptLine(2_000)))).toBeUndefined()
   expect(lastWriteTtl('')).toBeUndefined()
+})
+
+// ── a transcript with the request's blobs in it ─────────────────────────
+
+test("a request's megabyte blobs, an assistant's among them, are not replies: the reply, its model, its write and the rate read past them", () => {
+  const reply = { ...replyLine(2_000), message: { ...replyLine(2_000).message, usage: { cache_creation: { ephemeral_1h_input_tokens: 100, ephemeral_5m_input_tokens: 0 } } } }
+  const transcript = jsonl(promptLine(1_000), ...requestLines(1_500, 2 * 1024 * 1024), reply, { type: 'last-prompt', lastPrompt: 'hi' }, ...requestLines(9_000, 2 * 1024 * 1024), costRecord('claude-opus-5-5'))
+  expect(transcript.length).toBeGreaterThan(4 * 1024 * 1024)
+  expect(lastReplyAt(transcript)).toBe(2_000)
+  expect(lastReplyModel(transcript)).toBe('claude-opus-5-5')
+  expect(lastWrite(transcript)).toEqual({ ttl: '1h', at: 2_000 })
+  expect(rateNear(rateFromTranscript(transcript, 'claude-opus-5-5'), 20 / 3_000_000)).toBe(true)
 })
 
 // ── the cost record grep found ─────────────────────────────────────────

@@ -3,7 +3,7 @@
 
 import { test, expect } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
-import { BUILD_80K, LONG, MIN, START, TURN_DONE, engine, fact, jsonl, mountBand, pillOf, replyLine, resp, respond, setup, shown } from './helpers'
+import { BUILD_80K, LONG, MIN, START, TURN_DONE, engine, fact, jsonl, mountBand, pillOf, replyLine, requestLines, resp, respond, setup, shown } from './helpers'
 
 /** A main-loop reply's line that wrote to the cache for `ttl`. */
 const wroteFor = (ms: number, ttl: '5m' | '1h') => {
@@ -30,6 +30,19 @@ test('on an API key, the first turn counts down five minutes, not an assumed hou
   expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/cache [45]:\d\d/)
   await ui.press({ key: 'more' })
   expect(fact(await ui.drawn(), 'expires')).toBe('5m idle')
+  await ui.unmount()
+})
+
+test("a turn whose request logged 2 MB of blobs before its reply is still read: the reply is in the last megabyte", LONG, async ($, on) => {
+  const clock = setup(on, { env: HOME })
+  await $.session.start(START)
+  await respond($, BUILD_80K)
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(100)
+  engine.transcript = jsonl(...requestLines(clock.now() - 3_000, 2 * 1024 * 1024), wroteFor(clock.now(), '5m'), ...requestLines(clock.now() + 1, 0))
+  await clock.advance(LOOK)
+  const ui = await mountBand($, 'terminal', 110)
+  expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/cache [45]:\d\d/)
   await ui.unmount()
 })
 
