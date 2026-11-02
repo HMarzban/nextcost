@@ -136,6 +136,25 @@ export type CacheView = Readonly<{
   wake: Wake | undefined
 }>
 
+/** What the turn's end takes, always there: a step may come with no turn start
+ *  before it. */
+type Turn = Readonly<{
+  /** Under way: a compaction then is no idle one. */
+  open: boolean
+  /** What started it, when the user didn't type it. */
+  waker: Waker | undefined
+  /** It has made a request of its own, in the main loop. */
+  measured: boolean
+  /** Since the last turn's end, a main-loop request rebuilt a cache that existed. */
+  rebuilt: boolean
+  /** When the request behind the main loop's last write unread went: a turn
+   *  whose last step only read still wrote earlier, and one that wrote nothing
+   *  has nothing new to read. */
+  writeSentAt: number | undefined
+}>
+
+const NO_TURN: Turn = { open: false, waker: undefined, measured: false, rebuilt: false, writeSentAt: undefined }
+
 /** A cache model's facts, plain data, for a reload to carry on from. */
 export type CacheState = {
   ttl: Ttl
@@ -149,19 +168,11 @@ export type CacheState = {
    *  band's first reply: it speaks for the recalled cache, never for the next
    *  request, and the environment's pin still wins. */
   ttlSeen: Ttl | undefined
-  /** When the request behind the main loop's last write unread went: a turn
-   *  whose last step only read still wrote earlier, and one that wrote nothing
-   *  has nothing new to read. */
-  writeUnreadSince: number | undefined
   /** The context, in tokens, from which Claude Code compacts this session
    *  when it sits idle; undefined when it never does (idleCompactFrom). */
   idleCompactFrom: number | undefined
-  /** A main-loop turn is under way: a compaction then is no idle one. */
-  turnOpen: boolean
-  /** What started the turn under way, when the user didn't type it. */
-  turnWaker: Waker | undefined
-  /** The turn under way has made a request of its own, in the main loop. */
-  turnMeasured: boolean
+  /** The main-loop turn under way, or what is noted for the next to end. */
+  turn: Turn
   /** Who started the last main-loop turn that made a request, when the user
    *  didn't type it. */
   lastWake: Wake | undefined
@@ -193,9 +204,6 @@ export type CacheState = {
   messageCount: number | undefined
   /** The model the last main-loop request ran on; a switch rebuilds the cache. */
   model: string | undefined
-  /** Since the turn's end last read it, a main-loop request rebuilt a cache
-   *  that existed. */
-  lastRebuilt: boolean
   /** The conversation is known to start here (a new session, a /clear), so
    *  its cache is warming; after a reload mid-conversation it is unmeasured. */
   knownFresh: boolean
@@ -228,11 +236,8 @@ const INITIAL: Readonly<CacheState> = {
   ttlBasis: 'assumed',
   subagentTtl: '5m',
   ttlSeen: undefined,
-  writeUnreadSince: undefined,
   idleCompactFrom: undefined,
-  turnOpen: false,
-  turnWaker: undefined,
-  turnMeasured: false,
+  turn: NO_TURN,
   lastWake: undefined,
   requests: 0,
   tokens: NO_TOKENS,
@@ -245,7 +250,6 @@ const INITIAL: Readonly<CacheState> = {
   notCaching: false,
   messageCount: undefined,
   model: undefined,
-  lastRebuilt: false,
   knownFresh: false,
   resumed: false,
   resumedCache: undefined,
@@ -407,7 +411,7 @@ const noteTranscript = (s: CacheState, facts: TranscriptFacts): void => {
  *  what was really billed. A pin wins, and a read that ends after the next
  *  turn began waits for that turn's. */
 const noteWrittenFor = (s: CacheState, ttl: Ttl): void => {
-  if (s.ttlBasis === 'pinned' || s.turnOpen) return
+  if (s.ttlBasis === 'pinned' || s.turn.open) return
   s.ttl = ttl
   s.ttlBasis = 'read'
   const { bill, hourTokens } = writesReadAs(s.bill, ttl)
@@ -472,7 +476,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   // compaction rebuilt it, or the model changed. The first build
   // is warming, unless the cache it rebuilt was already read as cold. With
   // caching off on either side, nothing was rebuilt.
-  if (!uncached && !s.notCaching && (coldBefore || (s.requests > 0 && (gap > TTL_MS[s.ttl] || missed || s.compaction !== undefined || switched)))) s.lastRebuilt = true
+  const rebuilt = !uncached && !s.notCaching && (coldBefore || (s.requests > 0 && (gap > TTL_MS[s.ttl] || missed || s.compaction !== undefined || switched)))
 
   s.requests += 1
   // The next request's TTL follows the config in force, not the transcript's.
@@ -485,10 +489,15 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   s.notCaching = uncached
   s.messageCount = messages ?? s.messageCount
   s.requestModel = s.priceModel
-  if (usage.cache_creation_input_tokens > 0) s.writeUnreadSince = sentAt
   s.windowGuessed = rounds !== 1
   s.model = model ?? s.model
   if (model) s.billedModel = model
+  s.turn = {
+    ...s.turn,
+    measured: true,
+    rebuilt: rebuilt || s.turn.rebuilt,
+    writeSentAt: usage.cache_creation_input_tokens > 0 ? sentAt : s.turn.writeSentAt,
+  }
 }
 
 // ---- the model --------------------------------------------------------------
@@ -594,9 +603,7 @@ export const newCache = (kept?: CacheState): CacheModel => {
       if (transcript !== undefined) noteTranscript(s, transcript)
     },
     turnStarted: ({ priceModel, ledger, wokenBy }) => {
-      s.turnOpen = true
-      s.turnWaker = wokenBy
-      s.turnMeasured = false
+      s.turn = { ...s.turn, open: true, waker: wokenBy, measured: false }
       s.priceModel = priceModel
       s.bill = billAtTurnStart(s.bill, ledger)
     },
@@ -608,7 +615,6 @@ export const newCache = (kept?: CacheState): CacheModel => {
       s.bill = ledgered
       if (isMain && sent > 0) {
         measureCache(s, usage, sentAt, rounds, after.messages)
-        s.turnMeasured = true
       }
       // Its writes last as long as its bucket's TTL: the main loop's as just
       // measured, a subagent's its own.
@@ -620,7 +626,7 @@ export const newCache = (kept?: CacheState): CacheModel => {
       s.bill = bookResponse(s.bill, { ...weighed, model: usage.model, priced: pricedModel(s), standing, usd: told ?? 0, ttl, unread: isMain && rounds === 1 })
     },
     compacted: ({ now, sizeAfter, manual = false }) => {
-      const idle = !s.turnOpen && !manual && s.requests > 0 && now - s.lastAt >= IDLE_GAP_MS
+      const idle = !s.turn.open && !manual && s.requests > 0 && now - s.lastAt >= IDLE_GAP_MS
       // The summary replaces the conversation, at its size, 0 where it wasn't told.
       s.window = sizeAfter ?? 0
       s.cached = 0
@@ -628,24 +634,20 @@ export const newCache = (kept?: CacheState): CacheModel => {
     },
     wroteFor: ttl => noteWrittenFor(s, ttl),
     turnEnded: ledger => {
-      s.turnOpen = false
-      const rebuilt = s.lastRebuilt
-      const lifetimeSince = s.ttlBasis === 'pinned' ? undefined : s.writeUnreadSince
-      s.writeUnreadSince = undefined
-      s.lastRebuilt = false
+      const { rebuilt, writeSentAt, waker, measured } = s.turn
+      const lifetimeSince = s.ttlBasis === 'pinned' ? undefined : writeSentAt
+      s.turn = NO_TURN
       // A turn that made no request (a limit hit, a lost connection) left the
       // countdown where it was, so what it says stays too.
-      if (s.turnMeasured) s.lastWake = s.turnWaker === undefined ? undefined : { by: s.turnWaker, reWarm: rebuilt }
-      s.turnWaker = undefined
-      s.turnMeasured = false
+      if (measured) s.lastWake = waker === undefined ? undefined : { by: waker, reWarm: rebuilt }
       return { rebuilt, lifetimeSince, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: rememberedRate(s.bill, pricingOf(s), ledger), billed: s.billedModel, priceModel: s.priceModel } }
     },
     conversationEnded: (ledger, resumed) => {
       // The billing mode, its TTL and the session's settings carry over;
       // everything measured starts again. The baseline is provisional until
       // the next turn starts and takes the ledger then.
-      const { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen } = s
-      Object.assign(s, INITIAL, { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen, bill: billOfNewConversation(ledger), knownFresh: !resumed })
+      const { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turn } = s
+      Object.assign(s, INITIAL, { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turn: { ...NO_TURN, open: turn.open }, bill: billOfNewConversation(ledger), knownFresh: !resumed })
     },
     view: ({ now, ledger, contextTokens, autoCompactOff, modelNow, surface }) => {
       s.bill = billAtRedraw(s.bill, ledger)
