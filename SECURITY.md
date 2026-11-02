@@ -47,6 +47,11 @@ it:
   billed under, and the cost record's dollars and token counts for that
   model (else the current one), to price a token. Nothing else in the
   transcript is kept, shown or sent.
+- **Reads**, at the end of each turn that reached the API, unless a setting
+  pins the cache's lifetime, the same last megabyte of the session's own
+  transcript, by the same command with the same timeout. It keeps one fact:
+  whether the last main-conversation cache write was for five minutes or an
+  hour. Nothing else in the transcript is kept, shown or sent.
 - **Reads**, once when Claude Code says a session was resumed or forked,
   that session's transcript, at the path Claude Code names or else at the
   path above, with the same 3-second timeout:

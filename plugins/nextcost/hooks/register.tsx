@@ -237,6 +237,24 @@ const recallLastReply = async (
   }
 }
 
+/** Reads the lifetime the conversation's last cache write was made for, off
+ *  its transcript, and redraws. Callers don't wait on it, and it never throws:
+ *  failing, the lifetime stands as the cache's reads infer it. */
+const readLifetime = async ($: EngineInterface): Promise<void> => {
+  try {
+    const sessionId = band.resume?.sessionId ?? (await $.session.id())
+    const file = await transcriptFile($, sessionId, band.resume?.path)
+    const end = file === undefined ? undefined : await transcriptEnd($, file)
+    const ttl = end === undefined ? undefined : lastWriteTtl(end)
+    if (ttl === undefined) return
+    band.cache.wroteFor(ttl)
+    await keepCounts($)
+    $.ui.invalidate('ui.render')
+  } catch {
+    // the lifetime stands
+  }
+}
+
 /** Reads what a resumed conversation's transcript shows, keeps it with the
  *  resume and redraws; where the engine gave no idle time, recalls the last
  *  reply off the same read of its end. Callers don't wait on it, and it
@@ -598,6 +616,7 @@ export const register: Register = on => {
       if (used !== undefined) band.insights.pushContext(used)
       await keepCounts($)
       if (ended.remember !== undefined) void rememberTurn($, ended.remember)
+      if (ended.readLifetime) void readLifetime($)
       const now = await $.clock.now()
       const sample = usage === undefined ? undefined : sampleOf(now, usage.rateLimits.map(limitOf))
       if (sample !== undefined) await noteSample($, sample)

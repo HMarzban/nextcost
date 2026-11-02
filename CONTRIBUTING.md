@@ -153,6 +153,10 @@ quit the app with Cmd+Q and open it again; in the terminal, exit and start
   resolves to the first, so a drawing rounds its own ends rather than clip.
 - **A hover card has no key.** A keyed Box is its own hover scope, and a
   hidden one could never be hovered.
+- **The cache's lifetime is read, not guessed, where it can be.** Claude Code
+  doesn't hand a mod a reply's cache-write split, so `readLifetime` reads it
+  off the transcript at each turn's end; the inference from a short read is
+  what's left when that read fails.
 - **On the desktop a hover card sits inside the keyed Box it explains.** The
   kit's `liftedCard`, a hidden placed Box with a hover and no scope, is what
   the desktop raises to a popover above that Box. It names no size, place,

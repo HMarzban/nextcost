@@ -301,6 +301,28 @@ cost of writing the whole context to the cache again. Within it, the
 countdown runs from the last reply. With no price known for the model yet,
 it names the tokens instead. With nothing to recall, it stays at `cache –`.
 
+## What the dollars mean
+
+Every dollar figure is a list-price estimate, marked `~` where the band solved
+it, not an invoice. What Claude Code reports, and so what the band shows,
+means something different by how you pay:
+
+| You're on | The figure is | What you really pay |
+| --- | --- | --- |
+| Pro, Max or Ultra | what those tokens would cost at list price | Your plan: it comes out of your 5-hour and weekly limits, not your card |
+| A Team or seat-based Enterprise plan | the same | Your seat's allowance, which isn't metered in dollars |
+| Usage credits, on any of those | the same | Credits, billed by Anthropic; check your usage page |
+| An API key, or usage-based Enterprise | an estimate of your API bill | Your Console or admin usage page is the real bill |
+| Bedrock, Google Cloud or Foundry | an estimate at Anthropic's list price | Your cloud account's bill |
+| An organization's `modelPricing` | at your organization's configured rates | What your organization says |
+
+So on a subscription, a `~$2.40` re-warm doesn't charge you $2.40. It tells you
+how much of your limits that message will use compared with a warm one. The
+limits themselves appear only where Claude Code reports them: 5-hour, weekly
+and a gateway's spend limit. A plan with no 5-hour limit shows no 5-hour chip,
+and Max's and Ultra's separate weekly limit for Fable isn't reported to mods, so
+it doesn't show.
+
 ## What a cold cache costs
 
 No pricing table is reachable from a mod, so the rate is solved from the
@@ -389,8 +411,14 @@ the expanded cards carry the same facts.
 ## Cache lifetime
 
 The default lifetime depends on billing: an hour on a subscription within
-plan usage, five minutes on usage credits or an API key. A mod can't read
-which applies, so the band assumes an hour and says `· assumed`. If a
+plan usage, five minutes on usage credits, an API key or a cloud provider. A
+mod can't read which applies, and Claude Code doesn't hand a mod the lifetime
+of a reply's cache write, so at the end of each turn that reached the API the
+band reads it off the session's transcript. Your first reply counts down
+what was really written, and a subscription moving onto usage credits counts
+down five minutes from that turn on.
+
+Until a read succeeds, the band assumes an hour and says `· assumed`. If a
 request after a gap longer than five minutes, on the same model, reads
 short of the cache, it corrects itself to `5m`. Such a request still reads
 the system prompt other sessions in the same folder keep warm, so short
@@ -462,7 +490,7 @@ it, each given 3 seconds, and never while the band draws:
 | --- | --- | --- |
 | `git -c core.fsmonitor=false --no-optional-locks status --porcelain=v2 --branch` | the session's project folder | the workspace line: branch, changes, ahead and behind. It never takes git's index lock. `-c core.fsmonitor=false` is git's own option for setting one value for this run: it stops a repository's config from making git start its fsmonitor program. It starts no shell. |
 | `git rev-parse --path-format=absolute --git-dir --git-common-dir --show-toplevel` | the same | whether the folder is a linked worktree, and of which repository |
-| `tail -c 1048576 <transcript>` | that session's own transcript: at the path Claude Code gave when it said the session was resumed, else `~/.claude/projects/<project>/<session id>.jsonl`, `<project>` being the project's path with every character but a letter or digit a dash | only when a conversation is resumed, or the band loads into one it can't tell is new and its own store doesn't know the last reply's time or its model's rate: when that reply was, so the cache countdown starts from it, the model it was billed under, and the rate its cost record solves to; on a resume, also how long its cache was written for |
+| `tail -c 1048576 <transcript>` | that session's own transcript: at the path Claude Code gave when it said the session was resumed, else `~/.claude/projects/<project>/<session id>.jsonl`, `<project>` being the project's path with every character but a letter or digit a dash | at the end of each turn that reached the API, unless a setting pins the cache's lifetime: how long its last cache write was made for, and nothing else. Also when a conversation is resumed, or the band loads into one it can't tell is new and its own store doesn't know the last reply's time or its model's rate: when that reply was, so the cache countdown starts from it, the model it was billed under, and the rate its cost record solves to; on a resume, also how long its cache was written for |
 | `grep -a -b -F '"type":"cost-state"' <transcript>`, then `tail -c +<offset> <transcript>` | the same | only when a conversation is resumed: what it spent before this process, so the session's cost includes it |
 
 **It reads** the session's id, model and usage from Claude Code (cost, token

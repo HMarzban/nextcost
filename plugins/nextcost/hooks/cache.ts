@@ -114,6 +114,9 @@ export type CacheView = Readonly<{
   wake: Wake | undefined
 }>
 
+/** Main-loop writes by the lifetime they were weighed at. */
+type UnreadWrites = Readonly<Record<Ttl, Readonly<{ tokens: number; tiered: number }>>>
+
 /** A cache model's facts, plain data, for a reload to carry on from. */
 export type CacheState = {
   ttl: Ttl
@@ -125,6 +128,13 @@ export type CacheState = {
    *  band's first reply: it speaks for the recalled cache, never for the next
    *  request, and the environment's pin still wins. */
   ttlSeen: Ttl | undefined
+  /** `ttl` was read off the transcript's last cache write, at a turn's end,
+   *  so it isn't assumed. */
+  ttlRead: boolean
+  /** The main loop's writes since that read, by the lifetime they were
+   *  weighed at: each plain, and with its price tier's factor. A read that
+   *  says otherwise moves them to the lifetime they really had. */
+  unreadWrites: UnreadWrites
   /** The context, in tokens, from which Claude Code compacts this session
    *  when it sits idle; undefined when it never does (idleCompactFrom). */
   idleCompactFrom: number | undefined
@@ -201,11 +211,15 @@ export type CacheState = {
   billedModel: string | undefined
 }
 
+const NO_UNREAD_WRITES: UnreadWrites = { '5m': { tokens: 0, tiered: 0 }, '1h': { tokens: 0, tiered: 0 } }
+
 const INITIAL: Readonly<CacheState> = {
   ttl: '1h',
   ttlPinned: false,
   subagentTtl: '5m',
   ttlSeen: undefined,
+  ttlRead: false,
+  unreadWrites: NO_UNREAD_WRITES,
   idleCompactFrom: undefined,
   turnOpen: false,
   turnWaker: undefined,
@@ -350,7 +364,7 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
     coldAt: coldAtOf(s),
     ttl: effectiveTtl(s),
     // Known, not assumed: pinned, or seen on the transcript's last cache write.
-    ttlPinned: s.ttlPinned || s.ttlSeen !== undefined,
+    ttlPinned: s.ttlPinned || s.ttlSeen !== undefined || s.ttlRead,
     window: recalled ? contextTokens : s.window,
     hitRatio: input > 0 ? tokens.read / input : null,
     misses: s.misses,
@@ -440,6 +454,31 @@ const billResponse = (s: CacheState, usage: Response, rounds: number, ttl: Ttl):
   s.premium += weighted - weightedTokens(request, usage.model)
   s.tieredReads += factor * hit
   return weighted
+}
+
+/** Notes a main-loop write, weighed at `ttl`, as not yet read off the
+ *  transcript. A step with a tool loop stays as weighed, on or off the rate's
+ *  books with its tokens. */
+const noteUnreadWrite = (s: CacheState, written: number, factor: number, ttl: Ttl): void => {
+  const was = s.unreadWrites[ttl]
+  s.unreadWrites = { ...s.unreadWrites, [ttl]: { tokens: was.tokens + written, tiered: was.tiered + written * factor } }
+}
+
+/** The lifetime the transcript's last cache write was made for, as read at a
+ *  turn's end: the countdown runs on it, and the writes weighed at the other
+ *  lifetime since the last read move to this one, so the rate is solved from
+ *  what was really billed. A pin wins, and a read that ends after the next
+ *  turn began waits for that turn's. */
+const noteWrittenFor = (s: CacheState, ttl: Ttl): void => {
+  if (s.ttlPinned || s.turnOpen) return
+  s.ttl = ttl
+  s.ttlRead = true
+  const moved = s.unreadWrites[ttl === '1h' ? '5m' : '1h']
+  const sign = ttl === '1h' ? 1 : -1
+  const weight = WRITE_MULT['1h'] - WRITE_MULT['5m']
+  s.tokens = { ...s.tokens, writtenHour: s.tokens.writtenHour + sign * moved.tokens }
+  s.premium += sign * weight * (moved.tiered - moved.tokens)
+  s.unreadWrites = NO_UNREAD_WRITES
 }
 
 /** Whether a main-loop request that read `hit` tokens read short of what
@@ -549,8 +588,12 @@ export type CacheModel = Readonly<{
   /** turn.complete of a main-loop turn: whether a request in it rebuilt the
    *  cache (TTL run out, a miss, a compaction, a model switch), taken once
    *  per turn, though the rebuild is usually its first request; and, once a
-   *  reply has been seen, what to remember at `ledger`. */
-  turnEnded: (ledger: number | undefined) => Readonly<{ rebuilt: boolean; remember: Remembered | undefined }>
+   *  reply has been seen, what to remember at `ledger`; and whether to read
+   *  the lifetime its writes were made for off the transcript: it reached
+   *  the API, and no setting pins the lifetime. */
+  turnEnded: (ledger: number | undefined) => Readonly<{ rebuilt: boolean; readLifetime: boolean; remember: Remembered | undefined }>
+  /** The lifetime the transcript's last main-loop cache write was made for. */
+  wroteFor: (ttl: Ttl) => void
   /** session.end: another conversation in the same process, at `ledger`. A
    *  /clear starts one here; a /resume moves to one already under way. */
   conversationEnded: (ledger: number, resumed: boolean) => void
@@ -620,7 +663,9 @@ export const newCache = (kept?: CacheState): CacheModel => {
       }
       // Its writes last as long as its bucket's TTL: the main loop's as just
       // measured, a subagent's its own.
-      const weighted = billResponse(s, usage, rounds, isMain ? effectiveTtl(s) : s.subagentTtl)
+      const ttl = isMain ? effectiveTtl(s) : s.subagentTtl
+      const weighted = billResponse(s, usage, rounds, ttl)
+      if (isMain && rounds === 1) noteUnreadWrite(s, usage.cache_creation_input_tokens, tierFactor(usage.model, sent), ttl)
       noteStepLedger(s, after.ledger, rounds > 1 ? weighted : undefined)
     },
     compacted: ({ now, sizeAfter, manual = false }) => {
@@ -629,23 +674,25 @@ export const newCache = (kept?: CacheState): CacheModel => {
       // An idle one's cache counts as gone from then, at the summary's size.
       if (idle && sizeAfter !== undefined) s.compactedAt = now
     },
+    wroteFor: ttl => noteWrittenFor(s, ttl),
     turnEnded: ledger => {
       s.turnOpen = false
       const rebuilt = s.lastRebuilt
+      const readLifetime = s.turnMeasured && !s.ttlPinned
       s.lastRebuilt = false
       // A turn that made no request (a limit hit, a lost connection) left the
       // countdown where it was, so what it says stays too.
       if (s.turnMeasured) s.lastWake = s.turnWaker === undefined ? undefined : { by: s.turnWaker, reWarm: rebuilt }
       s.turnWaker = undefined
       s.turnMeasured = false
-      return { rebuilt, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: ratePerToken(s, ledger), billed: s.billedModel, priceModel: s.priceModel } }
+      return { rebuilt, readLifetime, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: ratePerToken(s, ledger), billed: s.billedModel, priceModel: s.priceModel } }
     },
     conversationEnded: (ledger, resumed) => {
       // The billing mode, its TTL and the session's settings carry over;
       // everything measured starts again. The baseline is provisional until
       // the next turn starts and takes the ledger then.
-      const { ttl, ttlPinned, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen } = s
-      Object.assign(s, INITIAL, { ttl, ttlPinned, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen, costBase: ledger, ledgerSeen: ledger, knownFresh: !resumed })
+      const { ttl, ttlPinned, ttlRead, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen } = s
+      Object.assign(s, INITIAL, { ttl, ttlPinned, ttlRead, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen, costBase: ledger, ledgerSeen: ledger, knownFresh: !resumed })
     },
     view: ({ now, ledger, contextTokens, autoCompactOff }) => {
       noteLedger(s, ledger)
