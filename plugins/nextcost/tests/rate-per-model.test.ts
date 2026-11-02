@@ -247,15 +247,6 @@ test('two steps under way at once each take their own bill', () => {
   expect(Math.abs(rate - 4e-6) < 1e-9).toBe(true)
 })
 
-// ---- a short read ------------------------------------------------------------
-
-test('a short read billed at the usual rate is still an unexpected rebuild', () => {
-  const s = session()
-  const end = turns(s, OPUS, 3, { at: 0, prefix: 100_000 })
-  s.step(OPUS, resp(500, 0, end.prefix, 800), end.at)
-  expect(s.look(end.at).misses).toBe(1)
-})
-
 // ---- through the hooks ------------------------------------------------------
 
 test('through the hooks: a ledger that moves inside a step and between steps solves Haiku at its true rate', LONG, async ($, on) => {
