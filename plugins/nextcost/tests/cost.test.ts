@@ -48,7 +48,7 @@ test("no cost ledger hides last turn's cost", async ($, on) => {
   await $.turn.complete(TURN_DONE)
 
   const ui = await mountBand($, 'terminal', 110)
-  // The card covers its chip, so it carries the figure first.
+  // On a text surface the card covers its chip, so it carries the figure first.
   expect(cardText(hoverCardOf(await ui.drawn(), 'cost'))).toMatch(/^\$\d+\.\d\d so far this session$/)
   await ui.unmount()
 })
