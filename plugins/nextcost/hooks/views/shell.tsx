@@ -8,7 +8,7 @@ import type { RenderChildren, RenderElement } from 'claude-code'
 import type { SplitPart } from '../charts'
 import type { Icon } from '../icons'
 import type { Kit } from '../kit'
-import { CARD_TEXT, DESKTOP, cellsOf } from '../layout'
+import { CARD_TEXT, DESKTOP, cellsOf, longestThatFits } from '../layout'
 import type { LimitKey, Tone } from '../facts'
 import type { Readings } from '../reading'
 import type { Palette } from '../palette'
@@ -143,7 +143,14 @@ export const clippedNote = (kit: Kit, key: string, text: string): RenderElement 
  *  value that says what it covers where its row has room, so a row never
  *  wraps for it. */
 export const fitForm = (kit: Kit, forms: readonly string[], room: number): string =>
-  forms.find(form => cellsOf(form, kit.measure) <= room) ?? forms.at(-1) ?? ''
+  longestThatFits(forms, form => cellsOf(form, kit.measure) <= room)
+
+/** The room a fact's value has in `inner` columns beside its label, two columns apart. */
+export const factRoom = (kit: Kit, label: string, inner: number): number => inner - cellsOf(label, kit.measure) - 2
+
+/** The cache's re-warm estimate as a fact, saying as much of what it covers as `inner` columns hold. */
+export const estimateRow = (kit: Kit, cache: Readings['cache'], inner: number): RenderElement =>
+  factRow(kit, cache.estimateLabel, fitForm(kit, cache.estimateForms, factRoom(kit, cache.estimateLabel, inner)))
 
 /** A headline: bold on its figure alone, its words in label ink, or
  *  amber's; amber words make the figure amber too. */

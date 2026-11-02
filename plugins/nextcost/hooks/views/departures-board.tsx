@@ -12,7 +12,7 @@
 import type { RenderElement } from 'claude-code'
 import { boardBudget, boardLineHeight, boardRule, flapCells, flapColumns, type FlapColumn } from '../flaps'
 import type { Kit } from '../kit'
-import { boardCells, clipToTiles, textCells } from '../layout'
+import { boardCells, clipToTiles, longestThatFits, textCells } from '../layout'
 import type { Readings } from '../reading'
 import type { BandActions } from '../snapshot'
 import type { Palette } from '../palette'
@@ -100,7 +100,7 @@ const remarkOf = (row: BoardRow, cols: Columns, plan: Plan): string => {
   if (cols.remarks === 0) return ''
   const forms = plan.woken !== true ? undefined : plan.remarks ? row.woken : row.woken?.slice(-1)
   if (forms === undefined) return plan.remarks ? clipToTiles(row.remarks, cols.remarks) : ''
-  return clipToTiles(forms.find(form => textCells(form) <= cols.remarks) ?? forms.at(-1) ?? '', cols.remarks)
+  return clipToTiles(longestThatFits(forms, form => textCells(form) <= cols.remarks), cols.remarks)
 }
 
 /** The plan's height in the board's units, a rule under each line but the

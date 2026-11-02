@@ -6,13 +6,13 @@ import { meter, splitBar } from '../charts'
 import type { SplitPart } from '../charts'
 import type { Tone } from '../facts'
 import type { Kit } from '../kit'
-import { cellsOf, textCells } from '../layout'
+import { textCells } from '../layout'
 import type { BarSize } from '../layout'
 import type { LimitReading, Readings } from '../reading'
 import type { BandActions } from '../snapshot'
 import { SINCE_LOADED, SPLIT_LABELS, type Say } from '../words'
 import { bodyRowsFor, footer, topStrip } from './frame'
-import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, clippedNote, factRow, fitForm, headWithTails, headline, limitAccent, linesOf } from './shell'
+import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, clippedNote, estimateRow, factRow, headWithTails, headline, limitAccent, linesOf } from './shell'
 import type { CardName } from './shell'
 
 const SPLIT_ALT = `token split: ${SPLIT_LABELS.join(', ')}`
@@ -122,7 +122,7 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
     cache.known ? meter(kit, { label: 'cache', frac: cache.charge, tone: cache.tone, accent: kit.palette.warm, size: fit.bar, stretch: true, reads: 'left' }) : null,
     [
       cache.cardNote === undefined ? null : wrappedNote(kit, cache.cardNote),
-      cache.known ? factRow(kit, cache.estimateLabel, fitForm(kit, cache.estimateForms, fit.inner - cellsOf(cache.estimateLabel, kit.measure) - 2)) : null,
+      cache.known ? estimateRow(kit, cache, fit.inner) : null,
       assumed ? expires : null,
       cache.woken === undefined ? null : factRow(kit, cache.woken.row.label, cache.woken.row.value),
       knownRow(kit, 'idle for', cache.idleText),

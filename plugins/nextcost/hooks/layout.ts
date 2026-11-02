@@ -147,6 +147,10 @@ export const cellsOf = (n: RenderChildren, m: Measure): number => {
   }
 }
 
+/** The first of `forms`, longest first, that `fits`, else the last: a row's
+ *  value or remark says all it has room for, and never leaves itself out. */
+export const longestThatFits = (forms: readonly string[], fits: (form: string) => boolean): string => forms.find(fits) ?? forms.at(-1) ?? ''
+
 /** The columns a piece takes in its row: from its first, up to its end. */
 export type Span = readonly [start: number, end: number]
 

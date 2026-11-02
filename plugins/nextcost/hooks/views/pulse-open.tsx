@@ -18,7 +18,7 @@ import type { BandActions } from '../snapshot'
 import { EMPTY, limitsHead, markedHead, type Say } from '../words'
 import { bodyRowsFor, footer } from './frame'
 import { beatsChart, chartsDraw, weekCells, windowTrail } from './pulse-charts'
-import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, clippedNote, factRow, fitForm, headHolds, headWithTails, headline, linesOf } from './shell'
+import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, clippedNote, estimateRow, factRoom, factRow, fitForm, headHolds, headWithTails, headline, linesOf } from './shell'
 import type { CardLine, CardName } from './shell'
 
 const DOT = ' · '
@@ -49,20 +49,8 @@ const DAY_CELL_PX = 32
 /** The columns between Limits' two halves. */
 const HALF_GAP = 2
 
-/** The phrases joined by DOT, as many as fit `room` from the first; the
- *  first always, which the surface cuts if it must. */
-const fitWords = (kit: Kit, phrases: readonly string[], room: number): string => {
-  let words = phrases[0] ?? ''
-  for (const p of phrases.slice(1)) {
-    const longer = `${words}${DOT}${p}`
-    if (cellsOf(longer, kit.measure) > room) break
-    words = longer
-  }
-  return words
-}
-
 /** Whether a fact's label and value fit `room` side by side, two columns apart. */
-const factFits = (kit: Kit, label: string, value: string, room: number): boolean => cellsOf(label, kit.measure) + 2 + cellsOf(value, kit.measure) <= room
+const factFits = (kit: Kit, label: string, value: string, room: number): boolean => cellsOf(value, kit.measure) <= factRoom(kit, label, room)
 
 /** Everything the plan and the cards read, worked out once a draw. */
 type Facts = Readonly<{
@@ -213,10 +201,6 @@ const plot = (kit: Kit, chart: RenderChildren): RenderChildren => {
   return chart === null || Svg ? chart : <Box key="plot" overflow="hidden">{chart}</Box>
 }
 
-/** A fact, its value's phrases as many as fit beside its label. */
-const fact = (kit: Kit, at: CardAt, label: string, values: readonly string[]): RenderElement =>
-  factRow(kit, label, fitWords(kit, values, at.inner - cellsOf(label, kit.measure) - 2))
-
 /** What fills a card's height past its chart, so its fact sits on the line's last row. */
 const fill = (kit: Kit): RenderElement => {
   const { Box } = kit
@@ -234,7 +218,7 @@ const cacheCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
   // warming, its hour isn't known: no track, and its note says when it will be.
   const ink = onTone(cache.tone, cache.mood === 'warm' ? palette.warm : palette.label)
   const chart = at.size === undefined || !at.f.charted.cache ? null : track(kit, { key: 'chart', alt: cache.alt, frac: 1 - cache.charge, color: ink, px: at.px, ...at.size, cells: at.inner })
-  const said = cache.untimed && cache.cardNote !== undefined ? clippedNote(kit, 'fact', cache.cardNote) : factRow(kit, cache.estimateLabel, fitForm(kit, cache.estimateForms, at.inner - cellsOf(cache.estimateLabel, kit.measure) - 2))
+  const said = cache.untimed && cache.cardNote !== undefined ? clippedNote(kit, 'fact', cache.cardNote) : estimateRow(kit, cache, at.inner)
   const head = headWithTails(kit, 'cache', cacheHead(read), [cache.woken?.head], cache.tone, at.inner)
   const woken = at.p.wakeRow === true && cache.woken !== undefined ? factRow(kit, cache.woken.row.label, cache.woken.row.value) : null
   return card(kit, 'cache', head, cache.tone, [plot(kit, chart), fill(kit), woken, said])
@@ -257,13 +241,16 @@ const contextCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
   const { Svg, palette, onTone } = kit
   const { context } = read
   const hist = read.history()
+  const { label, values: phrases } = context.fact
+  // As many of its phrases as fit beside its label, from the first.
+  const forms = phrases.map((_, i) => phrases.slice(0, phrases.length - i).join(DOT))
   // Its trail under the compaction line; fewer than two turns, flat at its
   // level now, which is known. In text two turns to a cell.
   const turns = Svg ? hist.context.length : 2 * at.inner
   const values = hist.context.length > 1 ? hist.context.slice(-turns) : Array.from({ length: Math.max(2, Svg ? 2 : turns) }, () => context.used)
   const chart = at.size === undefined || !at.f.charted.context ? null
     : sparkline(kit, { key: 'chart', alt: hist.contextTrailAlt, values, color: onTone(context.tone, palette.label), px: at.px, ...at.size, headroom: at.headroom, max: context.compactAt ?? context.window, levelFrac: context.compactAt === undefined ? undefined : 1 })
-  return card(kit, 'context', markedHead(context.cardHeadNamed, context.tone), context.tone, [plot(kit, chart), fill(kit), fact(kit, at, context.fact.label, context.fact.values)])
+  return card(kit, 'context', markedHead(context.cardHeadNamed, context.tone), context.tone, [plot(kit, chart), fill(kit), factRow(kit, label, fitForm(kit, forms, factRoom(kit, label, at.inner)))])
 }
 
 /** A window's half of Limits: its chart, `halfPx` wide, then its fact;
