@@ -5,7 +5,7 @@
 import type { CacheFacts } from './cache'
 import type { ContextFacts, Frame, LimitFacts } from './facts'
 import { clamp01, fmtCountdown, fmtTokens, severityMark } from './format'
-import { IDLE_COMPACT_AT, LIMIT_TITLES, MOOD_ALT, UNKNOWN, SINCE_LOADED, compactedWords, compactsIn, countedSinceLoad, goneShort, lifetimeAssumed, paceText, saidJoined, wakeSaid } from './words'
+import { IDLE_COMPACT_AT, LIMIT_TITLES, MOOD_ALT, UNKNOWN, SINCE_LOADED, compactedWords, compactsIn, countedSinceLoad, goneShort, lifetimeAssumed, paceText, saidJoined, wakeOf } from './words'
 import type { SpendWords } from './words'
 
 /** Every word chips' row says about the cache, for one mood: the pill, its
@@ -26,7 +26,7 @@ const cacheCopy = (f: CacheFacts, frame: Frame): CacheCopy => {
   const rewrites = (what: string): string => (f.reWarmUsd === null ? `next message rewrites ${what}` : `${f.estimate} rewrites ${what}`)
   const battery = f.charge <= 0 ? 'cache battery empty' : `cache battery ${Math.round(clamp01(f.charge) * 100)}% left`
   // A turn the user didn't type restarted the countdown: who did, said after.
-  const woken = (hover: string): string => (f.wake === undefined ? hover : `${hover}; ${wakeSaid(f.wake, f.mood)}`)
+  const woken = (hover: string): string => (f.wake === undefined ? hover : `${hover}; ${wakeOf(f.wake, f.mood).said}`)
   // A guessed hour is said right after the countdown, where a cut hover keeps it.
   const assumed = lifetimeAssumed(f)
   const warmHover = woken(

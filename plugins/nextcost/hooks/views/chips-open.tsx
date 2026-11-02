@@ -108,7 +108,7 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
   const assumed = cache.lifetimeAssumed
   const tails = [
     fit.bodyRows <= ahead ? cache.assumedHead : undefined,
-    cache.wakeHead !== undefined && fit.bodyRows <= ahead + (assumed ? 1 : 0) ? cache.wakeHead : undefined,
+    fit.bodyRows <= ahead + (assumed ? 1 : 0) ? cache.woken?.head : undefined,
   ]
   const head = tails.reduce<Say>((say, tail) => {
     const longer = tail === undefined ? undefined : [...say, ...tail]
@@ -127,7 +127,7 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
       cache.cardNote === undefined ? null : wrappedNote(kit, cache.cardNote),
       cache.known ? factRow(kit, cache.estimateLabel, fitForm(kit, cache.estimateForms, fit.inner - cellsOf(cache.estimateLabel, kit.measure) - 2)) : null,
       assumed ? expires : null,
-      cache.wakeRow === undefined ? null : factRow(kit, cache.wakeRow.label, cache.wakeRow.value),
+      cache.woken === undefined ? null : factRow(kit, cache.woken.row.label, cache.woken.row.value),
       knownRow(kit, 'idle for', cache.idleText),
       // The counts below start where the band loaded: said above the first of them, never below.
       cache.sinceLoaded && (cache.rebuildsText ?? cache.savedText ?? cache.hitText) !== undefined ? sinceNote(kit) : null,

@@ -271,7 +271,7 @@ test("at every width and at 13 rows, chips' Cache head says the waker whole or l
 
 test('once gone, the head chips draws says the same: `cold · last turn by`', () => {
   const r = readingsOf(snapOf({ cache: { ...COLD_CACHE, wake: TASK_KEPT } }))
-  expect(r.cache.wakeHead).toEqual([[' · last turn by background task', 'label']])
+  expect(r.cache.woken?.head).toEqual([[' · last turn by background task', 'label']])
   const warm = readingsOf(snapOf({ cache: WARM }))
-  expect(warm.cache.wakeHead).toEqual([[' · by background task', 'label']])
+  expect(warm.cache.woken?.head).toEqual([[' · by background task', 'label']])
 })

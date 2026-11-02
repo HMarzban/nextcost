@@ -56,9 +56,10 @@ const boardEta = (ms: number): string => (etaMinutes(ms) < 60 ? `~${etaMinutes(m
 /** REMARKS after a turn the user didn't type, widest first: what it did and
  *  every remark; who and the `price` alone; what it did; who. */
 const wokenForms = (c: CacheWords, remarks: string, price: string): Pick<BoardRow, 'woken'> => {
-  if (c.wakeRow === undefined || c.wakeShort === undefined) return {}
-  const long = `${c.wakeRow.label} ${c.wakeRow.value}`
-  return { woken: [saidJoined([long, remarks], ' · '), saidJoined([c.wakeShort, price], ' · '), long, c.wakeShort] }
+  if (c.woken === undefined) return {}
+  const { row, short } = c.woken
+  const long = `${row.label} ${row.value}`
+  return { woken: [saidJoined([long, remarks], ' · '), saidJoined([short, price], ' · '), long, short] }
 }
 
 const cacheBoard = (r: BoardFacts): BoardRow => {

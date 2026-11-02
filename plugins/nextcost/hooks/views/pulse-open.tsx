@@ -167,8 +167,8 @@ const planFor = (kit: Kit, f: Facts, body: number): Plan | undefined => {
  *  typed the turn. */
 const wokenHead = (kit: Kit, read: Readings, inner: number): Say | undefined => {
   const { cache } = read
-  if (cache.wakeHead === undefined) return undefined
-  const woken = [...markedHead(cache.cardHead, cache.tone), ...cache.wakeHead]
+  if (cache.woken === undefined) return undefined
+  const woken = [...markedHead(cache.cardHead, cache.tone), ...cache.woken.head]
   return headHolds(kit, 'cache', woken, cache.tone, inner) ? woken : undefined
 }
 
@@ -176,7 +176,7 @@ const wokenHead = (kit: Kit, read: Readings, inner: number): Say | undefined => 
  *  and where it can't, a row of its own only if `body` has one to spare. */
 const withWake = (kit: Kit, read: Readings, f: Facts, p: Plan, body: number): Plan => {
   const line = planLines(kit, f, p).lines.find(cards => cards.includes('cache'))
-  if (line === undefined || read.cache.wakeRow === undefined || wokenHead(kit, read, cardLine(kit, line.length).inner) !== undefined) return p
+  if (line === undefined || read.cache.woken === undefined || wokenHead(kit, read, cardLine(kit, line.length).inner) !== undefined) return p
   const roomy = { ...p, wakeRow: true }
   return planLines(kit, f, roomy).rows <= body ? roomy : p
 }
@@ -246,7 +246,7 @@ const cacheCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
   const chart = at.size === undefined || !at.f.charted.cache ? null : track(kit, { key: 'chart', alt: cache.alt, frac: 1 - cache.charge, color: ink, px: at.px, ...at.size, cells: at.inner })
   const said = cache.untimed && cache.cardNote !== undefined ? clippedNote(kit, 'fact', cache.cardNote) : factRow(kit, cache.estimateLabel, fitForm(kit, cache.estimateForms, at.inner - cellsOf(cache.estimateLabel, kit.measure) - 2))
   const head = wokenHead(kit, read, at.inner) ?? markedHead(cache.cardHead, cache.tone)
-  const woken = at.p.wakeRow === true && cache.wakeRow !== undefined ? factRow(kit, cache.wakeRow.label, cache.wakeRow.value) : null
+  const woken = at.p.wakeRow === true && cache.woken !== undefined ? factRow(kit, cache.woken.row.label, cache.woken.row.value) : null
   return card(kit, 'cache', head, cache.tone, [plot(kit, chart), fill(kit), woken, said])
 }
 

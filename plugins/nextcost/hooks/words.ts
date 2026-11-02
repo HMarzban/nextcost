@@ -160,6 +160,23 @@ type Fact = Readonly<{ label: string; value: string }>
 
 // ---- the words of each section, from its facts ------------------------------
 
+/** A turn the user didn't type, in each room that says it. */
+type Woken = Readonly<{
+  /** A card's row: `re-warmed by` `background task`, or within the TTL `kept
+   *  warm by` `message`; once the cache has gone again, `last turn by`. */
+  row: Fact
+  /** Who alone, in the fewest words that stay true: `by background task`;
+   *  once the cache has gone, `last turn by background task`, since a bare
+   *  `by` beside `cold` would blame it for the cold. */
+  short: string
+  /** The same, after a card's headline where the row has no room: ` · by
+   *  background task`. */
+  head: Say
+  /** As a hover says it: `a background task re-warmed it`, `a message kept it
+   *  warm`; the cache gone since, `last turn by a background task`. */
+  said: string
+}>
+
 export type CacheWords = Readonly<{
   /** The cache's mood for a reader, unchanged as it counts down: the heartbeat's alt. */
   heartAlt: string
@@ -183,17 +200,8 @@ export type CacheWords = Readonly<{
   rebuildsText: string | undefined
   /** How long a recalled cache sat idle, `2h 05m`; undefined unless recalled. */
   idleText: string | undefined
-  /** Who started the last turn, when the user didn't: `re-warmed by
-   *  background task`, or within the TTL `kept warm by message`;
-   *  once the cache has gone again, `last turn by background task`. */
-  wakeRow: Fact | undefined
-  /** Who alone, in the fewest words that stay true: `by background task`;
-   *  once the cache has gone, `last turn by background task`, since a bare
-   *  `by` beside `cold` would blame it for the cold. */
-  wakeShort: string | undefined
-  /** The same, after the card's headline where the row has no room: ` · by
-   *  background task`. */
-  wakeHead: Say | undefined
+  /** Who started the last turn, when the user didn't. */
+  woken: Woken | undefined
   /** The cache card's headline: its countdown, `59m left`, else its mood. */
   cardHead: Say
   /** The cache card's line while there is nothing to count. */
@@ -412,24 +420,19 @@ const WAKER_WORDS: Readonly<Record<Waker, Readonly<{ noun: string; subject: stri
 /** Whether the cache has gone since: what the last turn did no longer holds. */
 const goneMoods: ReadonlySet<CacheFacts['mood']> = new Set(['cold', 'compacted', 'uncached', 'switched'])
 
-/** A turn the user didn't type, as a hover says it: `a background task
- *  re-warmed it`, `a message kept it warm`; the cache gone since,
- *  `last turn by a background task`. */
-export const wakeSaid = (wake: Wake, mood: CacheFacts['mood']): string => {
-  const { subject } = WAKER_WORDS[wake.by]
-  return goneMoods.has(mood) ? `last turn by ${subject}` : `${subject} ${wake.reWarm ? 're-warmed it' : 'kept it warm'}`
+/** A turn the user didn't type, in words: what it did, while that still
+ *  holds, and who started it. */
+export const wakeOf = (wake: Wake, mood: CacheFacts['mood']): Woken => {
+  const gone = goneMoods.has(mood)
+  const { noun, subject } = WAKER_WORDS[wake.by]
+  const short = `${gone ? 'last turn by' : 'by'} ${noun}`
+  return {
+    row: { label: gone ? 'last turn by' : wake.reWarm ? 're-warmed by' : 'kept warm by', value: noun },
+    short,
+    head: [[` · ${short}`, 'label']],
+    said: gone ? `last turn by ${subject}` : `${subject} ${wake.reWarm ? 're-warmed it' : 'kept it warm'}`,
+  }
 }
-
-/** The Cache card's row for a turn the user didn't type: what it did, while
- *  that still holds, and who started it. */
-const wakeRowOf = (wake: Wake, mood: CacheFacts['mood']): Fact => ({
-  label: goneMoods.has(mood) ? 'last turn by' : wake.reWarm ? 're-warmed by' : 'kept warm by',
-  value: WAKER_WORDS[wake.by].noun,
-})
-
-/** Who started a turn the user didn't type, in the fewest words that stay true. */
-const wakeShortOf = (wake: Wake, mood: CacheFacts['mood']): string =>
-  `${goneMoods.has(mood) ? 'last turn by' : 'by'} ${WAKER_WORDS[wake.by].noun}`
 
 /** The cache in words, from its facts: its mood's, and the measures every
  *  mood says alike. It counts down only while `coldInMs` is set. */
@@ -442,7 +445,6 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
   // Spoken, a price is never marked ~: the alt says "about".
   const price = f.reWarmUsd !== null ? fmtSmallCost(f.reWarmUsd) : `${fmtTokens(f.window)} tokens`
   const m = moodWords(f, left, leftShort, price)
-  const wakeShort = f.wake === undefined ? undefined : wakeShortOf(f.wake, f.mood)
   return {
     heartAlt: MOOD_ALT[f.mood],
     bandName: 'cache',
@@ -456,9 +458,7 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     assumedHead: lifetimeAssumed(f) ? [[' · assumed', 'label']] : undefined,
     rebuildsText: f.misses > 0 ? String(f.misses) : undefined,
     idleText: f.recalled && f.idleMs !== null ? fmtAgo(f.idleMs) : undefined,
-    wakeRow: f.wake === undefined ? undefined : wakeRowOf(f.wake, f.mood),
-    wakeShort,
-    wakeHead: wakeShort === undefined ? undefined : [[` · ${wakeShort}`, 'label']],
+    woken: f.wake === undefined ? undefined : wakeOf(f.wake, f.mood),
     cardHead: m.cardHead,
     cardNote: m.cardNote,
     estimateLabel: m.estimateLabel,

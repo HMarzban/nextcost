@@ -43,11 +43,11 @@ test('the Cache card calls the saved figure what it is: reads at a discount, not
 
 test("a peer's message is `a message`, never `another session`: the band cannot always tell", () => {
   const kept = readingsOf(snapOf({ cache: cacheWith({ wake: { by: 'session', reWarm: false } }) }))
-  expect(kept.cache.wakeRow).toEqual({ label: 'kept warm by', value: 'message' })
-  expect(kept.cache.wakeShort).toBe('by message')
+  expect(kept.cache.woken?.row).toEqual({ label: 'kept warm by', value: 'message' })
+  expect(kept.cache.woken?.short).toBe('by message')
   expect(kept.chips.cache.hover).toMatch(/; a message kept it warm$/)
   const gone = readingsOf(snapOf({ cache: cacheWith({ leftMs: 0, wake: { by: 'session', reWarm: false } }) }))
-  expect(gone.cache.wakeRow).toEqual({ label: 'last turn by', value: 'message' })
+  expect(gone.cache.woken?.row).toEqual({ label: 'last turn by', value: 'message' })
   expect(gone.chips.cache.hover).toMatch(/; last turn by a message$/)
   expect(gone.board().rows[0]?.woken?.[0]).toMatch(/^LAST TURN BY MESSAGE/)
   const card = shown(cardOf(bandOf({ cache: cacheWith({ wake: { by: 'session', reWarm: false } }), maxRows: 40, expanded: true }), 'cache'))
