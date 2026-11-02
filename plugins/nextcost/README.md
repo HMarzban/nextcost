@@ -368,8 +368,9 @@ It's always shown with `~`.
   `r`: that's no unexpected rebuild, and `r` follows the new speed. It can't
   read it from a session's first reply, and with no step's bill to go by
   (the ledger unread) the change counts as a rebuild and the re-warm lags
-  until the bill catches up. A rate at fast prices isn't remembered for the
-  model's other sessions.
+  until the bill catches up. Once the band has seen a switch to fast mode, a
+  rate at fast prices isn't remembered for the model's other sessions; a
+  session that starts in fast mode shows no switch, so its rate is kept.
 - **After `/clear` or a resume,** the rate is solved from what
   the current conversation has spent, not the session's whole ledger.
 - **Claude Haiku 5.5 has two price tiers.** A request whose prompt (every

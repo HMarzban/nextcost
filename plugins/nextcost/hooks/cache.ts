@@ -398,8 +398,9 @@ const savedUsdOf = (s: CacheState, sessionCost: number | undefined, rate: number
   const priorSaved = rate === null ? 0 : rate * (1 - share) * (s.prior?.tokens.read ?? 0)
   if (sessionCost === undefined || wholeBillSpeaks(s)) return rate === null ? null : rate * (1 - share) * s.tieredReads + priorSaved
   const leftOver = leftOverRate(s, sessionCost)
-  const books = Object.values(s.books).map(book => (toldRate(book) ?? leftOver ?? 0) * (1 - readMultiplier(book.model)) * book.tieredReads)
-  return books.reduce((sum, saved) => sum + saved, priorSaved)
+  const books = Object.values(s.books).map(book => ({ rate: toldRate(book) ?? leftOver, saved: (1 - readMultiplier(book.model)) * book.tieredReads }))
+  if (rate === null && books.every(book => book.rate === null)) return null
+  return books.reduce((sum, book) => sum + (book.rate ?? 0) * book.saved, priorSaved)
 }
 
 /** What writing `tokens` to the cache costs at a base `rate` per token, for
