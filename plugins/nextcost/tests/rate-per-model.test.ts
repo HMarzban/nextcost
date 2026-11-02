@@ -210,6 +210,64 @@ test("what a turn's end reads of the lifetime moves a model's own writes", () =>
   expect(Math.abs(rate - 2e-6) < 1e-9).toBe(true)
 })
 
+// ---- a whole bill over steps on another model -------------------------------
+
+/** A model that has only heard /model name `named`, and no main reply yet. */
+const namedOnly = (named: string): CacheModel => {
+  const c = newCache()
+  c.configured({ ttl: '1h', idleCompactFrom: undefined })
+  c.turnStarted({ priceModel: named, ledger: 0 })
+  return c
+}
+
+test('a subagent-only first step: the whole bill solves with its reads at the read share of the model /model names', () => {
+  const c = namedOnly(OPUS)
+  // 1k input, 200k read and 1k output on Haiku's upper tier, $1 in all.
+  c.responded({ ...resp(1_000, 200_000, 0, 1_000), model: HAIKU }, 0, false, { ledger: 1, ledgerBefore: 0 })
+  const { savedUsd } = c.view({ now: MIN, ledger: 1, contextTokens: 0, autoCompactOff: false }).cache
+  // Weighs 1k + 5% of 200k + 5k at Opus's read share, and four more of Haiku's 26k
+  // for its tier: 120k. Saved: Haiku's reads, 5 × 200k, at Opus's 95% off.
+  expect(near(savedUsd, (1 / 120_000) * 0.95 * 1_000_000, 1e-9)).toBe(true)
+})
+
+test('steps on two models under a third that /model names: the whole bill still speaks, its reads at the third\'s share', () => {
+  const c = namedOnly(OPUS)
+  c.responded({ ...resp(1_000, 200_000, 0, 1_000), model: HAIKU }, 0, false, { ledger: 1, ledgerBefore: 0 })
+  c.responded({ ...resp(1_000, 100_000, 0, 1_000), model: SONNET }, MIN, false, { ledger: 2, ledgerBefore: 1 })
+  const { savedUsd } = c.view({ now: 2 * MIN, ledger: 2, contextTokens: 0, autoCompactOff: false }).cache
+  // 2k + 5% of 300k + 10k = 27k, and Haiku's 104k premium: 131k for $2.
+  expect(near(savedUsd, (2 / 131_000) * 0.95 * 1_100_000, 1e-9)).toBe(true)
+})
+
+test('a step with a tool loop on another model stays off the whole bill, all but what its reads weigh apart', () => {
+  const c = namedOnly(OPUS)
+  c.responded({ ...resp(1_000, 100_000, 0, 1_000), model: SONNET }, 0, false, { ledger: 1, ledgerBefore: 0 })
+  // Two rounds of 100.5k each, Haiku's upper tier, and its $3 off the books.
+  c.responded({ ...resp(1_000, 200_000, 0, 1_000), model: HAIKU }, MIN, false, { ledger: 4, ledgerBefore: 1, serverTools: 1 })
+  const { savedUsd } = c.view({ now: 2 * MIN, ledger: 4, contextTokens: 0, autoCompactOff: false }).cache
+  // Every token at Opus's read share, 27k, and Haiku's 104k premium, less its 130k weight: 1k, for $1.
+  expect(near(savedUsd, (1 / 1_000) * 0.95 * 1_100_000, 1e-9)).toBe(true)
+})
+
+test('after /clear the billed model carries over: subagents on two others solve as one bill at its share', () => {
+  const c = namedOnly(OPUS)
+  c.responded({ ...resp(500, 0, 100_000, 800), model: OPUS }, 0, true, { ledger: 1, ledgerBefore: 0 })
+  c.conversationEnded(1, false)
+  c.turnStarted({ priceModel: OPUS, ledger: 1 })
+  c.responded({ ...resp(1_000, 200_000, 0, 1_000), model: HAIKU }, MIN, false, { ledger: 2, ledgerBefore: 1 })
+  c.responded({ ...resp(1_000, 100_000, 0, 1_000), model: SONNET }, 2 * MIN, false, { ledger: 3, ledgerBefore: 2 })
+  const { savedUsd } = c.view({ now: 3 * MIN, ledger: 3, contextTokens: 0, autoCompactOff: false }).cache
+  expect(near(savedUsd, (2 / 131_000) * 0.95 * 1_100_000, 1e-9)).toBe(true)
+})
+
+test('a step that names no model weighs its reads at the default share, and the whole bill at the model priced', () => {
+  const c = namedOnly(OPUS)
+  c.responded(resp(1_000, 100_000, 0, 1_000), 0, true, { ledger: 1, ledgerBefore: 0 })
+  const rate = c.turnEnded(1).remember?.rate ?? 0
+  // 1k + 5% of 100k + 5k = 11k, for $1.
+  expect(Math.abs(rate - 1 / 11_000) < 1e-12).toBe(true)
+})
+
 // ---- growth outside a step --------------------------------------------------
 
 test("growth between steps, a compaction's request or a fee, stays off a one-model session's rate", () => {
