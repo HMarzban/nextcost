@@ -108,7 +108,7 @@ test('the cache speaks in words', () => {
 })
 test('in its last minute the cache is amber, long and short', () => {
   const c = readingsOf(snapOf({ cache: cacheAt(47_000) })).cache
-  expect(c.alt).toBe('cache 47 seconds left, cooling, re-warm about $1.66')
+  expect(c.alt).toBe('cache 47 seconds left, cooling, re-warm about $1.66, the cache only')
   expect([c.amber?.long, c.amber?.short]).toEqual(['! 47s left · re-warm ~$1.66', '! 47s'])
 })
 test("idle on the hour's cache, the card and chips say when Claude Code may compact it", () => {
@@ -130,7 +130,7 @@ test('working, an expiring cache still counts down', () => {
 test('cold is a price', () => {
   const c = readingsOf(snapOf({ cache: cacheAt(0), zone: fixedZone(0) })).cache
   expect([c.figure, c.figureShort]).toEqual(['cold · re-warm ~$1.66', 'cold ~$1.66'])
-  expect(c.alt).toBe('cache cold, re-warm about $1.66')
+  expect(c.alt).toBe('cache cold, re-warm about $1.66, the cache only')
 })
 test('an hour left is said in full to a reader', () => {
   const c = readingsOf(snapOf({ cache: cacheAt(60 * MIN) })).cache

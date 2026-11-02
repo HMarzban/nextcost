@@ -6,8 +6,9 @@
 import { test, expect } from 'claude-code/testing'
 import { readingsOf } from '../hooks/reading'
 import { PLAIN } from '../hooks/palette'
-import { MIN, byKey, cardOf, fact, shown, wordsOf, type Node } from './helpers'
-import { ASCII_TIER, LAST_MINUTE_CACHE, bandOf, cacheWith, snapOf } from './matrix'
+import { MIN, byKey, cardOf, fact, shown, walk, wordsOf, type Node } from './helpers'
+import { LAST_MINUTE_CACHE, SNAP_PARTS, bandOf, cacheWith, snapOf } from './matrix'
+import type { BandSnapshot } from '../hooks/snapshot'
 
 // ---- the departures board: an amber last call carries its mark ----------------
 
@@ -51,6 +52,89 @@ test("a peer's message is `a message`, never `another session`: the band cannot 
   expect(card).not.toMatch(/another session/)
 })
 
-void byKey
-void ASCII_TIER
-void (null as unknown as Node)
+// ---- a guessed lifetime is never cut --------------------------------------------
+
+/** A cache whose lifetime is the hour assumed, neither pinned nor read. */
+const GUESSED = cacheWith({ ttlPinned: false })
+const WOKEN = { misses: 1, wake: { by: 'task', reWarm: false } } as const
+
+/** The keys of a card's fact rows, in the order drawn. */
+const factKeys = (card: Node | undefined): string[] => {
+  const keys: string[] = []
+  walk(card, n => {
+    const key = n.props?.key
+    if (typeof key === 'string' && key.startsWith('fact:')) keys.push(key)
+  })
+  return keys
+}
+
+test('a guessed hour is marked in the warm hover, in both of its branches and when expiring', () => {
+  expect(readingsOf(snapOf({ cache: GUESSED })).chips.cache.hover).toBe('52m left (1h lifetime assumed); warm cache bills input at 5%, expires 1h after a request')
+  const compact = readingsOf(snapOf({ cache: { ...GUESSED, idleCompacts: true, leftMs: 50 * MIN } })).chips.cache.hover
+  expect(compact).toMatch(/^50m left \(1h lifetime assumed\); may be compacted at ~54m idle/)
+  expect(readingsOf(snapOf({ cache: { ...GUESSED, leftMs: 30_000 } })).chips.cache.hover).toMatch(/^0:30 left \(1h lifetime assumed\); /)
+  // A pin or a read says nothing of a guess; nor does the 5m cache, which is never assumed.
+  expect(readingsOf(snapOf()).chips.cache.hover).not.toMatch(/assumed/)
+  expect(readingsOf(snapOf({ cache: cacheWith({ ttlPinned: false, ttl: '5m' }) })).chips.cache.hover).not.toMatch(/assumed/)
+})
+
+test('a guessed hour is the second fact of the Cache card, above everything droppable; a known one stays last', () => {
+  const rows = (cache: BandSnapshot['cache']) => factKeys(cardOf(bandOf({ columns: 100, maxRows: 40, expanded: true, cache }), 'cache'))
+  expect(rows({ ...GUESSED, ...WOKEN }).slice(0, 2)).toEqual(['fact:re-warm if cold', 'fact:expires'])
+  expect(rows({ ...SNAP_PARTS.cache, ...WOKEN }).at(-1)).toBe('fact:expires')
+})
+
+test('at every height the card draws, a guessed hour is said: as a row, else by the headline', () => {
+  let drawn = 0
+  for (const columns of [40, 60, 100, 133, 200])
+    for (const surface of ['terminal', 'desktop'] as const)
+      for (let maxRows = 6; maxRows <= 30; maxRows++) {
+        const card = cardOf(bandOf({ surface, columns, maxRows, expanded: true, cache: GUESSED }), 'cache')
+        if (card === undefined) continue
+        drawn++
+        const at = `${surface} ${columns}x${maxRows}`
+        expect(`${at} ${/assumed/.test(shown(card))}`).toBe(`${at} true`)
+      }
+  expect(drawn).toBeGreaterThan(50)
+})
+
+// ---- the next message's price says what it covers -----------------------------
+
+test('the hovers say the price is the cache rewrite, and what comes on top', () => {
+  const hover = (cache: BandSnapshot['cache']) => readingsOf(snapOf({ cache })).chips.cache.hover
+  expect(hover(cacheWith({ leftMs: 0 }))).toBe('Cold: next message rewrites 155k tokens to the cache (~$1.66); your message and its reply cost extra')
+  expect(hover({ ...cacheWith({ leftMs: 0 }), reWarmUsd: null })).toBe('Cold: next message rewrites 155k tokens to the cache; your message and its reply cost extra')
+  expect(hover(cacheWith({ leftMs: 0, compacted: true }))).toBe(
+    'Compacted while idle: next message writes the 155k summary to the cache (~$1.66); your message and its reply cost extra',
+  )
+  expect(hover(cacheWith({ leftMs: 30_000 }))).toMatch(/^0:30 left; if it goes cold, ~\$1\.66 rewrites the cache, and your message and its reply cost extra; warm cache bills input at 5%/)
+  // A warm pill shows no price, so its hover names none.
+  expect(hover(cacheWith({}))).not.toMatch(/rewrite|extra/)
+})
+
+test('the estimate row says what it covers where the card has room, and never wraps where it has not', () => {
+  const read = readingsOf(snapOf({ cache: cacheWith({ leftMs: 0 }) }))
+  expect(read.cache.estimateForms).toEqual([
+    '~$1.66 · cache rewrite, not your reply',
+    '~$1.66 · cache rewrite only',
+    '~$1.66 · cache rewrite',
+    '~$1.66 · cache only',
+    '~$1.66',
+  ])
+  const at = (layout: 'chips' | 'pulse', columns: number, label: string) =>
+    fact(byKey(bandOf({ layout, surface: 'terminal', columns, maxRows: 40, expanded: true, cache: cacheWith({ leftMs: 0 }) }), layout === 'chips' ? 'card:cache' : 'pulse:cache', 'Box'), label)
+  for (const layout of ['chips', 'pulse'] as const) {
+    expect(at(layout, 120, 'next message')).toBe('~$1.66 · cache rewrite, not your reply')
+    expect(at(layout, 80, 'next message')).toBe('~$1.66 · cache rewrite')
+    expect(at(layout, 40, 'next message')).toBe('~$1.66 · cache rewrite')
+  }
+})
+
+test("the board's REMARKS say the price is the cache rewrite; its collapsed cell is as short as ever", () => {
+  const cold = readingsOf(snapOf({ cache: cacheWith({ leftMs: 0, coldAt: 0 }) })).board().rows[0]
+  expect(cold?.remarks).toBe('RE-WARM ~$1.66 · CACHE REWRITE, NOT YOUR REPLY')
+  expect(cold?.cell).toBe('DEPARTED · RE-WARM ~$1.66')
+  expect(cold?.cellShort).toBe('RE-WARM ~$1.66')
+  const warm = readingsOf(snapOf({ cache: cacheWith({ coldAt: 52 * MIN }) })).board().rows[0]
+  expect(warm?.remarks).toMatch(/RE-WARM ~\$1\.66 IF MISSED · CACHE REWRITE, NOT YOUR REPLY$/)
+})

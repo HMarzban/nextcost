@@ -87,7 +87,7 @@ test('resumed two days on with a $0 ledger, the cache is cold at the price the e
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold · next message ~\$1\.23/)
   const tree = await mounted($, true)
   expect(fact(tree, 'idle for')).toBe('2d 0h')
-  expect(fact(tree, 'next message')).toBe('~$1.23')
+  expect(fact(tree, 'next message')).toMatch(/^~\$1\.23( · |$)/)
 })
 
 test('resumed ten minutes after its last reply, the cache counts down from that reply', async ($, on) => {

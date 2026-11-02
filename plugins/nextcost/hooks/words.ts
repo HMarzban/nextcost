@@ -35,6 +35,25 @@ export type Role = 'label' | 'value' | 'amber' | 'accent5' | 'accent7'
 export type Say = ReadonlyArray<readonly [string, Role]>
 /** An amber reading's words: long while a calm piece remains to give way, then short. */
 export type Amber = Readonly<{ long: string; short: string }>
+/** Whether the cache's lifetime is a guess: the hour, until a pin, a read of
+ *  the transcript or a reply says it. A 5-minute cache was never guessed. */
+export const lifetimeAssumed = (f: Pick<CacheFacts, 'ttl' | 'ttlPinned'>): boolean => !f.ttlPinned && f.ttl === '1h'
+
+/** What the next message's price leaves out, for a hover: the price is the
+ *  cache's rewrite alone. */
+export const PRICE_EXTRA = 'your message and its reply cost extra'
+
+/** The next message's price with what it covers, longest first, for a row to
+ *  take the longest that fits: the price is the cache rewrite, never the
+ *  message's own input or Claude's reply. */
+export const estimateForms = (estimate: string): readonly string[] => [
+  `${estimate} · cache rewrite, not your reply`,
+  `${estimate} · cache rewrite only`,
+  `${estimate} · cache rewrite`,
+  `${estimate} · cache only`,
+  estimate,
+]
+
 /** A value not known yet: unknown, never 0. */
 export const UNKNOWN = '–'
 
@@ -130,6 +149,11 @@ export type CacheWords = Readonly<{
   hitText: string | undefined
   /** How long it lasts idle: `1h idle`, or `1h idle · assumed` while the hour is a guess. */
   lastsText: string
+  /** The hour is a guess, which no row may drop and the headline says where
+   *  its row can't be drawn. */
+  lifetimeAssumed: boolean
+  /** The same after the card's headline: ` · assumed`. */
+  assumedHead: Say
   /** Unexpected rebuilds, `2`, when there were any. */
   rebuildsText: string | undefined
   /** How long a recalled cache sat idle, `2h 05m`; undefined unless recalled. */
@@ -152,6 +176,8 @@ export type CacheWords = Readonly<{
   /** What a card names the re-warm estimate: `re-warm if cold`, or once
    *  cold, `next message`. */
   estimateLabel: string
+  /** The estimate row's value, with what it covers, longest first. */
+  estimateForms: readonly string[]
   alt: string
   /** Pulse's row tile: its figure after the name, `cache`, the time marked
    *  `~` while it is recalled, not measured: `52m left`, `~40m left`, `cold ·
@@ -292,7 +318,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
         cardHead: [['compacted', 'value']],
         cardNote: 'Compacted while idle: next message writes the summary.',
         estimateLabel: 'next message',
-        alt: altOf('cache', 'compacted while idle', `next message about ${price}`),
+        alt: altOf('cache', 'compacted while idle', `next message about ${price}, the cache only`),
       }
     case 'cold':
       return {
@@ -302,7 +328,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
         cardHead: [['cold', 'value']],
         cardNote: undefined,
         estimateLabel: 'next message',
-        alt: altOf('cache', 'cold', `re-warm about ${price}`),
+        alt: altOf('cache', 'cold', `re-warm about ${price}, the cache only`),
       }
     case 'warm':
     case 'expiring': {
@@ -319,7 +345,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
         estimateLabel: 're-warm if cold',
         alt:
           f.coldInMs !== undefined
-            ? altOf('cache', fmtLeftSpoken(f.coldInMs), expiring ? 'cooling' : 'warm', expiring ? `re-warm about ${price}` : undefined)
+            ? altOf('cache', fmtLeftSpoken(f.coldInMs), expiring ? 'cooling' : 'warm', expiring ? `re-warm about ${price}, the cache only` : undefined)
             : altOf('cache', 'warm', 'Claude is working'),
       }
     }
@@ -378,7 +404,9 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     savedText: f.measured && f.savedUsd !== null ? fmtEstimate(f.savedUsd) : undefined,
     hitText: f.hitFrac === undefined ? undefined : fmtPct(f.hitFrac),
     // Unpinned, an hour is assumed until a pin or the transcript says it.
-    lastsText: `${f.ttl} idle${!f.ttlPinned && f.ttl === '1h' ? ' · assumed' : ''}`,
+    lastsText: `${f.ttl} idle${lifetimeAssumed(f) ? ' · assumed' : ''}`,
+    lifetimeAssumed: lifetimeAssumed(f),
+    assumedHead: [[' · assumed', 'label']],
     rebuildsText: f.misses > 0 ? String(f.misses) : undefined,
     idleText: f.recalled && f.idleMs !== null ? fmtAgo(f.idleMs) : undefined,
     wakeRow: f.wake === undefined ? undefined : wakeRowOf(f.wake, f.mood),
@@ -387,6 +415,7 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     cardHead: m.cardHead,
     cardNote: m.cardNote,
     estimateLabel: m.estimateLabel,
+    estimateForms: estimateForms(f.estimate),
     alt: m.alt,
     // The time marked ~ while it is recalled.
     figure: recalledTime ? `~${left}` : joined(m.figure),

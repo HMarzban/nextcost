@@ -151,6 +151,12 @@ export const factRow = (kit: Kit, label: string, value: string | Say, swatch?: S
   )
 }
 
+/** The longest of `forms` that fits `room` columns, else the shortest: a
+ *  value that says what it covers where its row has room, so a row never
+ *  wraps for it. */
+export const fitForm = (kit: Kit, forms: readonly string[], room: number): string =>
+  forms.find(form => cellsOf(form, kit.measure) <= room) ?? forms.at(-1) ?? ''
+
 /** A headline: bold on its figure alone, its words in label ink, or
  *  amber's; amber words make the figure amber too. */
 export const headline = (kit: Kit, say: Say, tone: Tone): RenderElement => {

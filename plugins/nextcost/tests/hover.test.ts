@@ -205,7 +205,7 @@ test('a cold cache explains what the next message rebuilds', LONG, async ($, on)
   await clock.advance(61 * 60_000)
   const ui = await mountBand($, 'terminal', 110)
   const cache = cards(await ui.drawn()).find(([key]) => key === 'cache')
-  expect(cardText(cache?.[1])).toMatch(/^Cold: next message rebuilds 112k tokens \(~\$\d+\.\d\d\)$/)
+  expect(cardText(cache?.[1])).toMatch(/^Cold: next message rewrites 112k tokens to the cache \(~\$\d+\.\d\d\); your message and its reply cost extra$/)
   await ui.unmount()
 })
 

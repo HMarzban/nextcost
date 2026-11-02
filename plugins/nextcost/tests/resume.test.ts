@@ -51,7 +51,7 @@ test('reopened two days later, the cache is cold and the next message has a pric
   const tree = await mounted($, true)
   expect(shown(cardOf(tree, 'cache'))).toMatch(/^CACHEcold/)
   expect(fact(tree, 'idle for')).toBe('2d 0h')
-  expect(fact(tree, 'next message')).toBe('~$1.52')
+  expect(fact(tree, 'next message')).toMatch(/^~\$1\.52( · |$)/)
 })
 
 test('with no rate known for the model yet, it names the tokens instead of guessing a price', async ($, on) => {
