@@ -30,7 +30,7 @@ test('a calm last call names its clock; the last minute is amber seconds', () =>
   const calm = row({ cache: cacheAt({ requests: 1, ttl: '1h', leftMs: 5 * MIN, coldAt: 5 * MIN }) }, 'cache')
   expect([calm?.cell, calm?.tone]).toEqual(['LAST CALL 00:05', 'calm'])
   const amber = row({ cache: cacheAt({ requests: 1, leftMs: 47_000, coldAt: 47_000 }) }, 'cache')
-  expect([amber?.cell, amber?.cellShort, amber?.tone]).toEqual(['LAST CALL 47S', '! 47S', 'amber'])
+  expect([amber?.cell, amber?.cellShort, amber?.tone]).toEqual(['! LAST CALL 47S', '! 47S', 'amber'])
 })
 test('cold has departed: at its time when known, without it when not', () => {
   expect(row({ now: HOUR, cache: cacheAt({ requests: 1, leftMs: 0, coldAt: 10 * MIN }) }, 'cache')?.cell).toMatch(/^DEPARTED 00:10 · RE-WARM ~\$/)
@@ -130,7 +130,7 @@ test('an unknown zone: no clock anywhere on the board, and no empty time', () =>
 })
 test('a calm context row\'s remarks name the room and where compaction falls', () => {
   const calm = row({ context: { ...snapOf().context, tokens: 76_000, window: 200_000, compactAt: 190_000 } }, 'context')
-  expect(calm?.remarks).toMatch(/^~?\d+K LEFT · COMPACTS AT 190K$/)
+  expect(calm?.remarks).toMatch(/^TOWARD COMPACTION AT 190K · ~?\d+K LEFT$/)
 })
 test("an amber limit's short form keeps its mark: ! and its value; a calm one its value alone", () => {
   expect(row({ fiveHour: limit(82, 3) }, '5h')?.cellShort).toBe('! 82%')

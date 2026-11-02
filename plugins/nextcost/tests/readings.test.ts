@@ -149,7 +149,7 @@ test('the cache facts carry its mood, tone, charge and price', () => {
 test("chips' words say its hover cards and the context's amount", () => {
   const c = readingsOf(snapOf({ history: { costs: [{ usd: 0.21, reWarm: false }], context: [] } })).chips
   expect([c.costHover, c.tokensHover]).toEqual(['$0.21 spent during your last message, subagents included', 'input 18k · output 9.0k · cache reads 198k'])
-  expect([c.contextPill(true), c.contextPill(false), c.contextHover]).toEqual(['40% full', '40%', '76k of 190k (40%); auto-compacts in ~114k'])
+  expect([c.contextPill(true), c.contextPill(false), c.contextHover]).toEqual(['40% full', '40%', '76k of 190k (40%) toward compaction; window 200k; compacts in ~114k'])
   expect(c.limitHover).toEqual({
     '5h': 'Resets in 3h 00m; 5-hour limit, all your Claude use; as of your last reply',
     '7d': 'Resets in 2d 19h; weekly limit, all your Claude use; as of your last reply',
@@ -176,7 +176,7 @@ test('the cache speaks in words', () => {
 })
 test('in its last minute the cache is amber, long and short', () => {
   const c = readingsOf(snapOf({ cache: cacheAt(47_000) })).cache
-  expect(c.alt).toBe('cache 47 seconds left, cooling, re-warm about $1.66')
+  expect(c.alt).toBe('cache 47 seconds left, cooling, re-warm about $1.66, the cache only')
   expect([c.amber?.long, c.amber?.short]).toEqual(['! 47s left · re-warm ~$1.66', '! 47s'])
 })
 test("idle on the hour's cache, the card and chips say when Claude Code may compact it", () => {
@@ -198,7 +198,7 @@ test('working, an expiring cache still counts down', () => {
 test('cold is a price', () => {
   const c = readingsOf(snapOf({ cache: cacheAt(0), zone: fixedZone(0) })).cache
   expect([c.figure, c.figureShort]).toEqual(['cold · re-warm ~$1.66', 'cold ~$1.66'])
-  expect(c.alt).toBe('cache cold, re-warm about $1.66')
+  expect(c.alt).toBe('cache cold, re-warm about $1.66, the cache only')
 })
 test('an hour left is said in full to a reader', () => {
   const c = readingsOf(snapOf({ cache: cacheAt(60 * MIN) })).cache

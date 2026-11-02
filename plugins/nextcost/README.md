@@ -71,7 +71,7 @@ This section describes chips, the default layout; the others are under
 | Context | How full the conversation is toward auto-compaction (`63% full`), or of the model window when compaction is off | Near compaction: `95% full · compacts in ~8k`. Without auto-compaction: 80% (`!`), 95% (`!!`) |
 | 5h | Your 5-hour limit: usage on a bar, and the reset | 80%, or when your pace would fill it before it resets: `full in ~40m` |
 | 7d | Your weekly limit, the same way | 80% |
-| Tokens | Every token this conversation used | Never |
+| Tokens | Every token this conversation used, or in a conversation already under way when the band loaded, every token since it loaded; its hover says `since the band loaded`, as do the Spend and Cache cards over the counts that start there | Never |
 
 A bar carries one number, the one beside it. Pace is in words, on the
 chip when it matters and in the Limits card always.
@@ -116,7 +116,7 @@ Then come four cards with every fact labelled:
 
 | Card | Shows |
 | --- | --- |
-| Cache | Time left on a bar, what a re-warm would cost if it went cold, who restarted it when you didn't, what the cache has saved, the hit rate, how long it lasts idle, unexpected rebuilds |
+| Cache | Time left on a bar, what a re-warm would cost if it went cold, who restarted it when you didn't, what its reads saved against full input price (before what writing the cache cost), the hit rate, how long it lasts idle, unexpected rebuilds |
 | Spend | The session total, a bar of the token split with its legend (input, output, cache reads), your last message |
 | Context | How full toward auto-compaction, tokens in context, where compaction runs, room left, the model window |
 | Limits | The window closest to its limit, led by its reset and pace where the row doesn't say them, `resets Sat 13:30 · full at avg pace` (a countdown in departures); then each window (5h, 7d, a gateway's spend limit) with its bar and value, and each of the others named on a line of its own with its reset and pace in words: `5h resets 3h 00m · ~10% at avg pace` |
@@ -158,7 +158,7 @@ own. All three draw one row collapsed, end it with the same `▵`, and open
 with the same `Collapse` and `Hide band` buttons.
 Every layout turns amber at the same moments, by the same rules.
 Departures' board also says `LAST CALL`, calm, ten minutes before an
-hour's cache goes cold; only its last minute is amber. Pulse and
+hour's cache goes cold; only its last minute is amber, and it says `! LAST CALL`, so plain, which has no hue, tells them apart. Pulse and
 departures draw their readings in one order: cache, spend, context, 5h,
 7d. On the desktop, chips explains each pill on hover with its own cards.
 Open, chips puts the workspace line, with its hover cards, above its cards
@@ -219,7 +219,7 @@ characters wide. In a CJK locale (the first of `LC_ALL`, `LC_CTYPE` and
 itself. The terminal setting can't be detected, so set
 `NEXTCOST_GLYPHS=ascii` if you use it, and with a screen reader, which reads
 braille as dots. In ASCII each glyph becomes one character or is dropped
-(`█` is `#`, `▵` is `^`, `◷` goes), a ` · ` between two facts reads `, `,
+(`█` is `#`, `▵` is `^`, `◷` goes), except where dropping it would leave a bare figure: `Σ` is `tok`, `◔` is `ctx`, `↻` is `resets` and the workspace line says `ahead 2 behind 1`, not `+2 -1`; a ` · ` between two facts reads `, `,
 text too long for its room is clipped rather than ended with `…`, and
 braille charts give way to their numbers. A wide character, such as a
 Japanese project's name, stays, and the band counts it two columns. It applies to every layout,
@@ -315,7 +315,7 @@ session's last reply was and what a token costs on its model:
   record's dollars and tokens
 
 Past the cache's lifetime it shows `cache cold · next message ~$2.34`, the
-cost of writing the whole context to the cache again. Within it, the
+cost of writing the whole context to the cache again, not your message and Claude's reply, which cost extra; the hovers and the cards say so. Within it, the
 countdown runs from the last reply. With no price known for the model yet,
 it names the tokens instead. With nothing to recall, it stays at `cache –`.
 
@@ -469,7 +469,7 @@ what was really written, and a subscription moving onto usage credits counts
 down five minutes from that turn on.
 
 Once a read has succeeded, a short read never changes the lifetime. Until
-then, the band assumes an hour and says `· assumed`. If a request after a gap
+then, the band assumes an hour and says `· assumed`: in the Cache card's `expires` row, which then sits right after the price and is never the first row cut, in its headline when the card has no row for it, and in the cache chip's hover. If a request after a gap
 longer than five minutes, on the same model, finds near nothing beyond the
 system prompt other sessions in the same folder keep warm (50k tokens or less),
 it corrects itself to `5m`; reading more than that says only that part of the

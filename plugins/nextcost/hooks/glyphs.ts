@@ -7,6 +7,7 @@
 // is Neutral width and stays in the unicode tier. Unicode
 // EastAsianWidth-18.0.0, checked 2026-10-09.
 
+import type { Icon } from './icons'
 import { isWide } from './layout'
 import type { BandSnapshot, Glyphs } from './snapshot'
 
@@ -36,6 +37,13 @@ export const ASCII_MAP: Readonly<Record<string, string>> = {
   // goes with ▌ so a card's two ends match.
   '▐': ' ', '▌': ' ',
 }
+
+/** What an icon's glyph is said as in the ascii tier, where its mapping above
+ *  would drop it and leave a bare figure: `tok 225k`, `ctx 38%`, and after a
+ *  limit's bar `| resets 3h 00m`, which a bare time beside a fill would not
+ *  read as. A view draws the word itself rather than the glyph, so the squeeze
+ *  measures the width it has; the mappings stay as the fallback. */
+export const ASCII_WORDS: Readonly<Partial<Record<Icon, string>>> = { tokens: 'tok', context: 'ctx', reset: 'resets' }
 
 /** `s` in ASCII and wide characters: a spaced separator a comma, since ` - `
  *  between numbers reads as a minus, and a screen reader says so; then each

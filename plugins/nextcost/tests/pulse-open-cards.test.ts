@@ -52,8 +52,8 @@ test('each card: its title in label ink, its headline from the readings, its fac
   })
   expect(titles).toEqual(['CACHE|label', 'SPEND|label', 'CONTEXT|label', 'LIMITS|label'])
   const heads = CARDS.map(k => shown(byKey(byKey(tree, k, 'Box'), 'head', 'Box')))
-  expect(heads).toEqual(['CACHE52m left', 'SPEND$3.19', 'CONTEXT40% full', 'LIMITS5h 26% · 7d 41%'])
-  expect(shown(cardOf(tree, 'cache'))).toMatch(/re-warm if cold~\$1\.66$/)
+  expect(heads).toEqual(['CACHE52m left', 'SPEND$3.19', 'CONTEXT40% toward compaction', 'LIMITS5h 26% · 7d 41%'])
+  expect(shown(cardOf(tree, 'cache'))).toMatch(/re-warm if cold~\$1\.66 · cache rewrite only$/)
   expect(shown(cardOf(tree, 'spend'))).toMatch(/last message · avg\$0\.21 · ~\$0\.20$/)
   expect(shown(cardOf(tree, 'context'))).toMatch(/in context76k of 200k · compacts at 190k$/)
   expect(shown(cardOf(tree, 'limits'))).toMatch(/5h resets03:00[\s\S]*7d resetsSat 19:00/)
@@ -113,7 +113,7 @@ test("the cache's track is inked by its mood: warm green while warm, amber in it
   // Unknown, its note says when it will be.
   expect(shown(cardOf(open({ surface: 'terminal', cache: moods[4]![1] }), 'cache'))).toContain('First message builds the cache.')
   // Cold, the estimate is the next message's.
-  expect(shown(cardOf(open({ surface: 'terminal', cache: moods[2]![1] }), 'cache'))).toMatch(/next message~\$1\.66$/)
+  expect(shown(cardOf(open({ surface: 'terminal', cache: moods[2]![1] }), 'cache'))).toMatch(/next message~\$1\.66 · cache rewrite only$/)
 })
 
 test('short of rows, the charts step down, two rows, then one, then none, before any card gives way', () => {
@@ -198,7 +198,7 @@ test('more amber than the body holds: the amber cards give way in pulse\'s order
 test("an amber card says so in words: its headline led by '! '", () => {
   const tree = open({ surface: 'terminal', cache: LAST_MINUTE_CACHE, context: NEAR_COMPACTION, ...AMBER_WEEK_LIMITS })
   expect(shown(byKey(cardOf(tree, 'cache'), 'head', 'Box'))).toMatch(/^CACHE! 0:30 left$/)
-  expect(shown(byKey(cardOf(tree, 'context'), 'head', 'Box'))).toMatch(/^CONTEXT! 95% full$/)
+  expect(shown(byKey(cardOf(tree, 'context'), 'head', 'Box'))).toMatch(/^CONTEXT! 95% toward compaction$/)
   expect(shown(byKey(cardOf(tree, 'limits'), 'head', 'Box'))).toMatch(/^LIMITS! 5h 26% · 7d 85%$/)
   expect(shown(cardOf(tree, 'context'))).toMatch(/compacts in ~10k$/)
 })

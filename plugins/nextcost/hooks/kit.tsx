@@ -4,7 +4,7 @@
 
 import type { ElementTable, RenderChildren, RenderElement, TextProps } from 'claude-code'
 import type { Tone } from './facts'
-import { asciiText, asciiTree, drawnTier } from './glyphs'
+import { ASCII_WORDS, asciiText, asciiTree, drawnTier } from './glyphs'
 import { ALT, GLYPH, ICON_PATHS, ICON_PX } from './icons'
 import type { Icon } from './icons'
 import { DESKTOP, TERMINAL, clipWords, textCells } from './layout'
@@ -166,13 +166,16 @@ export const makeKit = (el: ElementTable, snap: BandSnapshot) => {
     return stretch ? <Svg key={key} source={source} alt={alt} height={height} /> : <Svg key={key} source={source} alt={alt} width={width} height={height} />
   }
 
+  /** What stands for an icon in text: its glyph, or in the ascii tier its word. */
+  const mark = (name: Icon): string => (glyphs === 'ascii' ? ASCII_WORDS[name] : undefined) ?? GLYPH[name]
+
   /** An icon and the gap after it: an Svg on desktop, a glyph elsewhere. */
   const icon = (name: Icon, color: string, alt: string = ALT[name]): RenderChildren[] => {
     if (Svg) return [svg({ key: `i-${name}`, alt, width: ICON_PX, height: ICON_PX }, ICON_PATHS[name](color)), gap(`g-${name}`)]
-    return GLYPH[name] ? [<Text key={`i-${name}`} color={color}>{`${GLYPH[name]} `}</Text>] : []
+    return mark(name) ? [<Text key={`i-${name}`} color={color}>{`${mark(name)} `}</Text>] : []
   }
 
-  return { Box, Button, Text, Svg, palette, measure, columns: snap.columns, glyphs, asDrawn, onTone, oneLine, hoverable, liftedCard, hoverCard, gap, air, svg, icon }
+  return { Box, Button, Text, Svg, palette, measure, columns: snap.columns, glyphs, asDrawn, onTone, oneLine, hoverable, liftedCard, hoverCard, gap, air, svg, icon, mark }
 }
 
 export type Kit = ReturnType<typeof makeKit>

@@ -47,6 +47,6 @@ test("on Haiku 5.5, what the cache saved is priced at each read's tier", LONG, a
   // At the lower tier it would say ~$0.01.
   const ui = await mountBand($, 'terminal', 160)
   await ui.press({ key: 'more' })
-  expect(fact(await ui.drawn(), 'saved by cache')).toBe('~$0.07')
+  expect(fact(await ui.drawn(), 'saved on cache reads')).toBe('~$0.07')
   await ui.unmount()
 })

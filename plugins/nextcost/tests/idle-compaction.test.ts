@@ -94,7 +94,7 @@ test('compacted while idle, the cache reads compacted at the summary, calm, unti
   const ui = await mountBand($, 'terminal', 160)
   const tree = await ui.drawn()
   expect(textOf(tree)).toContain('cache compacted · next')
-  expect(cardText(hoverCardOf(tree, 'cache'))).toMatch(/^Compacted while idle: next message writes the 20k summary \(/)
+  expect(cardText(hoverCardOf(tree, 'cache'))).toMatch(/^Compacted while idle: ~\$[\d.]+ rewrites the 20k summary, plus your reply$/)
   await ui.unmount()
 
   // The countdown is over: no amber in what was the cache's last minute.

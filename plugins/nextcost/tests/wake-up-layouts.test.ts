@@ -25,7 +25,7 @@ const turnFrom = async ($: Engine, id: string, origin: PromptOrigin, u: ModelUsa
 const NOUNS: ReadonlyArray<readonly [Waker, string]> = [
   ['task', 'background task'],
   ['schedule', 'schedule'],
-  ['session', 'another session'],
+  ['session', 'message'],
   ['channel', 'channel message'],
   ['plugin', 'plugin'],
   ['claude', 'Claude Code'],

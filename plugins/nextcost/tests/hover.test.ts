@@ -10,6 +10,7 @@ import {
   BUILD_100K,
   DESKTOP_START,
   BUILD_155K,
+  USAGE,
   LONG,
   START,
   respond,
@@ -152,13 +153,14 @@ test('every pill explains itself on hover: over the row at its pill on the termi
     expect(cardText(found[2]?.[1])).toBe('76k of 200k (38%); older turns get summarized near full')
     expect(cardText(found[3]?.[1])).toBe('Resets in 3h 00m; 5-hour limit, all your Claude use; as of your last reply')
     expect(cardText(found[4]?.[1])).toBe('Resets in 2d 19h; weekly limit, all your Claude use; as of your last reply')
-    expect(cardText(found[5]?.[1])).toBe('input 196k · output 12k · cache reads 0')
+    expect(cardText(found[5]?.[1])).toBe('input 196k · output 12k · cache reads 0 · since the band loaded')
     await ui.unmount()
   }
 })
 
 test('on a wide terminal row each card starts a column before its own pill, its ▐ in the gap, so it covers none to its left', async ($, on) => {
-  setup(on)
+  // A conversation that began here: the tokens card has no `since the band loaded` to slide it back.
+  setup(on, { usage: { ...USAGE, cost: { usd: 0 } } })
   await $.session.start(START)
   await respond($, BUILD_155K)
   const ui = await mountBand($, 'terminal', 160)
@@ -205,7 +207,7 @@ test('a cold cache explains what the next message rebuilds', LONG, async ($, on)
   await clock.advance(61 * 60_000)
   const ui = await mountBand($, 'terminal', 110)
   const cache = cards(await ui.drawn()).find(([key]) => key === 'cache')
-  expect(cardText(cache?.[1])).toMatch(/^Cold: next message rebuilds 112k tokens \(~\$\d+\.\d\d\)$/)
+  expect(cardText(cache?.[1])).toMatch(/^Cold: ~\$\d+\.\d\d rewrites 112k tokens to the cache, plus your reply$/)
   await ui.unmount()
 })
 

@@ -40,6 +40,11 @@ const tracking = (g: GitState): string => {
   const sides = [g.ahead ? `${plural(g.ahead, 'commit')} to push` : '', g.behind ? `${g.behind} to pull` : ''].filter(Boolean)
   return sides.length === 0 ? 'up to date with its upstream' : sides.join(', ')
 }
+/** One side of push and pull in text: `↑2`, or in the ascii tier `ahead 2`,
+ *  since `+2 -1` there reads like a diff's counts. */
+const aheadBehind = (kit: Kit, side: 'ahead' | 'behind', n: number): string =>
+  kit.glyphs === 'ascii' ? `${side} ${n}` : `${side === 'ahead' ? '↑' : '↓'}${n}`
+
 /** Where a strip sits: on top, under a row of air, its text lined up with
  *  the cards' (`edge` is their border width); in the footer, in the room the
  *  buttons leave. */
@@ -164,7 +169,7 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
       }
     } else {
       state.push(
-        explaining('ws:ab', tracking(git), <Text color={BARE.value}>{[git.ahead ? `↑${git.ahead}` : '', git.behind ? `↓${git.behind}` : ''].filter(Boolean).join(' ')}</Text>),
+        explaining('ws:ab', tracking(git), <Text color={BARE.value}>{[git.ahead ? aheadBehind(kit, 'ahead', git.ahead) : '', git.behind ? aheadBehind(kit, 'behind', git.behind) : ''].filter(Boolean).join(' ')}</Text>),
       )
     }
   }

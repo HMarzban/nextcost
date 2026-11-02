@@ -37,6 +37,31 @@ export type Role = 'label' | 'value' | 'amber' | 'accent5' | 'accent7'
 export type Say = ReadonlyArray<readonly [string, Role]>
 /** An amber reading's words: long while a calm piece remains to give way, then short. */
 export type Amber = Readonly<{ long: string; short: string }>
+/** Whether the cache's lifetime is a guess: the hour, until a pin, a read of
+ *  the transcript or a reply says it. A 5-minute cache was never guessed. */
+export const lifetimeAssumed = (f: Pick<CacheFacts, 'ttl' | 'ttlPinned'>): boolean => !f.ttlPinned && f.ttl === '1h'
+
+/** The next message's price with what it covers, longest first, for a row to
+ *  take the longest that fits: the price is the cache rewrite, never the
+ *  message's own input or Claude's reply. */
+export const estimateForms = (estimate: string): readonly string[] => [
+  `${estimate} · cache rewrite, not your reply`,
+  `${estimate} · cache rewrite only`,
+  `${estimate} · cache rewrite`,
+  `${estimate} · cache only`,
+  estimate,
+]
+
+/** What a count says of when it began, where the band loaded into a
+ *  conversation already under way. */
+export const SINCE_LOADED = 'since the band loaded'
+
+/** Whether the tokens, the hit rate, the savings and the rebuilds count only
+ *  from where the band loaded: the conversation didn't begin here and no
+ *  transcript was read for what came before. The cost is the engine's whole
+ *  ledger either way. */
+export const countedSinceLoad = (f: Pick<CacheFacts, 'measured' | 'fresh' | 'recovered'>): boolean => f.measured && !f.fresh && !f.recovered
+
 /** A value not known yet: unknown, never 0. */
 export const UNKNOWN = '–'
 
@@ -148,12 +173,19 @@ export type CacheWords = Readonly<{
   hitText: string | undefined
   /** How long it lasts idle: `1h idle`, or `1h idle · assumed` while the hour is a guess. */
   lastsText: string
+  /** The tokens, hit rate, savings and rebuilds count from where the band loaded. */
+  sinceLoaded: boolean
+  /** The hour is a guess, which no row may drop and the headline says where
+   *  its row can't be drawn. */
+  lifetimeAssumed: boolean
+  /** The same after the card's headline: ` · assumed`. */
+  assumedHead: Say
   /** Unexpected rebuilds, `2`, when there were any. */
   rebuildsText: string | undefined
   /** How long a recalled cache sat idle, `2h 05m`; undefined unless recalled. */
   idleText: string | undefined
   /** Who started the last turn, when the user didn't: `re-warmed by
-   *  background task`, or within the TTL `kept warm by another session`;
+   *  background task`, or within the TTL `kept warm by message`;
    *  once the cache has gone again, `last turn by background task`. */
   wakeRow: Fact | undefined
   /** Who alone, in the fewest words that stay true: `by background task`;
@@ -170,6 +202,8 @@ export type CacheWords = Readonly<{
   /** What a card names the re-warm estimate: `re-warm if cold`, or once
    *  cold, `next message`. */
   estimateLabel: string
+  /** The estimate row's value, with what it covers, longest first. */
+  estimateForms: readonly string[]
   alt: string
   /** Pulse's row tile: its figure after the name, `cache`, the time marked
    *  `~` while it is recalled, not measured: `52m left`, `~40m left`, `cold ·
@@ -193,6 +227,9 @@ export type ContextWords = Readonly<{
   windowText: string
   /** The context card's headline: `87% full`, marked past 80% when compaction is off. */
   cardHead: Say
+  /** The same where a card has room to name what the percentage is of: `87%
+   *  toward compaction`; with compaction off, of the window and the same as `cardHead`. */
+  cardHeadNamed: Say
   /** Pulse's context card's fact: `in context`, then phrase by phrase
    *  `76k of 200k` and `compacts at 190k`, or near it `compacts in ~10k`. */
   fact: Readonly<{ label: string; values: readonly string[] }>
@@ -312,7 +349,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
         cardHead: [['compacted', 'value']],
         cardNote: `${f.compactedIdle ? 'Compacted while idle' : 'Compacted'}: next message writes the summary.`,
         estimateLabel: 'next message',
-        alt: altOf('cache', f.compactedIdle ? 'compacted while idle' : 'compacted', f.window === 0 ? 'next message writes the summary' : `next message about ${price}`),
+        alt: altOf('cache', f.compactedIdle ? 'compacted while idle' : 'compacted', f.window === 0 ? 'next message writes the summary' : `next message about ${price}, the cache only`),
       }
     case 'uncached':
       return {
@@ -342,7 +379,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
         cardHead: [['cold', 'value']],
         cardNote: undefined,
         estimateLabel: 'next message',
-        alt: altOf('cache', 'cold', `re-warm about ${price}`),
+        alt: altOf('cache', 'cold', `re-warm about ${price}, the cache only`),
       }
     case 'warm':
     case 'expiring': {
@@ -359,7 +396,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
         estimateLabel: 're-warm if cold',
         alt:
           f.coldInMs !== undefined
-            ? altOf('cache', fmtLeftSpoken(f.coldInMs), expiring ? 'cooling' : 'warm', expiring ? `re-warm about ${price}` : undefined)
+            ? altOf('cache', fmtLeftSpoken(f.coldInMs), expiring ? 'cooling' : 'warm', expiring ? `re-warm about ${price}, the cache only` : undefined)
             : altOf('cache', 'warm', 'Claude is working'),
       }
     }
@@ -370,7 +407,8 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
 const WAKER_WORDS: Readonly<Record<Waker, Readonly<{ noun: string; subject: string }>>> = {
   task: { noun: 'background task', subject: 'a background task' },
   schedule: { noun: 'schedule', subject: 'a schedule' },
-  session: { noun: 'another session', subject: 'another session' },
+  // A peer's message, which may come from a subagent as well as another session: the band can't always tell.
+  session: { noun: 'message', subject: 'a message' },
   channel: { noun: 'channel message', subject: 'a channel message' },
   plugin: { noun: 'plugin', subject: 'a plugin' },
   claude: { noun: 'Claude Code', subject: 'Claude Code' },
@@ -380,7 +418,7 @@ const WAKER_WORDS: Readonly<Record<Waker, Readonly<{ noun: string; subject: stri
 const goneMoods: ReadonlySet<CacheFacts['mood']> = new Set(['cold', 'compacted', 'uncached', 'switched'])
 
 /** A turn the user didn't type, as a hover says it: `a background task
- *  re-warmed it`, `another session kept it warm`; the cache gone since,
+ *  re-warmed it`, `a message kept it warm`; the cache gone since,
  *  `last turn by a background task`. */
 export const wakeSaid = (wake: Wake, mood: CacheFacts['mood']): string => {
   const { subject } = WAKER_WORDS[wake.by]
@@ -417,7 +455,10 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     savedText: f.measured && f.savedUsd !== null ? fmtEstimate(f.savedUsd) : undefined,
     hitText: f.hitFrac === undefined ? undefined : fmtPct(f.hitFrac),
     // Unpinned, an hour is assumed until a pin or the transcript says it.
-    lastsText: f.mood === 'uncached' ? 'nothing cached' : `${f.ttl} idle${!f.ttlPinned && f.ttl === '1h' ? ' · assumed' : ''}`,
+    lastsText: f.mood === 'uncached' ? 'nothing cached' : `${f.ttl} idle${lifetimeAssumed(f) ? ' · assumed' : ''}`,
+    lifetimeAssumed: lifetimeAssumed(f),
+    sinceLoaded: countedSinceLoad(f),
+    assumedHead: [[' · assumed', 'label']],
     rebuildsText: f.misses > 0 ? String(f.misses) : undefined,
     idleText: f.recalled && f.idleMs !== null ? fmtAgo(f.idleMs) : undefined,
     wakeRow: f.wake === undefined ? undefined : wakeRowOf(f.wake, f.mood),
@@ -426,6 +467,7 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     cardHead: m.cardHead,
     cardNote: m.cardNote,
     estimateLabel: m.estimateLabel,
+    estimateForms: estimateForms(f.estimate),
     alt: m.alt,
     // The time marked ~ while it is recalled.
     figure: recalledTime ? `~${left}` : joined(m.figure),
@@ -441,6 +483,7 @@ export const contextWords = (f: ContextFacts): ContextWords => {
   const roomText = !f.known || f.compactAt === undefined ? undefined : roomOf(f.toCompact)
   const amber = f.tone !== 'amber' ? undefined : f.compactAt !== undefined ? AMBER.context(f.frac, f.toCompact) : AMBER.contextNoCompaction(f.frac)
   const cardHead: Say = [[`${f.pct}${f.compactAt === undefined ? severityMark(f.frac) : ''}`, 'value'], [' full', 'label']]
+  const cardHeadNamed: Say = f.compactAt === undefined ? cardHead : [[f.pct, 'value'], [' toward compaction', 'label']]
   const compactsAtText = f.compactAt === undefined ? undefined : fmtTokens(f.compactAt)
   // Near compaction, the room before it; else where it compacts.
   const compaction = f.compactAt === undefined ? undefined : amber !== undefined ? compactsIn(f.toCompact) : `compacts at ${fmtTokens(f.compactAt)}`
@@ -454,6 +497,7 @@ export const contextWords = (f: ContextFacts): ContextWords => {
     bandName: 'context',
     windowText: fmtTokens(f.window),
     cardHead,
+    cardHeadNamed,
     fact: {
       label: 'in context',
       values: said([`${inContext} of ${fmtTokens(f.window)}`, compaction]),

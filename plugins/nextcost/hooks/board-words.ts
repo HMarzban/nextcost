@@ -34,6 +34,8 @@ export type BoardRow = Readonly<{
   /** The reading's own alt, in words, never capitals or ↻. */
   alt: string
 }>
+/** After the price in REMARKS: what the price covers. Clipped first as the column narrows. */
+const PRICE_COVERS = ' · CACHE REWRITE, NOT YOUR REPLY'
 /** What the board says for a reset: the flap face has no ↻. */
 const BOARD_RESET = 'RESET'
 export type Board = Readonly<{
@@ -64,9 +66,11 @@ const wokenForms = (c: CacheWords, remarks: string, price: string): Pick<BoardRo
 const cacheBoard = (r: BoardFacts): BoardRow => {
   const c = r.cache
   const zone = r.frame.zone
-  /** The cache's line; `price`, the part of its remarks a waker keeps beside it. */
-  const at = (cell: Omit<BoardRow, 'key' | 'item' | 'alt' | 'woken'>, price = cell.remarks): BoardRow =>
-    ({ key: 'cache', item: 'CACHE', alt: c.alt, ...cell, ...wokenForms(c, cell.remarks, price) })
+  /** The cache's line; `price`, the part of its remarks a waker keeps beside
+   *  it. A price says what it covers in REMARKS alone, never in what a waker
+   *  leads, so the waker's own words are what a narrow column drops last. */
+  const at = (cell: Omit<BoardRow, 'key' | 'item' | 'alt' | 'woken'>, price = cell.remarks, covers = ''): BoardRow =>
+    ({ key: 'cache', item: 'CACHE', alt: c.alt, ...cell, remarks: `${cell.remarks}${covers}`, ...wokenForms(c, cell.remarks, price) })
   /** A row with no time to show: its status alone, in every column. */
   const statusOnly = (status: string): BoardRow => at({ status, time: undefined, remarks: '', cell: status, cellShort: status, tone: 'calm' })
   const reWarm = `RE-WARM ${c.estimate}`
@@ -75,7 +79,7 @@ const cacheBoard = (r: BoardFacts): BoardRow => {
   const clock = c.coldAt === null || zone === undefined ? undefined : `${c.measured ? '' : '~'}${fmtClock(c.coldAt, zone)}`
   /** A cache gone: when it went, where the clock is known, and what the next message costs. */
   const gone = (status: string, remarks: string): BoardRow =>
-    at({ status, time: clock, remarks, cell: clock === undefined ? `${status} · ${remarks}` : `${status} ${clock} · ${remarks}`, cellShort: remarks, tone: 'calm' })
+    at({ status, time: clock, remarks, cell: clock === undefined ? `${status} · ${remarks}` : `${status} ${clock} · ${remarks}`, cellShort: remarks, tone: 'calm' }, remarks, PRICE_COVERS)
   if (c.mood === 'compacted') return gone('COMPACTED', `NEXT ${c.estimate}`)
   if (c.mood === 'cold') return gone('DEPARTED', reWarm)
   if (c.mood === 'switched') return at({ status: 'MODEL CHANGED', time: undefined, remarks: `NEXT ${c.estimate}`, cell: `MODEL CHANGED · NEXT ${c.estimate}`, cellShort: `NEXT ${c.estimate}`, tone: 'calm' })
@@ -83,12 +87,13 @@ const cacheBoard = (r: BoardFacts): BoardRow => {
   const left = c.coldInMs ?? 0
   if (c.tone === 'amber') {
     const secs = boardSpan(left)
-    return at({ status: 'LAST CALL', time: secs, remarks: reWarm, cell: `LAST CALL ${secs}`, cellShort: `${AMBER_LEAD}${secs}`, tone: 'amber' })
+    // The mark leads the status and the cell, so plain, which has no hue, still tells it from the calm last call.
+    return at({ status: `${AMBER_LEAD}LAST CALL`, time: secs, remarks: reWarm, cell: `${AMBER_LEAD}LAST CALL ${secs}`, cellShort: `${AMBER_LEAD}${secs}`, tone: 'amber' }, reWarm, PRICE_COVERS)
   }
   const status = c.lastCall ? 'LAST CALL' : 'DEPARTS'
   const countdown = `IN ${boardSpan(left)}`
   const time = clock ?? countdown
-  return at({ status, time, remarks: `${clock === undefined ? '' : `${countdown} · `}${reWarm} IF MISSED`, cell: `${status} ${time}`, cellShort: time, tone: 'calm' }, reWarm)
+  return at({ status, time, remarks: `${clock === undefined ? '' : `${countdown} · `}${reWarm} IF MISSED`, cell: `${status} ${time}`, cellShort: time, tone: 'calm' }, reWarm, PRICE_COVERS)
 }
 
 const spendBoard = (r: BoardFacts): BoardRow => ({
@@ -101,7 +106,8 @@ const contextBoard = (r: BoardFacts): BoardRow => {
   const x = r.context
   const base = { key: 'context', item: 'CONTEXT', time: undefined, alt: x.alt } as const
   if (!x.known) return { ...base, status: EMPTY.context, remarks: '', cell: EMPTY.context, cellShort: EMPTY.context, tone: 'calm' }
-  const remarks = saidJoined([x.roomText === undefined ? undefined : `${x.roomText} LEFT`, x.compactsAtText === undefined ? undefined : `COMPACTS AT ${x.compactsAtText}`], ' · ')
+  // With compaction known the percentage is toward it, which REMARKS say first; else it is of the window.
+  const remarks = saidJoined([x.compactsAtText === undefined ? undefined : `TOWARD COMPACTION AT ${x.compactsAtText}`, x.roomText === undefined ? undefined : `${x.roomText} LEFT`], ' · ')
   if (x.tone === 'calm') return { ...base, status: `${x.valueText} USED`, remarks, cell: x.valueText, cellShort: x.valueText, tone: 'calm' }
   // Near compaction the board names the event; with compaction off, the
   // fill. The group's ITEM already says CONTEXT, so its cell never does.

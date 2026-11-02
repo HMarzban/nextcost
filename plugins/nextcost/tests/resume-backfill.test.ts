@@ -87,7 +87,7 @@ test('resumed two days on with a $0 ledger, the cache is cold at the price the e
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold · next message ~\$1\.23/)
   const tree = await mounted($, true)
   expect(fact(tree, 'idle for')).toBe('2d 0h')
-  expect(fact(tree, 'next message')).toBe('~$1.23')
+  expect(fact(tree, 'next message')).toMatch(/^~\$1\.23( · |$)/)
 })
 
 test('resumed ten minutes after its last reply, the cache counts down from that reply', async ($, on) => {
@@ -626,9 +626,10 @@ const figures = async ($: Engine) => {
     output: fact(tree, 'output'),
     reads: fact(tree, 'cache reads'),
     hit: fact(tree, 'hit rate'),
-    saved: fact(tree, 'saved by cache'),
+    saved: fact(tree, 'saved on cache reads'),
     rebuilds: fact(tree, 'rebuilds'),
-    spend: shown(cardOf(tree, 'spend')),
+    // Whether the counts began with the conversation is not what a reload changes: after /clear the fixture's ledger isn't 0, so the two runs differ in it alone.
+    spend: shown(cardOf(tree, 'spend')).replace('counted since the band loaded', ''),
     cost: shown(pillOf(shut, 'cost')),
     cache: shown(pillOf(shut, 'cache')),
   }

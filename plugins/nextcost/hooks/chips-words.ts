@@ -5,7 +5,7 @@
 import type { CacheFacts } from './cache'
 import type { ContextFacts, Frame, LimitFacts } from './facts'
 import { clamp01, fmtCountdown, fmtTokens, severityMark } from './format'
-import { IDLE_COMPACT_AT, MOOD_ALT, UNKNOWN, compactsIn, goneShort, paceText, wakeSaid } from './words'
+import { IDLE_COMPACT_AT, MOOD_ALT, UNKNOWN, SINCE_LOADED, compactsIn, countedSinceLoad, goneShort, lifetimeAssumed, paceText, saidJoined, wakeSaid } from './words'
 import type { SpendWords } from './words'
 
 /** Every word chips' row says about the cache, for one mood: the pill, its
@@ -20,13 +20,21 @@ const cacheCopy = (f: CacheFacts, frame: Frame): CacheCopy => {
   // What a warm read costs against input on the model in force.
   const readPct = `${+(f.readShare * 100).toFixed(1)}%`
   const left = fmtCountdown(f.leftMs)
-  // The rebuild's price after its tokens, where a rate is known.
-  const priced = f.reWarmUsd === null ? '' : ` (${f.estimate})`
+  // The price is the cache rewrite alone: the message's own input and the
+  // reply come on top. A hover is one line, so each keeps its price and its
+  // qualifiers near its front, where a cut row leaves them.
+  const rewrites = (what: string): string => (f.reWarmUsd === null ? `next message rewrites ${what}` : `${f.estimate} rewrites ${what}`)
   const battery = f.charge <= 0 ? 'cache battery empty' : `cache battery ${Math.round(clamp01(f.charge) * 100)}% left`
   // A turn the user didn't type restarted the countdown: who did, said after.
   const woken = (hover: string): string => (f.wake === undefined ? hover : `${hover}; ${wakeSaid(f.wake, f.mood)}`)
+  // A guessed hour is said right after the countdown, where a cut hover keeps it.
+  const assumed = lifetimeAssumed(f)
   const warmHover = woken(
-    f.idleCompactSoon ? `${left} left; may be compacted ${IDLE_COMPACT_AT}` : `${left} left; warm cache bills input at ${readPct}, expires ${f.ttl} after a request`,
+    f.idleCompactSoon
+      ? `${left} left${assumed ? ' (assumed)' : ''}; may be compacted ${IDLE_COMPACT_AT}`
+      : assumed
+        ? `${left} left (assumed ${f.ttl} lifetime); warm cache bills input at ${readPct}`
+        : `${left} left; warm cache bills input at ${readPct}, expires ${f.ttl} after a request`,
   )
   switch (f.mood) {
     case 'unmeasured':
@@ -44,7 +52,7 @@ const cacheCopy = (f: CacheFacts, frame: Frame): CacheCopy => {
     case 'expiring':
       return {
         pill: short => (short ? `${left} ${f.estimate}` : `${left} left · re-warm ${f.estimate}`),
-        hover: warmHover,
+        hover: woken(`${left} left${assumed ? ' (assumed)' : ''}; if cold, ${rewrites('the cache')}, plus your reply`),
         alt: battery,
       }
     case 'compacted':
@@ -52,8 +60,8 @@ const cacheCopy = (f: CacheFacts, frame: Frame): CacheCopy => {
         // A summary to write, not a cache lost: as calm as cold.
         pill: short => (short ? goneShort('compacted', f.estimate) : `cache compacted · next ${f.estimate}`),
         hover: f.window === 0
-          ? 'Compacted: next message writes the summary'
-          : `${f.compactedIdle ? 'Compacted while idle' : 'Compacted'}: next message writes the ${fmtTokens(f.window)} summary${priced}`,
+          ? 'Compacted: next message writes the summary, plus your reply'
+          : `${f.compactedIdle ? 'Compacted while idle' : 'Compacted'}: ${rewrites(`the ${fmtTokens(f.window)} summary`)}, plus your reply`,
         alt: MOOD_ALT.compacted,
       }
     case 'uncached':
@@ -72,7 +80,7 @@ const cacheCopy = (f: CacheFacts, frame: Frame): CacheCopy => {
       return {
         // Cold is a price, not an error: neutral, no hue, no alarm.
         pill: short => (short ? goneShort('cold', f.estimate) : `cache cold · next message ${f.estimate}`),
-        hover: woken(`Cold: next message rebuilds ${fmtTokens(f.window)} tokens${priced}`),
+        hover: woken(`Cold: ${rewrites(`${fmtTokens(f.window)} tokens to the cache`)}, plus your reply`),
         alt: battery,
       }
     case 'warm':
@@ -126,7 +134,7 @@ export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend:
   return {
     cache: cacheCopy(r.cache, r.frame),
     costHover: spend.lastText === undefined ? `${spend.totalText} so far this session` : `${spend.lastText} spent during your last message, subagents included`,
-    tokensHover: spend.split.map(s => `${s.label} ${s.text}`).join(' · '),
+    tokensHover: saidJoined([...spend.split.map(s => `${s.label} ${s.text}`), countedSinceLoad(r.cache) ? SINCE_LOADED : undefined], ' · '),
     contextPill: long => {
       const amount =
         x.compactAt !== undefined ? (long ? `${x.pct} full` : x.pct) : !long || x.tokens === undefined ? x.pct : `${fmtTokens(x.tokens)} / ${fmtTokens(x.window)}`
@@ -136,7 +144,7 @@ export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend:
     contextHover:
       x.compactAt === undefined
         ? `${fmtTokens(x.used)} of ${fmtTokens(x.window)} (${x.pct}); older turns get summarized near full`
-        : `${fmtTokens(x.used)} of ${fmtTokens(x.compactAt)} (${x.pct}); auto-${compactsIn(x.toCompact)}`,
+        : `${fmtTokens(x.used)} of ${fmtTokens(x.compactAt)} (${x.pct}) toward compaction; window ${fmtTokens(x.window)}; ${compactsIn(x.toCompact)}`,
     limitHover: { '5h': limitHover('5h'), '7d': limitHover('7d') },
   }
 }

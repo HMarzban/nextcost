@@ -18,7 +18,7 @@ import type { BandActions } from '../snapshot'
 import { EMPTY, limitsHead, markedHead, type Say } from '../words'
 import { bodyRowsFor, footer } from './frame'
 import { beatsChart, chartsDraw, weekCells, windowTrail } from './pulse-charts'
-import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, factRow, headHolds, headline, linesOf } from './shell'
+import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, factRow, fitForm, headHolds, headline, linesOf } from './shell'
 import type { CardLine, CardName } from './shell'
 
 const DOT = ' · '
@@ -244,7 +244,7 @@ const cacheCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
   // warming, its hour isn't known: no track, and its note says when it will be.
   const ink = onTone(cache.tone, cache.mood === 'warm' ? palette.warm : palette.label)
   const chart = at.size === undefined || !at.f.charted.cache ? null : track(kit, { key: 'chart', alt: cache.alt, frac: 1 - cache.charge, color: ink, px: at.px, ...at.size, cells: at.inner })
-  const said = cache.untimed && cache.cardNote !== undefined ? clippedNote(kit, 'fact', cache.cardNote) : fact(kit, at, cache.estimateLabel, [cache.estimate])
+  const said = cache.untimed && cache.cardNote !== undefined ? clippedNote(kit, 'fact', cache.cardNote) : factRow(kit, cache.estimateLabel, fitForm(kit, cache.estimateForms, at.inner - cellsOf(cache.estimateLabel, kit.measure) - 2))
   const head = wokenHead(kit, read, at.inner) ?? markedHead(cache.cardHead, cache.tone)
   const woken = at.p.wakeRow === true && cache.wakeRow !== undefined ? factRow(kit, cache.wakeRow.label, cache.wakeRow.value) : null
   return card(kit, 'cache', head, cache.tone, [plot(kit, chart), fill(kit), woken, said])
@@ -273,7 +273,7 @@ const contextCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
   const values = hist.context.length > 1 ? hist.context.slice(-turns) : Array.from({ length: Math.max(2, Svg ? 2 : turns) }, () => context.used)
   const chart = at.size === undefined || !at.f.charted.context ? null
     : sparkline(kit, { key: 'chart', alt: hist.contextTrailAlt, values, color: onTone(context.tone, palette.label), px: at.px, ...at.size, headroom: at.headroom, max: context.compactAt ?? context.window, levelFrac: context.compactAt === undefined ? undefined : 1 })
-  return card(kit, 'context', markedHead(context.cardHead, context.tone), context.tone, [plot(kit, chart), fill(kit), fact(kit, at, context.fact.label, context.fact.values)])
+  return card(kit, 'context', markedHead(context.cardHeadNamed, context.tone), context.tone, [plot(kit, chart), fill(kit), fact(kit, at, context.fact.label, context.fact.values)])
 }
 
 /** A window's half of Limits: its chart, `halfPx` wide, then its fact;

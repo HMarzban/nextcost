@@ -8,7 +8,6 @@
 import type { RenderChildren, RenderElement } from 'claude-code'
 import { batteryIcon, meter, textBattery } from '../charts'
 import type { LimitKey, Tone } from '../facts'
-import { GLYPH } from '../icons'
 import type { Icon } from '../icons'
 import type { Kit } from '../kit'
 import { cellsOf, spansOf } from '../layout'
@@ -76,14 +75,16 @@ const pill = (kit: Kit, { key, tone, body, hover, paintsOwnBg, bg }: PillSpec): 
 
 /** A reset after its reading: the separator in label ink, then `↻` and
  *  when, in `ink`. `↻` is a glyph on every surface, as the boards draw it,
- *  never the clock icon; elsewhere it is the reset icon's own glyph. */
+ *  never the clock icon; elsewhere it is the reset icon's own glyph, and in
+ *  the ascii tier the word `resets`, since a bare time after a bar reads as
+ *  nothing. */
 const resetClause = (kit: Kit, ink: string, when: string): RenderElement[] => {
-  const { Text, palette } = kit
+  const { Text, palette, mark } = kit
   return [
     <Text key="d" color={palette.label}>
       {' │ '}
     </Text>,
-    <Text key="i-reset" color={ink}>{`${GLYPH.reset} `}</Text>,
+    <Text key="i-reset" color={ink}>{`${mark('reset')} `}</Text>,
     <Text key="r" color={ink}>
       {when}
     </Text>,
@@ -134,6 +135,8 @@ export const cachePill = (kit: Kit, read: Readings, short: boolean): PillSpec =>
   const copy = read.chips.cache
   const text = copy.pill(short)
   const fg = onTone(tone, palette.value)
+  // `◷` is the short forms' only mark of the cache (`0:47 ~$0.52`, `cold ~$1.66`): the ascii tier drops it, so says the word.
+  const lead = kit.glyphs === 'ascii' && !text.includes('cache') ? 'cache' : '◷'
   if (Svg) {
     // A normal rounded pill led by a draining battery icon; the text-surface
     // battery would paint a square-cornered block here.
@@ -143,7 +146,7 @@ export const cachePill = (kit: Kit, read: Readings, short: boolean): PillSpec =>
     return {
       key: 'cache',
       tone,
-      body: textBattery(kit, charge, tone, `◷ ${text}`),
+      body: textBattery(kit, charge, tone, `${lead} ${text}`),
       hover: copy.hover,
       paintsOwnBg: true,
     }
@@ -152,7 +155,7 @@ export const cachePill = (kit: Kit, read: Readings, short: boolean): PillSpec =>
   return {
     key: 'cache',
     tone,
-    body: [tone === 'amber' ? null : <Text key="dot" color={dot}>{'● '}</Text>, <Text key="c" color={fg}>{tone === 'amber' ? `◷ ${text}` : text}</Text>],
+    body: [tone === 'amber' ? null : <Text key="dot" color={dot}>{'● '}</Text>, <Text key="c" color={fg}>{tone === 'amber' ? `${lead} ${text}` : text}</Text>],
     hover: copy.hover,
   }
 }
