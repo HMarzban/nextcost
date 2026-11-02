@@ -2,9 +2,12 @@
 
 import { test, expect } from 'claude-code/testing'
 import { ASCII_MAP, asciiText, resolveGlyphs } from '../hooks/glyphs'
+import { makeKit } from '../hooks/kit'
 import { ROW_SLACK } from '../hooks/layout'
+import { readingsOf } from '../hooks/reading'
 import { LAYOUT_NAMES } from '../hooks/snapshot'
-import { ASCII_TIER, caseKey, cutBySurface, drawCases, kitOf, type Mount } from './matrix'
+import { cachePill } from '../hooks/views/chips'
+import { ASCII_TIER, CALM_LIMITS, LAST_MINUTE_CACHE, bandOf, cacheWith, caseKey, cutBySurface, drawCases, kitOf, snapOf, type Mount } from './matrix'
 import {
   BUILD_80K,
   HOUR_1,
@@ -13,12 +16,14 @@ import {
   START,
   byKey,
   cards,
+  fakeEl,
   firstRow,
   mountBand,
   pillOf,
   respond,
   segments,
   setup,
+  shown,
   textOf,
   walk,
   widthOf,
@@ -106,4 +111,48 @@ for (const layout of LAYOUT_NAMES) {
 test('the ascii tier keeps a wide character, which it measures two columns, and still maps the ambiguous ones', () => {
   expect(asciiText('設計メモ · 機能/表示幅 │ ±3')).toBe('設計メモ, 機能/表示幅 | +3')
   expect(asciiText('한국어 프로젝트')).toBe('한국어 프로젝트')
+})
+
+// ---- the words the ascii tier keeps -------------------------------------------
+
+const GIT = { branch: 'main', commit: undefined, worktree: undefined, changed: 3, ahead: 2, behind: 1 } as const
+const ASCII_WORKSPACE = { path: '/u/nextcost', repoName: undefined, git: GIT }
+
+test('the ASCII row says tok, ctx and resets where the unicode row has Σ, ◔ and ↻', () => {
+  const row = (glyphs: 'ascii' | 'unicode') => shown(firstRow(bandOf({ glyphs, columns: 200, ...CALM_LIMITS })))
+  const ascii = row('ascii')
+  expect(ascii).toMatch(ASCII_TIER)
+  expect(ascii).toMatch(/tok 225k/)
+  expect(ascii).toMatch(/ctx .*40% full/)
+  expect(ascii).toMatch(/5h .* \| resets 3h 00m/)
+  expect(ascii).toMatch(/7d .* \| resets 2d 19h/)
+  // The unicode tier is as it was.
+  expect(row('unicode')).toMatch(/│ ↻ 3h 00m.*Σ 225k/)
+})
+
+test('the ASCII tier never draws a bare span after a bar, nor a bare token count, at any width', () => {
+  for (const columns of [40, 60, 80, 100, 120, 160, 200]) {
+    const text = shown(firstRow(bandOf({ glyphs: 'ascii', columns, ...CALM_LIMITS })))
+    // A time after a bar's divider is a reset only if it says so.
+    expect(`${columns} ${/\|\s*\d/.test(text)}`).toBe(`${columns} false`)
+    if (/225k/.test(text)) expect(`${columns} ${/tok 225k/.test(text)}`).toBe(`${columns} true`)
+  }
+})
+
+test('the short cache pill keeps the word cache in the ASCII tier, where the clock glyph was its only mark', () => {
+  for (const cache of [LAST_MINUTE_CACHE, cacheWith({ leftMs: 0 }), cacheWith({ leftMs: 0, compacted: true })]) {
+    const snap = snapOf({ glyphs: 'ascii', cache })
+    const pill = cachePill(makeKit(fakeEl, snap), readingsOf(snap), true)
+    expect(shown({ children: pill.body })).toMatch(/cache/)
+  }
+  // The long forms already say it once.
+  const snap = snapOf({ glyphs: 'ascii', cache: LAST_MINUTE_CACHE })
+  expect(shown({ children: cachePill(makeKit(fakeEl, snap), readingsOf(snap), false).body }).match(/cache/g)).toHaveLength(1)
+})
+
+test('the ASCII strip says ahead and behind, not +2 -1, which reads like a diff', () => {
+  const strip = (glyphs: 'ascii' | 'unicode') => shown(byKey(bandOf({ glyphs, columns: 120, maxRows: 40, expanded: true, workspace: ASCII_WORKSPACE }), 'strip'))
+  expect(strip('ascii')).toMatch(/ahead 2 behind 1$/)
+  expect(strip('ascii')).toMatch(ASCII_TIER)
+  expect(strip('unicode')).toMatch(/↑2 ↓1$/)
 })

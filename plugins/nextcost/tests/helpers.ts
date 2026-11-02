@@ -611,6 +611,17 @@ export const fact = (tree: unknown, label: string): string | undefined => {
   return row === undefined ? undefined : textOf((row.children ?? []).at(-1))
 }
 
+/** What a card's rows say, in the order drawn: each fact's label, and a note's
+ *  words where it stands. */
+export const factsOf = (card: Node | undefined): string[] => {
+  const out: string[] = []
+  walk(card, n => {
+    const key = n.props?.key
+    if (typeof key === 'string' && (key.startsWith('fact:') || key === 'note')) out.push(key === 'note' ? shown(n) : key.slice(5))
+  })
+  return out
+}
+
 /** A card of the expanded view: cache, spend, context or limits. */
 export const cardOf = (tree: unknown, name: string): Node | undefined => byKey(tree, `card:${name}`, 'Box')
 
