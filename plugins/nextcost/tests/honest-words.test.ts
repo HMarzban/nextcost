@@ -71,10 +71,10 @@ const factKeys = (card: Node | undefined): string[] => {
 }
 
 test('a guessed hour is marked in the warm hover, in both of its branches and when expiring', () => {
-  expect(readingsOf(snapOf({ cache: GUESSED })).chips.cache.hover).toBe('52m left (1h lifetime assumed); warm cache bills input at 5%, expires 1h after a request')
+  expect(readingsOf(snapOf({ cache: GUESSED })).chips.cache.hover).toBe('52m left (assumed 1h lifetime); warm cache bills input at 5%')
   const compact = readingsOf(snapOf({ cache: { ...GUESSED, idleCompacts: true, leftMs: 50 * MIN } })).chips.cache.hover
-  expect(compact).toMatch(/^50m left \(1h lifetime assumed\); may be compacted at ~54m idle/)
-  expect(readingsOf(snapOf({ cache: { ...GUESSED, leftMs: 30_000 } })).chips.cache.hover).toMatch(/^0:30 left \(1h lifetime assumed\); /)
+  expect(compact).toBe('50m left (assumed); may be compacted at ~54m idle, before it goes cold')
+  expect(readingsOf(snapOf({ cache: { ...GUESSED, leftMs: 30_000 } })).chips.cache.hover).toMatch(/^0:30 left \(assumed\); /)
   // A pin or a read says nothing of a guess; nor does the 5m cache, which is never assumed.
   expect(readingsOf(snapOf()).chips.cache.hover).not.toMatch(/assumed/)
   expect(readingsOf(snapOf({ cache: cacheWith({ ttlPinned: false, ttl: '5m' }) })).chips.cache.hover).not.toMatch(/assumed/)
@@ -104,14 +104,30 @@ test('at every height the card draws, a guessed hour is said: as a row, else by 
 
 test('the hovers say the price is the cache rewrite, and what comes on top', () => {
   const hover = (cache: BandSnapshot['cache']) => readingsOf(snapOf({ cache })).chips.cache.hover
-  expect(hover(cacheWith({ leftMs: 0 }))).toBe('Cold: next message rewrites 155k tokens to the cache (~$1.66); your message and its reply cost extra')
-  expect(hover({ ...cacheWith({ leftMs: 0 }), reWarmUsd: null })).toBe('Cold: next message rewrites 155k tokens to the cache; your message and its reply cost extra')
-  expect(hover(cacheWith({ leftMs: 0, compacted: true }))).toBe(
-    'Compacted while idle: next message writes the 155k summary to the cache (~$1.66); your message and its reply cost extra',
-  )
-  expect(hover(cacheWith({ leftMs: 30_000 }))).toMatch(/^0:30 left; if it goes cold, ~\$1\.66 rewrites the cache, and your message and its reply cost extra; warm cache bills input at 5%/)
+  expect(hover(cacheWith({ leftMs: 0 }))).toBe('Cold: ~$1.66 rewrites 155k tokens to the cache, plus your reply')
+  expect(hover({ ...cacheWith({ leftMs: 0 }), reWarmUsd: null })).toBe('Cold: next message rewrites 155k tokens to the cache, plus your reply')
+  expect(hover(cacheWith({ leftMs: 0, compacted: true }))).toBe('Compacted while idle: ~$1.66 rewrites the 155k summary, plus your reply')
+  expect(hover(cacheWith({ leftMs: 30_000 }))).toBe('0:30 left; if cold, ~$1.66 rewrites the cache, plus your reply')
   // A warm pill shows no price, so its hover names none.
   expect(hover(cacheWith({}))).not.toMatch(/rewrite|extra/)
+})
+
+test('every hover is one line a terminal row keeps whole: the price and a guess stay inside the budget', () => {
+  const hovers = (over: Partial<BandSnapshot>) => {
+    const r = readingsOf(snapOf(over))
+    return [r.chips.cache.hover, r.chips.contextHover, r.chips.tokensHover]
+  }
+  const cases: Array<[string, Partial<BandSnapshot>]> = [
+    ['warm', {}],
+    ['warm, assumed', { cache: GUESSED }],
+    ['idle-compactable, assumed', { cache: { ...GUESSED, idleCompacts: true, leftMs: 50 * MIN } }],
+    ['expiring, assumed', { cache: { ...GUESSED, leftMs: 30_000 } }],
+    ['cold', { cache: cacheWith({ leftMs: 0 }) }],
+    ['compacted', { cache: cacheWith({ leftMs: 0, compacted: true }) }],
+    ['near compaction', { context: NEAR_COMPACTION }],
+    ['under way', { cache: cacheWith({ fresh: false, recovered: false }) }],
+  ]
+  for (const [name, over] of cases) for (const hover of hovers(over)) expect(`${name} ${hover.length <= 72} ${hover}`).toBe(`${name} true ${hover}`)
 })
 
 test('the estimate row says what it covers where the card has room, and never wraps where it has not', () => {
@@ -188,7 +204,7 @@ test('pulse names what its context percentage is of, and chips\' hover names bot
   // With compaction off the percentage is of the window, which the fact beside it says.
   expect(head({ context: { ...snapOf().context, tokens: 170_000, window: 200_000, percent: 85, compactAt: undefined, autoCompactOff: true } })).toBe('CONTEXT! 85%! full')
   const hover = (context: BandSnapshot['context']) => readingsOf(snapOf({ context })).chips.contextHover
-  expect(hover(snapOf().context)).toBe('76k of the 190k auto-compaction point (40%); model window 200k; auto-compacts in ~114k')
+  expect(hover(snapOf().context)).toBe('76k of 190k (40%) toward compaction; window 200k; compacts in ~114k')
   expect(hover({ ...snapOf().context, compactAt: undefined })).toBe('76k of 200k (38%); older turns get summarized near full')
 })
 

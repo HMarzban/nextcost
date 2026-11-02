@@ -6,7 +6,7 @@ import { meter, splitBar } from '../charts'
 import type { SplitPart } from '../charts'
 import type { Tone } from '../facts'
 import type { Kit } from '../kit'
-import { textCells } from '../layout'
+import { cellsOf, textCells } from '../layout'
 import type { BarSize } from '../layout'
 import type { LimitReading, Readings } from '../reading'
 import type { BandActions } from '../snapshot'
@@ -125,7 +125,7 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
     cache.known ? meter(kit, { label: 'cache', frac: cache.charge, tone: cache.tone, accent: kit.palette.warm, size: fit.bar, stretch: true, reads: 'left' }) : null,
     [
       cache.cardNote === undefined ? null : wrappedNote(kit, cache.cardNote),
-      cache.known ? factRow(kit, cache.estimateLabel, fitForm(kit, cache.estimateForms, fit.inner - textCells(cache.estimateLabel) - 2)) : null,
+      cache.known ? factRow(kit, cache.estimateLabel, fitForm(kit, cache.estimateForms, fit.inner - cellsOf(cache.estimateLabel, kit.measure) - 2)) : null,
       assumed ? expires : null,
       cache.wakeRow === undefined ? null : factRow(kit, cache.wakeRow.label, cache.wakeRow.value),
       knownRow(kit, 'idle for', cache.idleText),

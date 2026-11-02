@@ -39,10 +39,6 @@ export type Amber = Readonly<{ long: string; short: string }>
  *  the transcript or a reply says it. A 5-minute cache was never guessed. */
 export const lifetimeAssumed = (f: Pick<CacheFacts, 'ttl' | 'ttlPinned'>): boolean => !f.ttlPinned && f.ttl === '1h'
 
-/** What the next message's price leaves out, for a hover: the price is the
- *  cache's rewrite alone. */
-export const PRICE_EXTRA = 'your message and its reply cost extra'
-
 /** The next message's price with what it covers, longest first, for a row to
  *  take the longest that fits: the price is the cache rewrite, never the
  *  message's own input or Claude's reply. */

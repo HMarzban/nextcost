@@ -46,7 +46,7 @@ test('near auto-compaction the context chip turns amber and counts down', async 
   expect(ctx).toBeDefined()
   expect(ctx?.props?.color).toBe(DARK.amberFg)
   // Its card leads with the figure, as every card does.
-  expect(cardText(hoverCardOf(await ui.drawn(), 'ctx'))).toBe('152k of the 160k auto-compaction point (95%); model window 200k; auto-compacts in ~8.0k')
+  expect(cardText(hoverCardOf(await ui.drawn(), 'ctx'))).toBe('152k of 160k (95%) toward compaction; window 200k; compacts in ~8.0k')
   await ui.unmount()
 })
 
