@@ -126,13 +126,13 @@ test('estimate: a price or a fill time carries ~', () => {
   expect(failed(view([row(t('re-warm $1.66'), toggle())]))).toContain('estimate')
   expect(failed(view([row(t('next message $1.66'), toggle())]))).toContain('estimate')
   expect(failed(view([row(t('5h full 14:20'), toggle())]))).toContain('estimate')
-  expect(failed(view([row(t('7d on pace for 50%'), toggle())]))).toContain('estimate')
+  expect(failed(view([row(t('7d 50% at avg pace'), toggle())]))).toContain('estimate')
   expect(failed(view([row(t('last message $0.21'), toggle())]))).not.toContain('estimate')
   expect(failed(view([row(t('! 5h full ~14:20'), toggle())]))).not.toContain('estimate')
 })
-test('projection: a landing of 100% or more says full before reset', () => {
+test('projection: a landing of 100% or more says full, never a figure', () => {
   expect(failed(view([row(t('7d ~112% at reset'), toggle())]), { scenario: 'sevenFullBeforeReset' })).toContain('projection')
-  expect(failed(view([row(t('7d full before reset'), toggle())]), { scenario: 'sevenFullBeforeReset' })).not.toContain('projection')
+  expect(failed(view([row(t('7d full at avg pace'), toggle())]), { scenario: 'sevenFullBeforeReset' })).not.toContain('projection')
 })
 test('unknown: context not reported never reads 0%', () => {
   for (const said of ['context 0%', 'ctx 0%', 'CONTEXT 0%']) expect(failed(view([row(t(said), toggle())]), { scenario: 'warming' })).toContain('unknown')

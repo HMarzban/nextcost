@@ -119,7 +119,7 @@ Then come four cards with every fact labelled:
 | Cache | Time left on a bar, what a re-warm would cost if it went cold, who restarted it when you didn't, what the cache has saved, the hit rate, how long it lasts idle, unexpected rebuilds |
 | Spend | The session total, a bar of the token split with its legend (input, output, cache reads), your last message |
 | Context | How full toward auto-compaction, tokens in context, where compaction runs, room left, the model window |
-| Limits | The window closest to its limit, led by its reset and pace where the row doesn't say them, `resets Sat 13:30 · full before reset` (a countdown in departures); then each window (5h, 7d, a gateway's spend limit) with its bar and value, and each of the others named on a line of its own with its reset and pace in words: `5h resets 3h 00m · on pace for ~10%` |
+| Limits | The window closest to its limit, led by its reset and pace where the row doesn't say them, `resets Sat 13:30 · full at avg pace` (a countdown in departures); then each window (5h, 7d, a gateway's spend limit) with its bar and value, and each of the others named on a line of its own with its reset and pace in words: `5h resets 3h 00m · ~10% at avg pace` |
 
 The cards sit four across when they fit, else two by two, each line sharing
 its width equally; on the desktop each has a visible border. A card's title
@@ -420,18 +420,32 @@ as a reset. Pulse's tile says `! 5h full in ~40m`, `! 5h full ~40m`, and at
 its narrowest the value, `! 5h 85%`. Its hover says it is a projection at the current pace: a burst
 of work, such as a workflow fanning out, fills the window sooner. The limit is shared across all your Claude use, so the pace
 includes your other sessions and devices, and `/clear` keeps it. The
-projection hides once its newest reading is more than 15 minutes old.
+figures come from the last reply, so the limit chips' hovers and the Limits
+card end `as of your last reply`, with how long ago once that is five
+minutes or more: another session or device may have moved the limit since. The
+projection hides once its newest reading is more than 15 minutes old, or
+once the time it gave has passed.
+
+The cards and the week also say where the window's average pace lands it,
+`~10% at avg pace`, or `full at avg pace` when that is 100% or more. That is
+the whole window's average, not your recent pace, so it says so. The week
+says it from a day in, since its first hours are no guide; the 5-hour limit
+says it only for a landing short of the limit, never that it fills, which
+only its measured pace claims.
 
 ## Toasts
 
-A toast speaks where a chip turns amber:
-- the 5-hour limit at 80% and 95%
+A toast speaks where a limit or the context turns amber:
+- the 5-hour limit, the weekly limit and a gateway's spend limit, each at 80%
+  and 95%
 - context within 10% of auto-compaction, or at 80% and 95% when
   auto-compaction is off
 
-Each fires once per crossing. The 5h chip also turns amber when your pace
-would fill it before it resets; that has no toast, since the projection
-moves with every reading.
+Each fires once per crossing, and speaks again only after its figure falls
+back under 75%. The 5h chip also turns amber when your pace would fill it
+before it resets, and the cache's last minute turns amber too; neither has a
+toast, since the first moves with every reading and the second is a countdown
+already on screen.
 
 ## Appearance
 
@@ -573,14 +587,14 @@ carry on from.
 
 | Hook | What it does |
 | --- | --- |
-| `session.start` | Starts a once-a-second timer that repaints only when the drawing would change and registers `/nextcost` (and its old name, `/usage-band`), then resets the band, or after a reload carries on from the session's own state, reads its stored limit readings and layout, then its settings, and git. Loaded into a conversation it can't tell is new, it recalls the last reply, from its store or the transcript's end as above. |
+| `session.start` | Starts a once-a-second timer that repaints only when the drawing would change and registers `/nextcost` (and its old name, `/usage-band`), then resets the band, or after a reload carries on from the session's own state, reads its stored limit readings and layout, then its settings, where auto-compaction runs and git. Loaded into a conversation it can't tell is new, it recalls the last reply, from its store or the transcript's end as above. |
 | `session.end` | On `/clear` or a resume, starts the next conversation's count and reads git again. |
 | `classic.SessionStart` | On a resume or fork, notes that the conversation isn't new and reads its transcript as above. |
 | `turn.start`, `turn.complete` | Note the session's cost as each main turn starts and ends, the turn's cost, the context, and a limit reading; then read the layout and git again. After a resumed conversation's first turn, read its transcript again if it showed no cost record at its start. A subagent's turn is left alone. |
 | `prompt.submit` | Notes where a prompt that starts a turn came from (your own, a background task, another session, a schedule), never its text, so each layout's open view can say who restarted the countdown. |
 | `turn.step` | Reads each response's token counts, how many tool calls Anthropic ran in it (the advisor), and how many messages the request carried (a count, never their content), for the cache model and the price per token. |
 | `session.compact` | Notes that the conversation was compacted, so the cache reads `compacted` at the summary's size until the next reply. |
-| `session.measure` | Reads where auto-compaction runs, and shows a toast as the context or the 5-hour limit crosses its warning levels. |
+| `session.measure` | Reads where auto-compaction runs, and shows a toast as the context or a limit (5-hour, weekly, a gateway's spend) crosses its warning levels. |
 | `command.run` | Answers `/nextcost` and `/usage-band`, and no other command; `/nextcost more` reads git. |
 | `ui.render` (above the prompt) | Draws the band, reading the model `/model` names to tell a pending switch; steps aside while a survey holds the space or the band is hidden. Opening the cards with `▵` reads git. |
 

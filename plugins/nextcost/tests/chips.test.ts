@@ -50,7 +50,9 @@ test("a limit's pace, cut short, still says it is when the window fills", () => 
 })
 
 test("a limit's hover says its fill is a projection at the current pace", () => {
-  expect(readingsOf(snapOf(PACING)).chips.limitHover['5h']).toBe('Resets in 2h 00m; 5-hour limit, all your Claude use; full in ~1h 15m at the current pace')
+  expect(readingsOf(snapOf(PACING)).chips.limitHover['5h']).toBe(
+    'Resets in 2h 00m; 5-hour limit, all your Claude use; full in ~1h 15m at the current pace; as of your last reply',
+  )
   // With no fill forecast, the hover is as it was.
-  expect(readingsOf(snapOf()).chips.limitHover['5h']).toBe('Resets in 3h 00m; 5-hour limit, all your Claude use')
+  expect(readingsOf(snapOf()).chips.limitHover['5h']).toBe('Resets in 3h 00m; 5-hour limit, all your Claude use; as of your last reply')
 })

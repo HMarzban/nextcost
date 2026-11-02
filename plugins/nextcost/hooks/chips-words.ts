@@ -103,12 +103,13 @@ export type ChipsWords = Readonly<{
   contextHover: string
   /** A limit chip's hover card: once passed, that it has reset; else its
    *  reset first, the fact the chip had, so a short row's cut only takes the
-   *  description. Undefined while the engine reports no such window. */
+   *  description, and last that it is as of the last reply. Undefined while
+   *  the engine reports no such window. */
   limitHover: Readonly<Record<keyof typeof CHIP_TITLES, string | undefined>>
 }>
 
 /** Chips' words, from the facts and the words the other layouts share. */
-export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend: SpendWords; context: ContextFacts; limits: readonly LimitFacts[] }>): ChipsWords => {
+export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend: SpendWords; context: ContextFacts; limits: readonly LimitFacts[]; asOf: string }>): ChipsWords => {
   const { spend, context: x } = r
   const limitHover = (key: keyof typeof CHIP_TITLES): string | undefined => {
     const l = r.limits.find(w => w.key === key)
@@ -118,7 +119,9 @@ export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend:
     const about = l.reset?.kind === 'in' ? `Resets in ${l.reset.text}; ${title.toLowerCase()}, all your Claude use` : `Your ${title.toLowerCase()}, across all your Claude use`
     // A fill is the last half hour's pace drawn straight on: a burst of work
     // fills the window sooner, so the hover says what it rests on.
-    return l.etaMs === null ? about : `${about}; ${paceText(l)} at the current pace`
+    const paced = l.etaMs === null ? about : `${about}; ${paceText(l)} at the current pace`
+    // Last, so a short row's cut takes it before the reset or the pace.
+    return `${paced}; ${r.asOf}`
   }
   return {
     cache: cacheCopy(r.cache, r.frame),

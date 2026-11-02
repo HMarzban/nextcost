@@ -161,7 +161,7 @@ for (const surface of ['desktop', 'terminal'] as const)
       // Once gone, a reading stays gone at every narrower width.
       for (const k of gone) expect(`${columns} ${k} ${moduleOf(row, k) === undefined}`).toBe(`${columns} ${k} true`)
       // A reading goes only once the remarks have.
-      if (gone.length > 0) expect(`${columns} ${wordsOf(row)}`).not.toMatch(/ON PACE|FULL|RESET/)
+      if (gone.length > 0) expect(`${columns} ${wordsOf(row)}`).not.toMatch(/AT AVG PACE|FULL|RESET/)
     }
     // SPEND and CONTEXT go by 60; 5H, if at all, after them.
     expect(gone.length).toBeGreaterThanOrEqual(2)

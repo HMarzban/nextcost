@@ -46,7 +46,7 @@ const contextAt = (tokens: number, compactAt: number | undefined): SessionUsage[
 /** A reply, then a measure: the band reads the compaction breakdown there. */
 const measured = (context: SessionUsage['context']) => async ($: Engine): Promise<void> => {
   await replied($)
-  await $.session.measure({ context, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: [] })
+  await $.session.measure({ context, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: ['context'] })
 }
 /** A reply, then the cache's lifetime and a minute more: cold. */
 const cooled = async ($: Engine, clock: MockClock, ttlMs: number): Promise<void> => {

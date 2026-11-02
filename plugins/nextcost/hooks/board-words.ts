@@ -6,7 +6,7 @@
 
 import type { CacheFacts } from './cache'
 import type { ContextFacts, Frame, LimitFacts, LimitKey, SpendFacts, Tone } from './facts'
-import { boardSpan, etaMinutes, fmtClock, fmtDayClock, fmtEta } from './format'
+import { boardSpan, etaMinutes, fillTime, fmtClock, fmtDayClock, fmtEta } from './format'
 import { AMBER_LEAD, EMPTY, compactsIn, saidJoined } from './words'
 import type { CacheWords, ContextWords, LimitWords, SpendWords } from './words'
 
@@ -120,7 +120,7 @@ const limitBoard = (r: BoardFacts, l: LimitFacts & LimitWords): BoardRow => {
   // A measured fill says when it fills, past the warning line too, as every
   // layout's amber words do; amber without one, that it is near.
   const byPace = l.key === '5h' && l.tone === 'amber' && l.etaMs !== null
-  const amber = l.tone !== 'amber' ? undefined : byPace && l.etaMs !== null ? `${AMBER_LEAD}${zone === undefined ? `FULL IN ${boardEta(l.etaMs)}` : `FULL ~${fmtClock(now + l.etaMs, zone)}`}` : `${AMBER_LEAD}NEAR LIMIT`
+  const amber = l.tone !== 'amber' ? undefined : byPace && l.etaMs !== null ? `${AMBER_LEAD}${zone === undefined ? `FULL IN ${boardEta(l.etaMs)}` : `FULL ~${fmtClock(fillTime(now + l.etaMs, l.etaMs, zone), zone)}`}` : `${AMBER_LEAD}NEAR LIMIT`
   const calm = l.fillText ?? l.pace
   const tail = (amber ?? calm) === '' ? '' : ` ${amber ?? calm}`
   return {

@@ -46,6 +46,11 @@ export const fmtPercent = (percent: number): string => `${Math.round(percent)}%`
 /** A share as a whole percent: 0.38 is `38%`. */
 export const fmtPct = (frac: number): string => fmtPercent(frac * 100)
 
+/** A share as the whole percent it shows, 0.796 as 0.8: what a pill or a toast
+ *  is classed by, so 79.6% shown as `80%` is not calm beside the warning line
+ *  at 80%. Rounds as `fmtPct` does. */
+export const shownFrac = (frac: number): number => Math.round(frac * 100) / 100
+
 export const fmtTokens = (n: number): string => {
   const v = Math.max(0, Math.round(n))
   // Each unit from where the one below would round up to it: 9,999 is 10k,
@@ -120,13 +125,20 @@ export const resetIn = (at: number | undefined, now: number): ResetIn | undefine
   return left <= 0 ? { kind: 'passed' } : { kind: 'in', text: fmtResetSpan(left) }
 }
 
-/** The words for escalation: colour is never the only signal. */
-export const severityMark = (frac: number): string => (frac >= SEVERE_AT ? '!!' : frac >= WARN_AT ? '!' : '')
+/** The words for escalation: colour is never the only signal. By the percent
+ *  shown, as the amber is. */
+export const severityMark = (frac: number): string => {
+  const shown = shownFrac(frac)
+  return shown >= SEVERE_AT ? '!!' : shown >= WARN_AT ? '!' : ''
+}
+
+/** Where a projection's step goes from 5 minutes to 15: 57.5 minutes rounds to the hour. */
+const ETA_QUARTER_FROM_MIN = 57.5
 
 /** A projection's whole minutes: 5-minute steps under an hour, 15 from one. */
 export const etaMinutes = (ms: number): number => {
   const mins = Math.max(0, ms) / MINUTE_MS
-  return mins < 57.5 ? Math.max(5, Math.round(mins / 5) * 5) : Math.round(mins / 15) * 15
+  return mins < ETA_QUARTER_FROM_MIN ? Math.max(5, Math.round(mins / 5) * 5) : Math.round(mins / 15) * 15
 }
 
 /** A projection, never a countdown: `~40m`, `~1h`, `~1h 15m`. */
@@ -179,6 +191,17 @@ const wallTime = (ms: number, zone: Zone): number => ms + zone(ms) * MINUTE_MS
 const hhmm = (wall: number): string => {
   const at = new Date(wall)
   return `${String(at.getUTCHours()).padStart(2, '0')}:${String(at.getUTCMinutes()).padStart(2, '0')}`
+}
+
+/** When a projection `etaMs` away fills, at `ms`, rounded as its ETA is: the
+ *  minutes of the clock it will be read on go to 5 under an hour and 15 from
+ *  one, so `~1h 15m` doesn't come with a clock to the minute, and none falls
+ *  before now. */
+export const fillTime = (ms: number, etaMs: number, zone: Zone): number => {
+  const step = (etaMs / MINUTE_MS < ETA_QUARTER_FROM_MIN ? 5 : 15) * MINUTE_MS
+  const rounded = Math.round(wallTime(ms, zone) / step) * step
+  // Never before now, which a minute to go would round back to.
+  return (rounded < wallTime(ms - etaMs, zone) ? rounded + step : rounded) - zone(ms) * MINUTE_MS
 }
 
 /** A local 24-hour clock time: `14:32`. */

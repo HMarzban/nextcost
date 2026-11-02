@@ -12,6 +12,9 @@ const LOOKBACK_MS = 30 * MINUTE_MS
 const MIN_SPAN_MS = 10 * MINUTE_MS
 const MIN_RISE = 2
 const STALE_MS = 15 * MINUTE_MS
+/** Replies that bring no new point, past this many of the measured pace's
+ *  point-lengths, say the pace has slowed: it isn't projected on. */
+const SLOW_BY = 3
 
 /** The newest messages' costs the cost trail keeps. */
 export const COST_TRAIL = 24
@@ -44,6 +47,8 @@ export type InsightState = {
   points: readonly PacePoint[]
   /** When the 5-hour window resets, epoch ms. */
   resetsAt: number | undefined
+  /** When the limits were last read, epoch ms: at a reply, or a measure that moved them. */
+  readAt: number | undefined
   /** Each trail, replaced on every push and never changed in place, so a
    *  snapshot that holds one holds it as it stood. */
   costs: readonly CostEntry[]
@@ -64,10 +69,16 @@ export type Insights = Readonly<{
   pushCost: (usd: number, reWarm: boolean) => void
   /** The context's tokens at a turn's end. */
   pushContext: (tokens: number) => void
+  /** The limits were read at `now`: a reply came back with them, or a
+   *  measure said they moved. */
+  noteReading: (now: number) => void
+  /** When the limits were last read; undefined before any was. */
+  readingAt: () => number | undefined
   /** session.measure: the 5-hour window's use at `now`, and its reset. */
   noteFiveHour: (now: number, percentUsed: number, resetsAt: number | undefined) => void
   /** Time until your pace fills the 5-hour window, or null while the
-   *  evidence is thin, stale, or the window resets first. */
+   *  evidence is thin or stale, the window resets first, or the time it
+   *  projects has passed. */
   fiveHourEtaMs: (now: number) => number | null
   /** session.end: a new conversation (/clear, resume). Its turns and their
    *  trails start over, but the 5-hour window is account-wide, so its pace
@@ -80,7 +91,7 @@ export type Insights = Readonly<{
 /** A session's insights: before anything is known of it, or carrying on from
  *  what the insights before a reload `kept`. */
 export const newInsights = (kept?: InsightState): Insights => {
-  const s: InsightState = { turnStartCost: {}, points: [], resetsAt: undefined, costs: [], context: [], ...kept }
+  const s: InsightState = { turnStartCost: {}, points: [], resetsAt: undefined, readAt: undefined, costs: [], context: [], ...kept }
   return {
     kept: () => ({ ...s }),
     noteTurnStart: (turnId, costUsd) => {
@@ -99,6 +110,10 @@ export const newInsights = (kept?: InsightState): Insights => {
     pushContext: tokens => {
       s.context = [...s.context, tokens].slice(-CONTEXT_TRAIL)
     },
+    noteReading: now => {
+      s.readAt = now
+    },
+    readingAt: () => s.readAt,
     noteFiveHour: (now, percentUsed, resetsAt) => {
       const last = s.points.at(-1)
       const kept = !sameReset(resetsAt, s.resetsAt) || (last !== undefined && percentUsed < last.pct) ? [] : s.points
@@ -111,10 +126,15 @@ export const newInsights = (kept?: InsightState): Insights => {
       if (first === undefined || last === undefined || last.pct >= 100) return null
       const span = last.at - first.at
       const rise = last.pct - first.pct
-      if (span < MIN_SPAN_MS || rise < MIN_RISE || now - last.at > STALE_MS) return null
+      // The newest reading, which a reply that moved nothing is: the last point is only the last move.
+      const seen = Math.max(last.at, s.readAt ?? last.at)
+      if (span < MIN_SPAN_MS || rise < MIN_RISE || now - seen > STALE_MS) return null
+      // Each point took span / rise at the measured pace; a stretch of readings with none says it is slower.
+      if (seen - last.at > (SLOW_BY * span) / rise) return null
       const tFull = last.at + ((100 - last.pct) * span) / rise
       if (s.resetsAt !== undefined && tFull >= s.resetsAt) return null
-      return Math.max(0, tFull - now)
+      // The time it projected has come and gone: the window may be full, or the pace has dropped.
+      return tFull > now ? tFull - now : null
     },
     conversationEnded: () => {
       s.turnStartCost = {}

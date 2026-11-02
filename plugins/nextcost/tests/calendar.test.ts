@@ -104,3 +104,20 @@ test('as drawn, the days ahead are guessed only up to what is left, and the cell
   expect([today, measured, guess.slice(0, 4)]).toEqual([3, true, [false, false, false, false]])
   expect(wk.fiveHourWindow).toEqual({ values: [], nowAt: undefined, from: 0 })
 })
+test("a cell reads its rise from the slice before it, never from a sample several slices back", () => {
+  // Tue 5%, then Thu 35%: Thursday's 30 points are two days of use, not one day's.
+  const wk = weekOf({ samples: [s(0, 0), s(8, 5), s(61, 35)], seven: seven(35, 60), five: undefined, now: T0 + 62 * H, zone: fixedZone(0) })
+  expect(marked(wk.days)).toBe('TW[T]FSSM')
+  expect(wk.days.slice(0, 3).map(said)).toEqual(['5%', '', ''])
+})
+test('an hour cell reads its rise from the hour before it, never from one several hours back', () => {
+  const five = { percentUsed: 40, projectedPct: undefined, resetsAt: T0 + 5 * H, gone: 0.7 }
+  const wk = weekOf({ samples: [s(0, 0, 0), s(0.5, 0, 10), s(3.4, 0, 40)], seven: undefined, five, now: T0 + 3.5 * H, zone: fixedZone(0) })
+  expect(wk.hours.map(said)).toEqual(['10%', '', '', '', ''])
+})
+test('a sample of one window cuts that window alone', () => {
+  const week = (hours: number, sevenPct: number) => ({ at: T0 + hours * H, sevenPct, sevenResetAt: T0 + 168 * H })
+  const five = { percentUsed: 40, projectedPct: undefined, resetsAt: T0 + 5 * H, gone: 0.5 }
+  const wk = weekOf({ samples: [week(0, 0), week(15, 6), week(39, 15)], seven: seven(15, 30), five, now: T0 + 40 * H, zone: fixedZone(0) })
+  expect(wk.days.slice(0, 3).map(said)).toEqual(['6%', '9%', ''])
+})

@@ -17,7 +17,7 @@ test('readings name every limit with its tone, value, reset and projection', () 
   expect(r.limits.map(l => l.name)).toEqual(['5h', '7d'])
 })
 test("a card says each limit's reset with its pace", () => {
-  expect(readingsOf(snapOf()).limits.map(l => l.resetAndPace)).toEqual(['resets 3h 00m · on pace for ~10%', 'resets 2d 19h · on pace for ~50%'])
+  expect(readingsOf(snapOf()).limits.map(l => l.resetAndPace)).toEqual(['resets 3h 00m · ~10% at avg pace', 'resets 2d 19h · ~50% at avg pace'])
 })
 test('a card says when a limit resets: its clock once the offset is known, else how long until; nothing once passed', () => {
   expect(readingsOf(snapOf({ zone: fixedZone(0) })).limits.map(l => l.resetWhen)).toEqual(['03:00', 'Sat 19:00'])
@@ -30,12 +30,77 @@ test('a window that fills before its reset says when: a measured fill, else the 
   const sevenFrom = (now: number) => readingsOf(snapOf({ zone: fixedZone(0), now, sevenDay: { percentUsed: 66, resetsAt: now + 138 * HOUR } })).sevenDay
   const seven = sevenFrom(3 * 24 * HOUR + 20 * HOUR)
   expect(Math.abs((seven?.fillInMs ?? 0) - (30 * HOUR * 34) / 66)).toBeLessThan(1e-3)
-  expect(seven?.fillText).toBe('full ~Mon')
-  expect(sevenFrom(3 * 24 * HOUR)?.fillText).toBe('full ~15:27')
-  expect(readingsOf(snapOf({ sevenDay: { percentUsed: 66, resetsAt: 138 * HOUR } })).sevenDay?.fillText).toBe('full in ~15h 30m')
+  expect(seven?.fillText).toBe('full ~Mon at avg pace')
+  expect(sevenFrom(3 * 24 * HOUR)?.fillText).toBe('full ~15:30 at avg pace')
+  expect(readingsOf(snapOf({ sevenDay: { percentUsed: 66, resetsAt: 138 * HOUR } })).sevenDay?.fillText).toBe('full in ~15h 30m at avg pace')
   // Measured, the 5h's own fill.
   expect(readingsOf(snapOf({ zone: fixedZone(0), fiveHour: { percentUsed: 40, resetsAt: 3 * HOUR, etaMs: 40 * MIN } })).fiveHour?.fillText).toBe('full ~00:40')
   expect(readingsOf(snapOf({ zone: fixedZone(0) })).fiveHour?.fillInMs).toBeUndefined()
+})
+test("a fill's clock is rounded as its ETA is: to 5 minutes under an hour, 15 from one, in the wall time it shows", () => {
+  const now = Date.UTC(2026, 9, 9, 13, 40)
+  const filling = (etaMs: number, zone = fixedZone(0)) => readingsOf(snapOf({ now, zone, fiveHour: { percentUsed: 84, resetsAt: now + 4 * HOUR, etaMs } })).fiveHour
+  // 14:23 is the minute the arithmetic gives; the ETA says ~45m, to 5 minutes.
+  expect(filling(43 * MIN)?.fillText).toBe('full ~14:25')
+  expect(filling(43 * MIN)?.fullIn).toBe('~45m')
+  expect(filling(127 * MIN)?.fillText).toBe('full ~15:45') // 15:47
+  expect(filling(70 * MIN)?.fillText).toBe('full ~14:45') // 14:50: its ETA, ~1h 15m, is to 15
+  // At +5:30 the wall clock reads 19:10; its minutes round, not UTC's.
+  expect(filling(43 * MIN, fixedZone(330))?.fillText).toBe('full ~19:55')
+  expect(filling(117 * MIN, fixedZone(330))?.fillText).toBe('full ~21:00') // 21:07, to the quarter hour
+  // Never a clock at or before now: 13:41 and a minute to go is 13:45, not 13:40.
+  const soon = Date.UTC(2026, 9, 9, 13, 41)
+  expect(readingsOf(snapOf({ now: soon, zone: fixedZone(0), fiveHour: { percentUsed: 84, resetsAt: soon + 4 * HOUR, etaMs: MIN } })).fiveHour?.fillText).toBe('full ~13:45')
+})
+test("an average over a young window is not a claim: the week needs a day of it, and its 12% in 9 hours says nothing of filling", () => {
+  const seven = (hoursGone: number, percentUsed: number) =>
+    readingsOf(snapOf({ zone: fixedZone(0), sevenDay: { percentUsed, resetsAt: (168 - hoursGone) * HOUR } })).sevenDay
+  const thin = seven(9, 12) // 224% at the average, from nine hours
+  expect([thin?.projectedPct, thin?.fillInMs, thin?.fillText, thin?.pace]).toEqual([undefined, undefined, undefined, ''])
+  expect(seven(23, 12)?.projectedPct).toBeUndefined()
+  expect(seven(25, 20)?.pace).toBe('full at avg pace')
+  expect(seven(25, 5)?.pace).toBe('~34% at avg pace')
+})
+test("the 5h says it fills only by a measured pace: the window's average is not claimed while the pace is flat, absent or an hour stale", () => {
+  const five = (percentUsed: number, etaMs: number | null) => readingsOf(snapOf({ zone: fixedZone(0), fiveHour: { percentUsed, resetsAt: 4 * HOUR, etaMs } })).fiveHour
+  // 70% an hour in is 350% at the average, and no measured pace backs it.
+  const idle = five(70, null)
+  expect([idle?.projectedPct, idle?.fillInMs, idle?.fillText, idle?.pace, idle?.fullInMs]).toEqual([undefined, undefined, undefined, '', undefined])
+  expect(idle?.alt).toBe('5h limit 70 percent used, fine')
+  // Landing short says what it is: the window's average.
+  expect(five(4, null)?.pace).toBe('~20% at avg pace')
+  // Measured, the fill is the pace's own.
+  expect([five(70, 40 * MIN)?.pace, five(70, 40 * MIN)?.fillText]).toEqual(['full in ~40m', 'full ~00:40'])
+})
+test("a pace from the window's average says so in words and in its alt, a measured one does not", () => {
+  const seven = readingsOf(snapOf({ sevenDay: { percentUsed: 79, resetsAt: 50 * HOUR } })).sevenDay
+  expect([seven?.pace, seven?.alt]).toEqual(['full at avg pace', "7d limit 79 percent used, fine, full before its reset, at the window's average pace"])
+  const lands = readingsOf(snapOf()).sevenDay
+  expect([lands?.pace, lands?.alt]).toEqual(['~50% at avg pace', "7d limit 30 percent used, fine, about 50 percent at its reset, at the window's average pace"])
+  // The week's fill from its average says so beside its clock; a measured 5h fill has no such tail.
+  const average = (zone: ReturnType<typeof fixedZone> | undefined) => readingsOf(snapOf({ zone, sevenDay: { percentUsed: 66, resetsAt: 138 * HOUR } })).sevenDay?.fillText
+  expect([average(fixedZone(0)), average(undefined)]).toEqual(['full ~15:30 at avg pace', 'full in ~15h 30m at avg pace'])
+})
+test("the limits say they are as of the last reply, and how long ago once that is past a few minutes", () => {
+  const seen = (ageMs: number | undefined) => readingsOf(snapOf({ limitsAt: ageMs === undefined ? undefined : -ageMs }))
+  expect(seen(undefined).asOf).toBe('as of your last reply')
+  expect(seen(4 * MIN).asOf).toBe('as of your last reply')
+  expect(seen(5 * MIN).asOf).toBe('as of your last reply, 5m ago')
+  expect(seen(125 * MIN).asOf).toBe('as of your last reply, 2h 05m ago')
+  // A clock that ran back leaves no negative age.
+  expect(readingsOf(snapOf({ limitsAt: 10 * MIN })).asOf).toBe('as of your last reply')
+  expect(seen(125 * MIN).chips.limitHover).toEqual({
+    '5h': "Resets in 3h 00m; 5-hour limit, all your Claude use; as of your last reply, 2h 05m ago",
+    '7d': "Resets in 2d 19h; weekly limit, all your Claude use; as of your last reply, 2h 05m ago",
+  })
+  // With a pace the hover ends on the age, which is the least that a short row's cut may take.
+  expect(readingsOf(snapOf({ fiveHour: { percentUsed: 40, resetsAt: 3 * HOUR, etaMs: 40 * MIN }, limitsAt: -7 * MIN })).chips.limitHover['5h']).toBe(
+    'Resets in 3h 00m; 5-hour limit, all your Claude use; full in ~40m at the current pace; as of your last reply, 7m ago',
+  )
+  // Nothing to say of a window that has reset, or of none.
+  expect(readingsOf(snapOf({ now: 4 * HOUR })).asOf).toBe('as of your last reply')
+  expect(readingsOf(snapOf({ now: 70 * HOUR })).asOf).toBeUndefined()
+  expect(readingsOf(snapOf({ fiveHour: undefined, sevenDay: undefined })).asOf).toBeUndefined()
 })
 test('a card says nothing of a window that has passed', () => {
   expect(readingsOf(snapOf({ now: 4 * HOUR })).fiveHour?.resetAndPace).toBeUndefined()
@@ -85,7 +150,10 @@ test("chips' words say its hover cards and the context's amount", () => {
   const c = readingsOf(snapOf({ history: { costs: [{ usd: 0.21, reWarm: false }], context: [] } })).chips
   expect([c.costHover, c.tokensHover]).toEqual(['$0.21 spent during your last message, subagents included', 'input 18k · output 9.0k · cache reads 198k'])
   expect([c.contextPill(true), c.contextPill(false), c.contextHover]).toEqual(['40% full', '40%', '76k of 190k (40%); auto-compacts in ~114k'])
-  expect(c.limitHover).toEqual({ '5h': 'Resets in 3h 00m; 5-hour limit, all your Claude use', '7d': 'Resets in 2d 19h; weekly limit, all your Claude use' })
+  expect(c.limitHover).toEqual({
+    '5h': 'Resets in 3h 00m; 5-hour limit, all your Claude use; as of your last reply',
+    '7d': 'Resets in 2d 19h; weekly limit, all your Claude use; as of your last reply',
+  })
   const off = readingsOf(snapOf({ context: { ...snapOf().context, compactAt: undefined }, fiveHour: { percentUsed: 30, resetsAt: -1, etaMs: null }, sevenDay: undefined })).chips
   expect([off.contextPill(true), off.contextPill(false), off.contextHover]).toEqual(['76k / 200k', '38%', '76k of 200k (38%); older turns get summarized near full'])
   expect(off.limitHover).toEqual({ '5h': '5-hour limit has reset; it updates after your next message', '7d': undefined })
@@ -143,6 +211,14 @@ test('the countdown never looks like a clock', () => {
     expect(figure).not.toMatch(/\d:\d\d/)
   }
 })
+test('what a figure shows and how it is classed agree: 79.6% shows 80% and is amber, 79.4% shows 79% and is not', () => {
+  const five = (percentUsed: number) => readingsOf(snapOf({ fiveHour: { percentUsed, resetsAt: 3 * HOUR, etaMs: null } })).fiveHour
+  expect([five(79.6)?.value, five(79.6)?.tone, five(79.6)?.valueMarked]).toEqual(['80%', 'amber', '80%!'])
+  expect([five(79.4)?.value, five(79.4)?.tone, five(79.4)?.valueMarked]).toEqual(['79%', 'calm', '79%'])
+  expect([five(94.6)?.valueMarked, five(94.4)?.valueMarked]).toEqual(['95%!!', '94%!'])
+  const ctx = (percent: number) => readingsOf(snapOf({ context: { tokens: percent * 2000, window: 200_000, percent, compactAt: undefined, autoCompactOff: true } })).context
+  expect([ctx(79.6).pct, ctx(79.6).tone, ctx(79.4).pct, ctx(79.4).tone]).toEqual(['80%', 'amber', '79%', 'calm'])
+})
 test('clock times appear only when the offset is known', () => {
   const now = Date.UTC(2026, 9, 9, 13, 40)
   const five = { percentUsed: 4, resetsAt: now + 3 * HOUR, etaMs: null }
@@ -154,8 +230,8 @@ test('limits speak in words, amber with one "! "', () => {
   expect(r.fiveHour?.text).toBe('5h 82%')
   expect([r.fiveHour?.amber?.long, r.fiveHour?.amber?.short]).toEqual(['! 5h 82%', '! 5h 82%'])
   expect([r.fiveHour?.resetWhen, r.fiveHour?.resetInMs]).toEqual(['in 3h 00m', 3 * HOUR])
-  expect(r.sevenDay?.pace).toBe('on pace for ~50%')
-  expect(r.sevenDay?.alt).toBe('7d limit 30 percent used, fine, about 50 percent at its reset')
+  expect(r.sevenDay?.pace).toBe('~50% at avg pace')
+  expect(r.sevenDay?.alt).toBe("7d limit 30 percent used, fine, about 50 percent at its reset, at the window's average pace")
   expect(Math.abs((r.sevenDay?.projectedPct ?? 0) - 30 / (1 - 67 / 168))).toBeLessThan(1e-3)
 })
 test('a measured fill is an estimate, with ~', () => {
@@ -169,8 +245,8 @@ test('a measured fill is an estimate, with ~', () => {
 test('a landing at or over 100% is full before reset, never ~112%', () => {
   const r = readingsOf(snapOf({ sevenDay: { percentUsed: 79, resetsAt: 50 * HOUR } }))
   expect(r.sevenDay?.projectedPct ?? 0).toBeGreaterThan(100)
-  expect([r.sevenDay?.tone, r.sevenDay?.pace]).toEqual(['calm', 'full before reset'])
-  expect(r.sevenDay?.alt).toBe('7d limit 79 percent used, fine, full before its reset')
+  expect([r.sevenDay?.tone, r.sevenDay?.pace]).toEqual(['calm', 'full at avg pace'])
+  expect(r.sevenDay?.alt).toBe("7d limit 79 percent used, fine, full before its reset, at the window's average pace")
 })
 test('a measured fill lands at 100, so it too is full before reset', () => {
   const r = readingsOf(snapOf({ fiveHour: { percentUsed: 84, resetsAt: 70 * MIN, etaMs: 40 * MIN } }))
@@ -336,7 +412,7 @@ test('fiveHourWindow is empty with no 5h window, or no slice measured', () => {
 })
 test('windowAlt speaks the whole window, not the last hour: its use, its pace as about, no ~; nothing once passed', () => {
   const alt = readingsOf(snapOf({ samples: SAMPLES, zone: fixedZone(0) })).week().windowAlt
-  expect(alt).toBe('5h window from start to reset, 4% used, on pace for about 10%')
+  expect(alt).toBe("5h window from start to reset, 4% used, about 10% at the window's average pace")
   expect(alt).not.toMatch(/~/)
   expect(readingsOf(snapOf({ samples: SAMPLES, zone: fixedZone(0), now: 4 * HOUR })).week().windowAlt).toBe('')
 })

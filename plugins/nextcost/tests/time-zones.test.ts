@@ -183,10 +183,10 @@ test("a reset a week out on today's weekday says next, as a fill there does", ()
   expect(r.sevenDay?.resetWhen).toBe('next Sat 13:30')
 })
 test('the longest reset and fill words fit every layout at every width, shut and open, in either tier', () => {
-  // Sat 14:00, the reset next Saturday; Sat 23:00 at 6%, the fill next Saturday too.
-  const filling = readAt('2026-10-17T23:00Z', fixedZone(0), { sevenAt: '2026-10-24T13:30Z', seven: 6 })
-  expect([filling.sevenDay?.resetWhen, filling.sevenDay?.fillText]).toEqual(['next Sat 13:30', 'full ~next Sat'])
-  for (const [iso, seven] of [['2026-10-17T14:00Z', 1], ['2026-10-17T23:00Z', 6]] as const)
+  // Sat 14:00, the reset next Saturday; Sun 23:00 at 40%, the fill Wednesday, its words the longest the week says.
+  const filling = readAt('2026-10-18T23:00Z', fixedZone(0), { sevenAt: '2026-10-24T13:30Z', seven: 40 })
+  expect([filling.sevenDay?.resetWhen, filling.sevenDay?.fillText]).toEqual(['Sat 13:30', 'full ~Wed at avg pace'])
+  for (const [iso, seven] of [['2026-10-17T14:00Z', 1], ['2026-10-18T23:00Z', 40]] as const)
     for (const layout of LAYOUT_NAMES)
       for (const [surface, glyphs] of [['terminal', 'unicode'], ['desktop', 'unicode'], ['terminal', 'ascii']] as const)
         for (const cols of [40, 41, 50, 60, 67, 68, 80, 95, 120])
@@ -209,13 +209,13 @@ test('a 5h fill past midnight says its day and its clock, as its reset does', ()
   expect([r.fiveHour?.fillText, r.fiveHour?.resetWhen]).toEqual(['full ~Sun 01:00', 'Sun 02:00'])
 })
 test("the week's fill day is the forecast's, today included", () => {
-  // UTC-8, Sat 09:30, 9 hours into the window at 60%: the average fills it today at 15:30.
-  const today = readAt('2026-10-17T17:30Z', fixedZone(-480), { sevenAt: '2026-10-24T08:30Z', seven: 60 })
-  expect(today.sevenDay?.fillText).toBe('full ~15:30')
-  expect(today.week().dayMarks[0]?.kind).toBe('fills')
+  // UTC-8, Sun 09:30, 33 hours into the window at 85%: the average fills it today at 15:15.
+  const today = readAt('2026-10-18T17:30Z', fixedZone(-480), { sevenAt: '2026-10-24T08:30Z', seven: 85 })
+  expect(today.sevenDay?.fillText).toBe('full ~15:15 at avg pace')
+  expect(today.week().dayMarks.findIndex(m => m.kind === 'fills')).toBe(1)
   // UTC, Wed noon, a fill at Sat 01:30 in the Friday cell Saturday's morning folds into.
   const folded = readAt('2026-10-21T12:00Z', fixedZone(0), { sevenAt: '2026-10-24T06:00Z', seven: 62.4 })
-  expect(folded.sevenDay?.fillText).toBe('full ~Sat')
+  expect(folded.sevenDay?.fillText).toBe('full ~Sat at avg pace')
 })
 test('a window under a second from its reset still reads its use, not reset', () => {
   const r = readAt('2026-10-17T13:59:59.400Z', fixedZone(0), { fiveAt: '2026-10-17T14:00:00.000Z', five: 97 })

@@ -37,9 +37,15 @@ type Week = Readonly<{
   hours: readonly HourCell[]
 }>
 
-/** How a window is cut: what a sample says of it, and its slices' edges,
- *  oldest first. */
-type Cut = Readonly<{ pct: (s: Sample) => number; reset: (s: Sample) => number; bounds: (resetAt: number, now: number, zone: Zone) => number[] }>
+/** A window as one sample reports it: its use and its reset. */
+type Reading = Readonly<{ pct: number; reset: number }>
+
+/** A window's use at one sample's time. */
+type Reached = Readonly<{ at: number; pct: number }>
+
+/** How a window is cut: what a sample says of it, if it reports it, and its
+ *  slices' edges, oldest first. */
+type Cut = Readonly<{ read: (s: Sample) => Reading | undefined; bounds: (resetAt: number, now: number, zone: Zone) => number[] }>
 
 /** The 7d window cut at each local midnight inside it, each found in the
  *  offset in force there, so a 23- or 25-hour day stays one day. A reset off
@@ -67,25 +73,35 @@ const dayBounds = (resetAt: number, now: number, zone: Zone): number[] => {
   return bounds
 }
 
-const BY_DAY: Cut = { pct: s => s.sevenPct, reset: s => s.sevenResetAt, bounds: dayBounds }
-const BY_HOUR: Cut = { pct: s => s.fivePct, reset: s => s.fiveResetAt, bounds: resetAt => Array.from({ length: 6 }, (_, i) => resetAt - (5 - i) * HOUR_MS) }
+const BY_DAY: Cut = { read: s => (s.sevenPct === undefined || s.sevenResetAt === undefined ? undefined : { pct: s.sevenPct, reset: s.sevenResetAt }), bounds: dayBounds }
+const BY_HOUR: Cut = {
+  read: s => (s.fivePct === undefined || s.fiveResetAt === undefined ? undefined : { pct: s.fivePct, reset: s.fiveResetAt }),
+  bounds: resetAt => Array.from({ length: 6 }, (_, i) => resetAt - (5 - i) * HOUR_MS),
+}
 
 /** A slice of a window, before it is named as a day or an hour. */
 type Slice = Readonly<{ start: number; end: number; pct: number | undefined; guess: boolean; current: boolean; fullMark: boolean }>
 
 /** Each slice's rise, from the window's own samples; undefined where unknown or ahead. */
 const risesOf = (samples: readonly Sample[], cut: Cut, resetAt: number, bounds: readonly number[], now: number): Array<number | undefined> => {
-  const own = samples.filter(s => sameReset(cut.reset(s), resetAt))
-  const lastWhere = (keep: (s: Sample) => boolean) => own.reduce<Sample | undefined>((found, s) => (keep(s) ? s : found), undefined)
+  // The window's own readings, by time.
+  const own = samples.flatMap((s): Reached[] => {
+    const r = cut.read(s)
+    return r !== undefined && sameReset(r.reset, resetAt) ? [{ at: s.at, pct: r.pct }] : []
+  })
+  const lastWhere = (keep: (r: Reached) => boolean) => own.reduce<Reached | undefined>((found, r) => (keep(r) ? r : found), undefined)
   return bounds.slice(0, -1).map((from, i) => {
     const to = bounds[i + 1] ?? from
     if (from > now) return undefined
     // A sample on an edge closes the slice before it and opens the one after.
     const inside = lastWhere(s => s.at > from && s.at <= to && s.at <= now)
-    const before = lastWhere(s => s.at <= from)
+    // Its base is the last sample at or before its start, if that closes the
+    // slice before it: from further back the rise would be several slices'.
+    const prevFrom = bounds[i - 1]
+    const before = lastWhere(s => s.at <= from && (prevFrom === undefined || s.at > prevFrom))
     // The window's first slice starts from 0, the window's own start.
-    const base = before !== undefined ? cut.pct(before) : i === 0 ? 0 : undefined
-    return inside === undefined || base === undefined ? undefined : Math.max(0, cut.pct(inside) - base)
+    const base = before !== undefined ? before.pct : i === 0 ? 0 : undefined
+    return inside === undefined || base === undefined ? undefined : Math.max(0, inside.pct - base)
   })
 }
 

@@ -27,6 +27,8 @@ import {
   svgRect,
   fact,
   cardOf,
+  cardText,
+  hoverCardOf,
   setup,
   mountBand,
 } from './helpers'
@@ -98,7 +100,7 @@ test('the 5h pill shows your pace once there is enough evidence, and drops it wh
   const measure = async (pct: number) => {
     usage.current = at(pct)
     const u = usage.current
-    await $.session.measure({ context: u.context, rateLimits: u.rateLimits, cost: u.cost, changed: [] })
+    await $.session.measure({ context: u.context, rateLimits: u.rateLimits, cost: u.cost, changed: ['rateLimits'] })
   }
   await measure(40)
   await clock.advance(12 * 60_000)
@@ -111,6 +113,49 @@ test('the 5h pill shows your pace once there is enough evidence, and drops it wh
 
   await clock.advance(16 * 60_000)
   expect(await ui.find({ type: 'Text', text: /full in/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('only a measure that moved the limits takes a pace point: a stale reading is never stamped as now', LONG, async ($, on) => {
+  const resetsAt = new Date(6 * 3600_000).toISOString()
+  const at = (pct: number) => ({ ...USAGE, rateLimits: [{ kind: 'five_hour', percentUsed: pct, resetsAt }] })
+  const clock = setup(on, { usage: at(40) })
+  await $.session.start(START)
+  const measure = async (pct: number, changed: Array<'context' | 'rateLimits' | 'cost'>) => {
+    usage.current = at(pct)
+    const u = usage.current
+    await $.session.measure({ context: u.context, rateLimits: u.rateLimits, cost: u.cost, changed })
+  }
+  await measure(40, ['rateLimits'])
+  await clock.advance(12 * MIN)
+  await measure(46, ['rateLimits'])
+  await clock.advance(8 * MIN)
+  // The cost moved; the 5h reading is the one from 8 minutes ago.
+  await measure(46, ['cost'])
+  await clock.advance(8 * MIN)
+
+  // 16 minutes on from the reading that did move, the pace has gone stale.
+  const ui = await mountBand($, 'terminal', 110)
+  expect(await ui.find({ type: 'Text', text: /full in/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the limits say they are as of the last reply: in the hover and the card, with how long ago once it is more than a few minutes', LONG, async ($, on) => {
+  const clock = setup(on)
+  await $.session.start(START)
+  await respond($, BUILD_155K)
+  const ui = await mountBand($, 'terminal', 160)
+  expect(cardText(hoverCardOf(await ui.drawn(), '5h'))).toBe('Resets in 3h 00m; 5-hour limit, all your Claude use; as of your last reply')
+  await clock.advance(12 * MIN + 30_000)
+  expect(cardText(hoverCardOf(await ui.drawn(), '5h'))).toBe('Resets in 2h 47m; 5-hour limit, all your Claude use; as of your last reply, 12m ago')
+  await ui.press({ key: 'more' })
+  expect(shown(cardOf(await ui.drawn(), 'limits'))).toContain('as of your last reply, 12m ago')
+  // A measure that moved the limits is a new reading; one that didn't, isn't.
+  await $.session.measure({ context: USAGE.context, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: ['cost'] })
+  expect(shown(cardOf(await ui.drawn(), 'limits'))).toContain('as of your last reply, 12m ago')
+  await $.session.measure({ context: USAGE.context, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: ['rateLimits'] })
+  expect(shown(cardOf(await ui.drawn(), 'limits'))).toContain('as of your last reply')
+  expect(shown(cardOf(await ui.drawn(), 'limits'))).not.toContain('ago')
   await ui.unmount()
 })
 
@@ -150,7 +195,7 @@ test('/clear keeps the 5h pace and does not repeat its toast', LONG, async ($, o
   const measure = async (pct: number) => {
     usage.current = at(pct)
     const u = usage.current
-    await $.session.measure({ context: u.context, rateLimits: u.rateLimits, cost: u.cost, changed: [] })
+    await $.session.measure({ context: u.context, rateLimits: u.rateLimits, cost: u.cost, changed: ['rateLimits'] })
   }
   await measure(80)
   await clock.advance(12 * MIN)
@@ -171,7 +216,7 @@ test('a failing breakdown read keeps the 5h toast', async ($, on) => {
   setup(on, { usage: at85 })
   usage.breakdownFails = true
   await $.session.start(START)
-  await $.session.measure({ context: at85.context, rateLimits: at85.rateLimits, cost: at85.cost, changed: [] })
+  await $.session.measure({ context: at85.context, rateLimits: at85.rateLimits, cost: at85.cost, changed: ['rateLimits'] })
   expect(toasts.some(t => /85% of your 5-hour limit/.test(t))).toBe(true)
 })
 

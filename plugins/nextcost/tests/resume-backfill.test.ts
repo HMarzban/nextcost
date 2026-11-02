@@ -6,7 +6,7 @@
 import { test, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { SessionUsage } from 'claude-code'
-import { BUILD_155K, BUILD_80K, CLEAR, HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, cardOf, engine, fact, toasts, jsonl, pillOf, resp, respond, setup, shown, startTurn, endTurn, svgAlts, turn, mountBand, usage } from './helpers'
+import { BUILD_155K, BUILD_80K, CLEAR, HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, breakdown, cardOf, engine, fact, toasts, jsonl, pillOf, resp, respond, setup, shown, startTurn, endTurn, svgAlts, turn, mountBand, usage } from './helpers'
 
 const ENV = { ENABLE_PROMPT_CACHING_1H: '1', HOME: '/Users/me' }
 const BUILT_PATH = '/Users/me/.claude/projects/-Users-me-workspace-nextcost/s1.jsonl'
@@ -747,9 +747,11 @@ test("a reload keeps pulse's trails and the last message's cost", async ($, on) 
 })
 
 test('a toast spoken before a reload is not spoken again at the same level', async ($, on) => {
-  setup(on, { usage: { ...USAGE, cost: { usd: 2 } }, env: ENV, now: 3 * HOUR })
+  // Auto-compaction off, so the context's scale is known from the start, before and after the reload.
+  const context = { tokens: 164_000, window: 200_000, percent: 82, breakdown: breakdown({ isAutoCompactEnabled: false }) }
+  setup(on, { usage: { ...USAGE, context, cost: { usd: 2 } }, env: ENV, now: 3 * HOUR })
   await $.session.start(START)
-  const measure = () => $.session.measure({ context: { tokens: 164_000, window: 200_000, percent: 82 }, rateLimits: [], changed: [] })
+  const measure = () => $.session.measure({ context, rateLimits: [], changed: [] })
   await measure()
   expect(toasts.length).toBe(1)
   await $.session.start(START)

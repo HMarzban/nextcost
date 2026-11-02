@@ -65,7 +65,7 @@ async function state($: Engine, on: On, name: string, shape: Shape) {
     // ten points in twelve minutes: the pace would fill the window before it resets
     const measure = async (five: number) => {
       usage.current = { ...usage.current, rateLimits: limits(five) }
-      await $.session.measure({ context, rateLimits: usage.current.rateLimits, cost: usage.current.cost, changed: [] })
+      await $.session.measure({ context, rateLimits: usage.current.rateLimits, cost: usage.current.cost, changed: ['context', 'rateLimits'] })
     }
     await measure(40); await clock.advance(12 * MIN); await measure(50)
   }
@@ -76,7 +76,7 @@ async function state($: Engine, on: On, name: string, shape: Shape) {
     : context
   usage.current = { ...usage.current, cost: { usd: 163.7 }, context: ctx, rateLimits: limits(shape.pace ? 50 : shape.five ?? 30) }
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
-  await $.session.measure({ context: ctx, rateLimits: usage.current.rateLimits, cost: usage.current.cost, changed: [] })
+  await $.session.measure({ context: ctx, rateLimits: usage.current.rateLimits, cost: usage.current.cost, changed: ['context', 'rateLimits'] })
   await clock.settle()
   const ui = await mountBand($, 'desktop', 94, { maxRows: 13 })
   console.log('STATE ' + name + ' ' + JSON.stringify(await ui.drawn()))
@@ -150,7 +150,7 @@ async function lived($: Engine, on: On, layout: LayoutName, shape: Lived = LIVED
     const ctx = shape.threshold ? { ...win, breakdown: breakdown({ autoCompactThreshold: shape.threshold, isAutoCompactEnabled: true }) } : win
     usage.current = { ...usage.current, cost: { usd }, context: ctx, rateLimits: limits(five, seven) }
     await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: `t${i}`, reason: 'answer' })
-    await $.session.measure({ context: ctx, rateLimits: usage.current.rateLimits, cost: usage.current.cost, changed: [] })
+    await $.session.measure({ context: ctx, rateLimits: usage.current.rateLimits, cost: usage.current.cost, changed: ['context', 'rateLimits'] })
     if (i < N - 1) await clock.advance(GAP)
   }
   await clock.settle()

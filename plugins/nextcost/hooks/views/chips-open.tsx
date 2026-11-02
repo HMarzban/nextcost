@@ -199,20 +199,29 @@ const limitRows = (kit: Kit, fit: Fit, worst: LimitReading | undefined, w: Limit
   ]
 }
 
+/** Limits' last row: that the windows are as of the last reply, and how long
+ *  ago. Null while none is still to reset. */
+const asOfRow = (kit: Kit, read: Readings): RenderChildren => {
+  const { Box, palette, oneLine } = kit
+  return read.asOf === undefined ? null : <Box key="fact:as of">{oneLine({ color: palette.label }, read.asOf)}</Box>
+}
+
 /** The lead row, then every window's rows; short of rows, each window's bar
  *  row before any pace line, and with no lead row the worst's bar last of
- *  all, since the headline says its value. */
+ *  all, since the headline says its value. The age of the reading goes last
+ *  of all, and gives way first. */
 const limitLines = (kit: Kit, read: Readings, fit: Fit): RenderChildren[] => {
   const worst = read.worstLimit
   const lead = leadRow(kit, worst)
   const rows = read.limits.map(w => limitRows(kit, fit, worst, w))
   const lines = rows.flat().filter(part => part !== null)
   const room = fit.bodyRows - (lead === null ? 0 : 1)
-  if (lines.length <= room) return [lead, ...lines]
+  const asOf = asOfRow(kit, read)
+  if (lines.length <= room) return [lead, ...lines, asOf]
   const bars = rows.map(([bar]) => bar)
   const worstAt = lead === null ? read.limits.findIndex(w => w === worst) : -1
   const worstBar = worstAt < 0 ? [] : bars.splice(worstAt, 1)
-  return [lead, ...bars, ...rows.map(([, pace]) => pace), ...worstBar]
+  return [lead, ...bars, ...rows.map(([, pace]) => pace), ...worstBar, asOf]
 }
 
 /** The limits' card, once the engine reports any window. Each window's bar
