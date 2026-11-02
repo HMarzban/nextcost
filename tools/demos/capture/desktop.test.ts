@@ -25,6 +25,7 @@ async function session($: Engine, on: On) {
   const clock = setup(on, { usage: { ...FRESH, cost: { usd: 162.0 }, rateLimits: LIMITS }, env: { ...HOUR_1, CLAUDE_CODE_PROMPT_CACHE_TTL: '1h' } })
   await $.session.start({ ...START, surface: 'desktop' })
   await $.turn.start({ text: 'hi', turnId: 't1' })
+  usage.current = { ...usage.current, cost: { usd: 162.0 + priced(2_000, 0, 336_000, 3_000) } }
   await respond($, resp(2_000, 0, 336_000, 3_000))
   usage.current = { ...usage.current, cost: { usd: 162.0 + priced(2_000, 0, 336_000, 3_000) }, context: { tokens: 341_000, window: 1_000_000, percent: 35 }, rateLimits: LIMITS }
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
@@ -78,6 +79,7 @@ async function state($: Engine, on: On, name: string, shape: Shape) {
   }
   await $.turn.start({ text: 'hi', turnId: 't1' })
   const write = Math.max(10_000, tokens - 5_000)
+  usage.current = { ...usage.current, cost: { usd: 162.0 + priced(2_000, 0, write, 3_000) } }
   await respond($, resp(2_000, 0, write, 3_000))
   const ctx = shape.threshold
     ? { ...context, breakdown: breakdown({ autoCompactThreshold: shape.threshold, isAutoCompactEnabled: true }) }
@@ -150,8 +152,9 @@ async function lived($: Engine, on: On, layout: LayoutName, shape: Lived = LIVED
     const read = context
     usage.current = { ...usage.current, cost: { usd } }
     await $.turn.start({ text: 'hi', turnId: `t${i}` })
-    await respond($, resp(2_000, read, write, out))
     usd += priced(2_000, read, write, out)
+    usage.current = { ...usage.current, cost: { usd } }
+    await respond($, resp(2_000, read, write, out))
     context = read + write
     const five = Math.round(f0 + ((f1 - f0) * i) / (N - 1)), seven = 38 + lift + Math.floor((3 * i) / (N - 1))
     const win = { tokens: context, window: 1_000_000, percent: Math.round(context / 10_000) }
