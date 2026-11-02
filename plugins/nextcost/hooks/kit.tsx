@@ -18,14 +18,13 @@ import type { BandSnapshot } from './snapshot'
 export type CardPlace = Readonly<({ left: number } | { right: number }) & { room: number; pieces: readonly Span[] }>
 
 /** The columns a card `cells` wide takes at `place`, counted from its side.
- *  It starts a column before its piece, where a text surface's cap sits in
- *  the gap and the desktop's ground takes up the measure's error, slid back
- *  only as far as it must to end within the room. Then it covers whole
+ *  It starts a column before its piece, where its cap sits in the gap, slid
+ *  back only as far as it must to end within the room. Then it covers whole
  *  pieces: each piece it enters, the column either side included, so no
  *  piece shows in part, all within the room. A row has none to give where
  *  it has no room. */
 const cardSpan = (place: CardPlace, cells: number) => {
-  const room = Math.floor(place.room)
+  const { room } = place
   const width = Math.max(0, Math.min(cells, room))
   let from = Math.max(0, Math.min(('right' in place ? place.right : place.left) - 1, room - width))
   let to = from + width

@@ -73,11 +73,10 @@ const pill = (kit: Kit, { key, tone, body, hover, paintsOwnBg, bg }: PillSpec): 
   )
 }
 
-/** A reset after its reading: the separator in label ink, then `↻` and
- *  when, in `ink`. `↻` is a glyph on every surface, as the boards draw it,
- *  never the clock icon; elsewhere it is the reset icon's own glyph, and in
- *  the ascii tier the word `resets`, since a bare time after a bar reads as
- *  nothing. */
+/** A reset after its reading: the separator in label ink, then the reset
+ *  icon's glyph and when, in `ink`: `↻` on every surface, never an Svg, and
+ *  in the ascii tier the word `resets`, since a bare time after a bar reads
+ *  as nothing. */
 const resetClause = (kit: Kit, ink: string, when: string): RenderElement[] => {
   const { Text, palette, mark } = kit
   return [
