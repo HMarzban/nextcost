@@ -7,7 +7,7 @@
 import type { CacheFacts } from './cache'
 import type { ContextFacts, Frame, LimitFacts, LimitKey, SpendFacts, Tone } from './facts'
 import { boardSpan, etaMinutes, fillTime, fmtClock, fmtDayClock, fmtEta } from './format'
-import { AMBER_LEAD, EMPTY, compactsIn, saidJoined } from './words'
+import { AMBER_LEAD, EMPTY, PRICE_COVERS, UNKNOWN, compactsIn, saidJoined } from './words'
 import type { CacheWords, ContextWords, LimitWords, SpendWords } from './words'
 
 export type BoardKey = 'cache' | 'spend' | 'context' | '5h' | '7d' | 'other'
@@ -34,8 +34,6 @@ export type BoardRow = Readonly<{
   /** The reading's own alt, in words, never capitals or ↻. */
   alt: string
 }>
-/** After the price in REMARKS: what the price covers. Clipped first as the column narrows. */
-const PRICE_COVERS = ' · CACHE REWRITE, NOT YOUR REPLY'
 /** What the board says for a reset: the flap face has no ↻. */
 const BOARD_RESET = 'RESET'
 export type Board = Readonly<{
@@ -68,10 +66,11 @@ const cacheBoard = (r: BoardFacts): BoardRow => {
   const zone = r.frame.zone
   /** The cache's line; `price`, the part of its remarks a waker keeps beside
    *  it, its remarks all where none is named. A named price says what it
-   *  covers in REMARKS alone, never in what a waker leads, so the waker's own
-   *  words are what a narrow column drops last. */
+   *  covers in REMARKS alone, last, so a narrowing column clips that first;
+   *  never in what a waker leads, so the waker's own words are what it drops
+   *  last. */
   const at = (cell: Omit<BoardRow, 'key' | 'item' | 'alt' | 'woken'>, price?: string): BoardRow =>
-    ({ key: 'cache', item: 'CACHE', alt: c.alt, ...cell, remarks: price === undefined ? cell.remarks : `${cell.remarks}${PRICE_COVERS}`, ...wokenForms(c, cell.remarks, price ?? cell.remarks) })
+    ({ key: 'cache', item: 'CACHE', alt: c.alt, ...cell, remarks: price === undefined ? cell.remarks : `${cell.remarks} · ${PRICE_COVERS}`, ...wokenForms(c, cell.remarks, price ?? cell.remarks) })
   /** A row with no time to show: its status alone, in every column. */
   const statusOnly = (status: string): BoardRow => at({ status, time: undefined, remarks: '', cell: status, cellShort: status, tone: 'calm' })
   const reWarm = `RE-WARM ${c.estimate}`
@@ -165,6 +164,6 @@ export const BOARD_TITLE = 'DEPARTURES'
 /** What leads the time now, at the header's right: `NOW 20:36`. */
 export const BOARD_NOW = 'NOW'
 /** What TIME says, in plain text, on a line that has none. */
-export const BOARD_NO_TIME = '–'
+export const BOARD_NO_TIME = UNKNOWN
 /** The alt of a rule between the board's lines. */
 export const BOARD_RULE_ALT = 'a rule between the board\'s lines'

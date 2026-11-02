@@ -5,7 +5,7 @@
 import type { CacheFacts } from './cache'
 import type { ContextFacts, Frame, LimitFacts } from './facts'
 import { clamp01, fmtCountdown, fmtTokens, severityMark } from './format'
-import { IDLE_COMPACT_AT, MOOD_ALT, UNKNOWN, SINCE_LOADED, compactsIn, countedSinceLoad, goneShort, lifetimeAssumed, paceText, saidJoined, wakeSaid } from './words'
+import { IDLE_COMPACT_AT, LIMIT_TITLES, MOOD_ALT, UNKNOWN, SINCE_LOADED, compactedWords, compactsIn, countedSinceLoad, goneShort, lifetimeAssumed, paceText, saidJoined, wakeSaid } from './words'
 import type { SpendWords } from './words'
 
 /** Every word chips' row says about the cache, for one mood: the pill, its
@@ -61,7 +61,7 @@ const cacheCopy = (f: CacheFacts, frame: Frame): CacheCopy => {
         pill: short => (short ? goneShort('compacted', f.estimate) : `cache compacted · next ${f.estimate}`),
         hover: f.window === 0
           ? 'Compacted: next message writes the summary, plus your reply'
-          : `${f.compactedIdle ? 'Compacted while idle' : 'Compacted'}: ${rewrites(`the ${fmtTokens(f.window)} summary`)}, plus your reply`,
+          : `${compactedWords(f.compactedIdle)}: ${rewrites(`the ${fmtTokens(f.window)} summary`)}, plus your reply`,
         alt: MOOD_ALT.compacted,
       }
     case 'uncached':
@@ -92,9 +92,6 @@ const cacheCopy = (f: CacheFacts, frame: Frame): CacheCopy => {
   }
 }
 
-/** The chips a limit window has, and the title its hover card names it by. */
-const CHIP_TITLES = { '5h': '5-hour limit', '7d': 'Weekly limit' } as const
-
 /** Every word chips' row says beyond the readings' own: the cache pill's
  *  table, the hover cards, and the context's amount. */
 export type ChipsWords = Readonly<{
@@ -113,18 +110,18 @@ export type ChipsWords = Readonly<{
    *  reset first, the fact the chip had, so a short row's cut only takes the
    *  description, and last that it is as of the last reply. Undefined while
    *  the engine reports no such window. */
-  limitHover: Readonly<Record<keyof typeof CHIP_TITLES, string | undefined>>
+  limitHover: Readonly<Record<keyof typeof LIMIT_TITLES, string | undefined>>
 }>
 
 /** Chips' words, from the facts and the words the other layouts share. */
 export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend: SpendWords; context: ContextFacts; limits: readonly LimitFacts[]; asOf: string | undefined }>): ChipsWords => {
   const { spend, context: x } = r
-  const limitHover = (key: keyof typeof CHIP_TITLES): string | undefined => {
+  const limitHover = (key: keyof typeof LIMIT_TITLES): string | undefined => {
     const l = r.limits.find(w => w.key === key)
     if (l === undefined) return undefined
-    const title = CHIP_TITLES[key]
-    if (l.passed) return `${title} has reset; it updates after your next message`
-    const about = l.reset?.kind === 'in' ? `Resets in ${l.reset.text}; ${title.toLowerCase()}, all your Claude use` : `Your ${title.toLowerCase()}, across all your Claude use`
+    const title = LIMIT_TITLES[key]
+    if (l.passed) return `${title.charAt(0).toUpperCase()}${title.slice(1)} has reset; it updates after your next message`
+    const about = l.reset?.kind === 'in' ? `Resets in ${l.reset.text}; ${title}, all your Claude use` : `Your ${title}, across all your Claude use`
     // A fill is the last half hour's pace drawn straight on: a burst of work
     // fills the window sooner, so the hover says what it rests on.
     const paced = l.etaMs === null ? about : `${about}; ${paceText(l)} at the current pace`

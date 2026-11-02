@@ -1,8 +1,8 @@
-// The phrasebook: every phrase a layout draws, built from the facts the
-// readings hold. Pure, and the one place a layout's words are written, so
-// amber, pace, resets, empty states and alt text read the same everywhere.
-// The departures board's words are board-words.ts's, and chips' own
-// chips-words.ts's, built from these.
+// The phrasebook: the phrases the layouts share, built from the facts the
+// readings hold. Pure, so amber, pace, resets, empty states and alt text read
+// the same everywhere. The departures board's words are board-words.ts's, and
+// chips' own chips-words.ts's, built from these; a card's own row labels stay
+// with its card.
 
 import type { DrawnWeek, SliceMark } from './calendar'
 import {
@@ -40,11 +40,14 @@ export type Amber = Readonly<{ long: string; short: string }>
  *  inferred, until a pin or a read of the transcript says it. */
 export const lifetimeAssumed = (f: Pick<CacheFacts, 'ttlPinned'>): boolean => !f.ttlPinned
 
-/** The next message's price with what it covers, longest first, for a row to
- *  take the longest that fits: the price is the cache rewrite, never the
+/** What the next message's price covers: the cache rewrite, never the
  *  message's own input or Claude's reply. */
-export const estimateForms = (estimate: string): readonly string[] => [
-  `${estimate} · cache rewrite, not your reply`,
+export const PRICE_COVERS = 'cache rewrite, not your reply'
+
+/** The next message's price with what it covers, longest first, for a row to
+ *  take the longest that fits. */
+const estimateForms = (estimate: string): readonly string[] => [
+  `${estimate} · ${PRICE_COVERS}`,
   `${estimate} · cache rewrite only`,
   `${estimate} · cache rewrite`,
   `${estimate} · cache only`,
@@ -77,6 +80,13 @@ export const roomOf = (toCompact: number): string => `~${fmtTokens(toCompact)}`
 /** Near compaction, the room before it: `compacts in ~14k`. Every layout's
  *  words say it so, chips' hover as `auto-compacts in ~14k`. */
 export const compactsIn = (toCompact: number): string => `compacts in ${roomOf(toCompact)}`
+
+/** What each window with a chip of its own is called, as a toast and its
+ *  hover name it. */
+export const LIMIT_TITLES = { '5h': '5-hour limit', '7d': 'weekly limit' } as const
+
+/** A compaction, and whether it came while the conversation sat idle. */
+export const compactedWords = (idle: boolean): string => (idle ? 'Compacted while idle' : 'Compacted')
 
 /** When Claude Code may compact a conversation idle on the hour's cache. */
 export const IDLE_COMPACT_AT = `at ~${fmtAgo(IDLE_COMPACT_MS)} idle, before it goes cold`
@@ -334,9 +344,9 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
         figureShort: goneShort('compacted', f.estimate),
         amber: undefined,
         cardHead: [['compacted', 'value']],
-        cardNote: `${f.compactedIdle ? 'Compacted while idle' : 'Compacted'}: next message writes the summary.`,
+        cardNote: `${compactedWords(f.compactedIdle)}: next message writes the summary.`,
         estimateLabel: 'next message',
-        alt: altOf('cache', f.compactedIdle ? 'compacted while idle' : 'compacted', f.window === 0 ? 'next message writes the summary' : `next message about ${price}, the cache only`),
+        alt: altOf('cache', compactedWords(f.compactedIdle).toLowerCase(), f.window === 0 ? 'next message writes the summary' : `next message about ${price}, the cache only`),
       }
     case 'uncached':
       return {

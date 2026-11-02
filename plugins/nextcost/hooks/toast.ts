@@ -4,7 +4,7 @@
 
 import { SEVERE_AT, WARN_AT, contextPressure, fmtPct, shownFrac, toCompaction } from './format'
 import { FIVE_HOUR, SEVEN_DAY } from './snapshot'
-import { roomOf } from './words'
+import { LIMIT_TITLES, roomOf } from './words'
 
 /** Each toast's level reached, by its key, so it speaks once per crossing. */
 export type Warned = ReadonlyMap<string, number>
@@ -43,8 +43,8 @@ const note = (warned: Warned, key: string, frac: number, levels: readonly number
 /** What each window that speaks is called in its toast, by the kind the
  *  engine reports it under, which is also the key its level is kept by. */
 const LIMIT_NAMES: ReadonlyMap<string, string> = new Map([
-  [FIVE_HOUR, '5-hour limit'],
-  [SEVEN_DAY, 'weekly limit'],
+  [FIVE_HOUR, LIMIT_TITLES['5h']],
+  [SEVEN_DAY, LIMIT_TITLES['7d']],
   ['spend_limit', 'spend limit'],
 ])
 
