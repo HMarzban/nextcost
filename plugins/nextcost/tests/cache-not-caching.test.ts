@@ -6,18 +6,15 @@
 import { test, expect, type Engine } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
 import { LAYOUT_NAMES } from '../hooks/snapshot'
-import { LONG, MIN, START, mountBand, resp, respond, setup, svgAlts, textOf } from './helpers'
+import { LONG, MIN, START, resp, respond, setup, shutAndOpen, svgAlts, textOf } from './helpers'
 import { cacheView } from './matrix'
 
-const shutAndOpen = async ($: Engine, surface: 'terminal' | 'desktop'): Promise<string> => {
-  const ui = await mountBand($, surface, 160)
-  // The desktop's flap tiles say it in their alts.
-  const said = async () => { const tree = await ui.drawn(); return `${textOf(tree)}\n${svgAlts(tree).join('\n')}` }
-  const shut = await said()
-  await ui.press({ key: 'more' })
-  const open = await said()
-  await ui.unmount()
-  return `${shut}\n${open}`
+// The desktop's flap tiles say it in their alts.
+const said = (tree: unknown): string => `${textOf(tree)}\n${svgAlts(tree).join('\n')}`
+
+const shutAndOpenSaid = async ($: Engine, surface: 'terminal' | 'desktop'): Promise<string> => {
+  const { shut, open } = await shutAndOpen($, 160, surface)
+  return `${said(shut)}\n${said(open)}`
 }
 
 const NO_COUNTDOWN = /\d+m left|re-warm|RE-WARM|DEPARTS|LAST CALL|BOARDING|CHECK-IN|\dh idle|next message|\bcache \d/
@@ -29,7 +26,7 @@ for (const layout of LAYOUT_NAMES)
       await $.session.start({ ...START, surface })
       await respond($, resp(157_000, 0, 0, 500))
       await clock.advance(MIN)
-      const text = await shutAndOpen($, surface)
+      const text = await shutAndOpenSaid($, surface)
       expect(text.toLowerCase()).toContain('not caching')
       expect(text).not.toMatch(NO_COUNTDOWN)
     })

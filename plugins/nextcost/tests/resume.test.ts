@@ -5,9 +5,9 @@
 
 import { test, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { BUILD_155K, FRESH, HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, cardOf, cardText, costRecord, engine, fact, hoverCardOf, jsonl, pillOf, promptLine, replyLine, requestLines, resp, respond, shown, transcriptOf, setup, mountBand } from './helpers'
+import { BUILD_155K, FRESH, HOME, HOUR, HOUR_1, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, cardOf, cardText, costRecord, engine, fact, hoverCardOf, jsonl, pillOf, promptLine, replyLine, requestLines, resp, respond, shown, transcriptOf, setup, mountBand } from './helpers'
 
-const ENV = { ENABLE_PROMPT_CACHING_1H: '1', HOME: '/Users/me' }
+const ENV = { ...HOUR_1, ...HOME }
 const MODEL = 'claude-opus-5-5'
 /** A round rate on Opus 5.5: $0.00001 a token. */
 const RATE = 0.00001
@@ -85,7 +85,7 @@ test('a session from before the band reads its last reply off its transcript, ne
   setup(on, { env: ENV, now: 3 * HOUR })
   engine.transcript = transcriptOf(0)
   await $.session.start(START)
-  expect(engine.ran.find(argv => argv[0] === 'tail')?.at(-1)).toBe('/Users/me/.claude/projects/-Users-me-workspace-nextcost/s1.jsonl')
+  expect(engine.runs.find(({ argv }) => argv[0] === 'tail')?.argv.at(-1)).toBe('/Users/me/.claude/projects/-Users-me-workspace-nextcost/s1.jsonl')
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold/)
 })
 
@@ -124,7 +124,7 @@ test('a transcript of any size is read from its end, the last megabyte alone', a
   engine.transcript = transcriptOf(0)
   engine.transcriptBytes = 40 * 1024 * 1024
   await $.session.start(START)
-  expect(engine.ran).toContainEqual(['tail', '-c', String(1024 * 1024), '/Users/me/.claude/projects/-Users-me-workspace-nextcost/s1.jsonl'])
+  expect(engine.runs.map(run => run.argv)).toContainEqual(['tail', '-c', String(1024 * 1024), '/Users/me/.claude/projects/-Users-me-workspace-nextcost/s1.jsonl'])
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold/)
 })
 
@@ -202,10 +202,10 @@ test('reloaded, a session named by an alias recalls its rate from the store, wit
   await $.turn.complete(TURN_DONE)
   await clock.settle()
   await clock.advance(2 * HOUR)
-  engine.ran.length = 0
+  engine.runs.length = 0
   await $.session.start(START)
   await clock.settle()
-  expect(engine.ran.filter(argv => argv[0] === 'tail')).toEqual([])
+  expect(engine.runs.filter(({ argv }) => argv[0] === 'tail')).toEqual([])
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold · next message ~\$/)
 })
 
@@ -216,10 +216,10 @@ test("reloaded with no transcript, a session named by an alias prices its re-war
   await haikuTurn($)
   await clock.settle()
   await clock.advance(61 * MIN)
-  engine.ran.length = 0
+  engine.runs.length = 0
   await $.session.start(START)
   await clock.settle()
-  expect(engine.ran.filter(argv => argv[0] === 'tail')).toEqual([])
+  expect(engine.runs.filter(({ argv }) => argv[0] === 'tail')).toEqual([])
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(HAIKU_COLD)
 })
 
@@ -245,7 +245,7 @@ test('a session remembered without its billed model, as older versions kept it, 
   engine.model = 'haiku'
   engine.transcript = jsonl(promptLine(-5000), { type: 'assistant', timestamp: new Date(0).toISOString(), message: { role: 'assistant', model: HAIKU, content: [] } })
   await $.session.start(START)
-  expect(engine.ran.filter(argv => argv[0] === 'tail')).toHaveLength(1)
+  expect(engine.runs.filter(({ argv }) => argv[0] === 'tail')).toHaveLength(1)
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(HAIKU_COLD)
 })
 

@@ -9,6 +9,7 @@ import {
   BUILD_155K,
   DEFAULT_MAX_ROWS,
   FRESH,
+  HOME,
   HOUR,
   HOUR_1,
   MIN,
@@ -83,7 +84,7 @@ export const SCENARIOS = {
   warming: { usage: FRESH, drive: started, amber: [] },
   // Its last reply 20 minutes ago, as the band remembered it; HOME lets it
   // look for the transcript's cost record too.
-  recalled: { store: { sessions: { s1: { lastAt: 0 } } }, now: 20 * MIN, env: { HOME: '/Users/me' }, drive: started, amber: [] },
+  recalled: { store: { sessions: { s1: { lastAt: 0 } } }, now: 20 * MIN, env: HOME, drive: started, amber: [] },
   cold: { drive: cooled, amber: [] },
   lastMinute: { drive: async ($, clock, ttlMs) => { await replied($); await clock.advance(ttlMs - 30_000) }, amber: ['cacheLastMinute'] },
   working: { drive: replied, isWorking: true, amber: [] },

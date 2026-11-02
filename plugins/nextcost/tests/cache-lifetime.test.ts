@@ -1,14 +1,13 @@
 // The lifetime read off the transcript at a turn's end: what the cache was
 // really written for, so the countdown and the rate don't rest on a guess.
 
-import { test, expect } from 'claude-code/testing'
+import { test, expect, type Engine, type MockClock } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
-import { BUILD_80K, LONG, MIN, START, TURN_DONE, engine, expectNear, fact, jsonl, mountBand, pillOf, replyLine, requestLines, resp, respond, setup, shown } from './helpers'
+import { BUILD_80K, HOME, LONG, MIN, START, TURN_DONE, engine, expectNear, fact, jsonl, mountBand, pillOf, replyLine, requestLines, resp, respond, setup, shown, shutAndOpen } from './helpers'
 import { cacheView } from './matrix'
 
 /** Past the band's first look for a turn's line. */
 const LOOK = 600
-const HOME = { HOME: '/Users/me' }
 const OPUS = { model: 'claude-opus-5-5' }
 
 test('on an API key, the first turn counts down five minutes, not an assumed hour', LONG, async ($, on) => {
@@ -20,11 +19,9 @@ test('on an API key, the first turn counts down five minutes, not an assumed hou
   await clock.advance(100)
   engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '5m': 80_000 } }))
   await clock.advance(LOOK)
-  const ui = await mountBand($, 'terminal', 110)
-  expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/cache [45]:\d\d/)
-  await ui.press({ key: 'more' })
-  expect(fact(await ui.drawn(), 'expires')).toBe('5m idle')
-  await ui.unmount()
+  const { shut, open } = await shutAndOpen($)
+  expect(shown(pillOf(shut, 'cache'))).toMatch(/cache [45]:\d\d/)
+  expect(fact(open, 'expires')).toBe('5m idle')
 })
 
 test("a turn whose request logged 2 MB of blobs before its reply is still read: the reply is in the last megabyte", LONG, async ($, on) => {
@@ -47,10 +44,8 @@ test('on a subscription, a read hour stops saying it is assumed', LONG, async ($
   engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '1h': 80_000 } }))
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  expect(fact(await ui.drawn(), 'expires')).toBe('1h idle')
-  await ui.unmount()
+  const { open } = await shutAndOpen($)
+  expect(fact(open, 'expires')).toBe('1h idle')
 })
 
 test('a subscription moving onto usage credits mid-session counts down five minutes after that turn', LONG, async ($, on) => {
@@ -81,10 +76,8 @@ test('a turn whose last step only read still reads the lifetime of its earlier w
   engine.transcript = jsonl(written)
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  expect(fact(await ui.drawn(), 'expires')).toBe('5m idle')
-  await ui.unmount()
+  const { open } = await shutAndOpen($)
+  expect(fact(open, 'expires')).toBe('5m idle')
 })
 
 test('a turn that wrote nothing runs no read', LONG, async ($, on) => {
@@ -95,11 +88,18 @@ test('a turn that wrote nothing runs no read', LONG, async ($, on) => {
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
   await respond($, resp(1, 80_000, 0, 10))
-  engine.ran.length = 0
+  engine.runs.length = 0
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
-  expect(engine.ran.filter(argv => argv[0] === 'tail')).toEqual([])
+  expect(engine.runs.filter(({ argv }) => argv[0] === 'tail')).toEqual([])
 })
+
+const respondedOnce = (ledger: number) => {
+  const c = newCache()
+  c.turnStarted({ priceModel: undefined, ledger: 0 })
+  c.responded({ ...resp(0, 0, 400_000, 0), ...OPUS }, MIN, true, { ledger })
+  return c
+}
 
 test('a pin taken away after a read leaves the lifetime assumed again', () => {
   const c = respondedOnce(2)
@@ -118,10 +118,8 @@ test("a line not yet written isn't taken for this turn's: the band looks again",
   await respond($, BUILD_80K)
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  expect(fact(await ui.drawn(), 'expires')).toBe('1h idle · assumed')
-  await ui.unmount()
+  const { open } = await shutAndOpen($)
+  expect(fact(open, 'expires')).toBe('1h idle · assumed')
   engine.transcript = jsonl(before, replyLine(clock.now(), { wrote: { '5m': 80_000 } }))
   await clock.advance(2_000)
   const later = await mountBand($, 'terminal', 110)
@@ -135,27 +133,25 @@ test('a turn that reached no API reads nothing', LONG, async ($, on) => {
   // A line to find, so a read that wrongly ran would tail it.
   engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '1h': 80_000 } }))
   await clock.settle()
-  engine.ran.length = 0
+  engine.runs.length = 0
   await $.turn.complete(TURN_DONE)
   // Past the first wait: the read is scheduled on a timer, not run in the hook.
   await clock.advance(LOOK)
-  expect(engine.ran.filter(argv => argv[0] === 'tail')).toEqual([])
+  expect(engine.runs.filter(({ argv }) => argv[0] === 'tail')).toEqual([])
 })
 
 test('a pinned lifetime reads nothing, and wins', LONG, async ($, on) => {
   const clock = setup(on, { env: { ...HOME, CLAUDE_CODE_PROMPT_CACHE_TTL: '1h' } })
   await $.session.start(START)
   await clock.settle()
-  engine.ran.length = 0
+  engine.runs.length = 0
   await respond($, BUILD_80K)
   engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '5m': 80_000 } }))
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
-  expect(engine.ran.filter(argv => argv[0] === 'tail')).toEqual([])
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  expect(fact(await ui.drawn(), 'expires')).toBe('1h idle')
-  await ui.unmount()
+  expect(engine.runs.filter(({ argv }) => argv[0] === 'tail')).toEqual([])
+  const { open } = await shutAndOpen($)
+  expect(fact(open, 'expires')).toBe('1h idle')
 })
 
 test('a transcript that cannot be read leaves the lifetime assumed, and the band drawn', LONG, async ($, on) => {
@@ -165,18 +161,9 @@ test('a transcript that cannot be read leaves the lifetime assumed, and the band
   await respond($, BUILD_80K)
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  expect(fact(await ui.drawn(), 'expires')).toBe('1h idle · assumed')
-  await ui.unmount()
+  const { open } = await shutAndOpen($)
+  expect(fact(open, 'expires')).toBe('1h idle · assumed')
 })
-
-const respondedOnce = (ledger: number) => {
-  const c = newCache()
-  c.turnStarted({ priceModel: undefined, ledger: 0 })
-  c.responded({ ...resp(0, 0, 400_000, 0), ...OPUS }, MIN, true, { ledger })
-  return c
-}
 
 test('a read of five minutes moves the turn\'s writes, so the re-warm is priced at what was billed', () => {
   // 400k written at 1.25x, $4 per million: $2.
@@ -219,7 +206,7 @@ test('a read carries through a reload', () => {
 // ---- a short read, once the lifetime has been read --------------------------
 
 /** A turn that wrote 157k, its hour read off the transcript. */
-const readAnHour = async ($: Parameters<typeof respond>[0], clock: { now: () => number; advance: (ms: number) => Promise<unknown> }) => {
+const readAnHour = async ($: Engine, clock: MockClock) => {
   await $.session.start(START)
   await respond($, resp(2_000, 0, 157_000, 500), { messageCount: 40 })
   engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '1h': 80_000 } }))
@@ -227,12 +214,9 @@ const readAnHour = async ($: Parameters<typeof respond>[0], clock: { now: () => 
   await clock.advance(LOOK)
 }
 
-const openFacts = async ($: Parameters<typeof mountBand>[0]) => {
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  const tree = await ui.drawn()
-  await ui.unmount()
-  return { expires: fact(tree, 'expires'), rebuilds: fact(tree, 'unexpected rebuilds') }
+const openFacts = async ($: Engine) => {
+  const { open } = await shutAndOpen($)
+  return { expires: fact(open, 'expires'), rebuilds: fact(open, 'unexpected rebuilds') }
 }
 
 test('a read hour stands against a short read 12 minutes on: a /rewind is no five-minute cache', LONG, async ($, on) => {

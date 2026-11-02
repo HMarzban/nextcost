@@ -26,6 +26,7 @@ import {
   cardOf,
   setup,
   mountBand,
+  shutAndOpen,
   usage,
 } from './helpers'
 import { cacheView } from './matrix'
@@ -87,12 +88,9 @@ test('an assumed hour is corrected to a guessed 5m when a gap past 5m rebuilt th
   await clock.advance(12 * MIN)
   await respond($, resp(82_500, 0, 82_500, 300))
 
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  const tree = await ui.drawn()
+  const { open: tree } = await shutAndOpen($)
   expect(fact(tree, 'expires')).toBe('5m idle · assumed')
   expect(rebuilds(tree)).toBe(0)
-  await ui.unmount()
 })
 
 test('a prefix the cache should have served but did not is an unexpected rebuild', async ($, on) => {
@@ -102,10 +100,8 @@ test('a prefix the cache should have served but did not is an unexpected rebuild
   await clock.advance(30_000)
   await respond($, resp(82_500, 0, 82_500, 300))
 
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  expect(rebuilds(await ui.drawn())).toBe(1)
-  await ui.unmount()
+  const { open } = await shutAndOpen($)
+  expect(rebuilds(open)).toBe(1)
 })
 
 test('a warm follow-up to a long answer is not a rebuild', async ($, on) => {
@@ -115,12 +111,9 @@ test('a warm follow-up to a long answer is not a rebuild', async ($, on) => {
   await clock.advance(30_000)
   await respond($, resp(300, 80_000, 7_000, 400))
 
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  const tree = await ui.drawn()
+  const { open: tree } = await shutAndOpen($)
   expect(fact(tree, 'expires')).toBe('1h idle')
   expect(rebuilds(tree)).toBe(0)
-  await ui.unmount()
 })
 
 test("a subagent's steps leave the main countdown and window alone", LONG, async ($, on) => {
@@ -176,12 +169,9 @@ test('a compaction is an expected rebuild', async ($, on) => {
   await $.session.compact({ trigger: 'manual', messages: SUMMARY })
   await respond($, resp(500, 0, 20_000, 300)) // reads nothing: the prefix changed
 
-  const ui = await mountBand($, 'terminal', 160)
-  await ui.press({ key: 'more' })
-  const tree = await ui.drawn()
+  const { open: tree } = await shutAndOpen($, 160)
   expect(cardOf(tree, 'cache')).toBeDefined()
   expect(rebuilds(tree)).toBe(0)
-  await ui.unmount()
 })
 
 test('after a compaction the cold price is for the compacted size', LONG, async ($, on) => {
@@ -203,12 +193,9 @@ test('a model switch is an expected rebuild and keeps the assumed hour', async (
   await clock.advance(6 * MIN)
   await respond($, resp(82_500, 0, 82_500, 300), { model: 'claude-sonnet-5-5' })
 
-  const ui = await mountBand($, 'terminal', 160)
-  await ui.press({ key: 'more' })
-  const tree = await ui.drawn()
+  const { open: tree } = await shutAndOpen($, 160)
   expect(fact(tree, 'expires')).toBe('1h idle · assumed')
   expect(rebuilds(tree)).toBe(0)
-  await ui.unmount()
 })
 
 
@@ -222,11 +209,8 @@ const rebuildsAfterCompaction = async (
   await respond($, resp(2_000, 0, 150_000, 1_000))
   await $.session.compact({ trigger: 'manual', messages: SUMMARY, ...compact })
   await respond($, resp(500, 0, 20_000, 300))
-  const ui = await mountBand($, 'terminal', 160)
-  await ui.press({ key: 'more' })
-  const n = rebuilds(await ui.drawn())
-  await ui.unmount()
-  return n
+  const { open } = await shutAndOpen($, 160)
+  return rebuilds(open)
 }
 
 test('a compaction result that carries an empty skip is still a compaction', async ($, on) => {
@@ -258,10 +242,8 @@ test('a step that stops for compaction makes the next rebuild expected', async (
   await respond($, resp(2_000, 0, 150_000, 1_000))
   engine.stop = 'end_turn'
   await respond($, resp(500, 0, 20_000, 300))
-  const ui = await mountBand($, 'terminal', 160)
-  await ui.press({ key: 'more' })
-  expect(rebuilds(await ui.drawn())).toBe(0)
-  await ui.unmount()
+  const { open } = await shutAndOpen($, 160)
+  expect(rebuilds(open)).toBe(0)
 })
 
 test('switching model and back within a pinned hour is no miss', async ($, on) => {
@@ -272,10 +254,8 @@ test('switching model and back within a pinned hour is no miss', async ($, on) =
   await respond($, resp(82_500, 0, 82_500, 300), { model: 'claude-sonnet-5-5' })
   await clock.advance(30_000)
   await respond($, resp(500, 82_500, 1_000, 300))
-  const ui = await mountBand($, 'terminal', 160)
-  await ui.press({ key: 'more' })
-  expect(rebuilds(await ui.drawn())).toBe(0)
-  await ui.unmount()
+  const { open } = await shutAndOpen($, 160)
+  expect(rebuilds(open)).toBe(0)
 })
 
 // An advisor step: two message rounds read the same ~280k prefix, and the

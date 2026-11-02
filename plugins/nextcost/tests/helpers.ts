@@ -102,9 +102,7 @@ type EngineFake = {
   git: GitAnswer
   /** While set, git and grep answers wait on it: each answer is the one at the call. */
   hold: Promise<void> | undefined
-  ran: string[][]
-  /** The same runs with where and for how long each was asked to run:
-   *  `ran` holds the argv alone, which most tests read. */
+  /** Every program the plugin ran, in order, with where and for how long each was asked to run. */
   runs: Array<{ argv: string[]; cwd: string | undefined; timeoutMs: number | undefined }>
   /** The session's id and model, as the engine names them. */
   sessionId: string
@@ -175,7 +173,6 @@ const ENGINE_INITIAL: Readonly<EngineFake> = {
   root: PROJECT,
   repoRoot: PROJECT,
   git: { status: GIT_CLEAN, dirs: GIT_MAIN_TREE },
-  ran: [],
   runs: [],
   compact: { messages: SUMMARY, tokensAfter: COMPACTED_TO },
   stop: 'end_turn',
@@ -244,7 +241,6 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
     value: engine.repoRoot === undefined ? null : { root: engine.repoRoot, remote: null, internal: false, name: null },
   }))
   on('process.run', async ($, e) => {
-    engine.ran.push([...e.argv])
     engine.runs.push({ argv: [...e.argv], cwd: e.init?.cwd, timeoutMs: e.init?.timeoutMs })
     const quiet = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
     if (e.argv[0] === 'tail') {
@@ -462,6 +458,8 @@ export const TURN_DONE = { answer: '', durationMs: 1, isAborted: false, turnId: 
 export const SPEND_LIMIT: SessionRateLimit = { kind: 'spend_limit', percentUsed: 92, resetsAt: new Date(5 * HOUR).toISOString() }
 /** Pins the 1-hour TTL, so tests don't depend on the assumed one. */
 export const HOUR_1 = { ENABLE_PROMPT_CACHING_1H: '1' }
+/** A home to look for a transcript under, which the band reads only where it has one. */
+export const HOME = { HOME: '/Users/me' }
 /** Where a mounted test that reads a host's clock starts: never epoch 0,
  *  where a host's zone may have had an offset off the minute. */
 export const MODERN = Date.UTC(2026, 0, 5)
@@ -514,6 +512,17 @@ export const mountBand = <S extends 'terminal' | 'desktop'>(
   cols: number,
   opts: { maxRows?: number; isWorking?: boolean } = {},
 ) => $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: props(cols, opts.isWorking, opts.maxRows) })
+
+/** The band on `surface` (the terminal when not given), `cols` wide: mounted,
+ *  drawn shut, opened with its key, drawn again and unmounted. */
+export const shutAndOpen = async ($: Engine, cols = 110, surface: 'terminal' | 'desktop' = 'terminal') => {
+  const ui = await mountBand($, surface, cols)
+  const shut = await ui.drawn()
+  await ui.press({ key: 'more' })
+  const open = await ui.drawn()
+  await ui.unmount()
+  return { shut, open }
+}
 
 // ── readers for the drawn tree ─────────────────────────────────────────
 

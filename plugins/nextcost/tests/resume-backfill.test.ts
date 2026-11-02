@@ -6,9 +6,9 @@
 import { test, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { SessionUsage } from 'claude-code'
-import { BUILD_155K, BUILD_80K, CLEAR, HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, breakdown, cardOf, engine, fact, toasts, jsonl, pillOf, replyLine, resp, respond, setup, shown, startTurn, endTurn, svgAlts, turn, mountBand, usage } from './helpers'
+import { BUILD_155K, BUILD_80K, CLEAR, HOME, HOUR, HOUR_1, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, breakdown, cardOf, engine, fact, toasts, jsonl, pillOf, replyLine, resp, respond, setup, shown, startTurn, endTurn, svgAlts, turn, mountBand, usage } from './helpers'
 
-const ENV = { ENABLE_PROMPT_CACHING_1H: '1', HOME: '/Users/me' }
+const ENV = { ...HOUR_1, ...HOME }
 const BUILT_PATH = '/Users/me/.claude/projects/-Users-me-workspace-nextcost/s1.jsonl'
 const PATH = '/Users/me/.claude/projects/-Users-me-elsewhere/s1.jsonl'
 /** A resumed session whose ledger starts again at $0. */
@@ -153,7 +153,7 @@ test("a resumed session's spend and tokens start from its last cost record, each
   await $.session.start(START)
   await resume($, 10 * MIN)
   await clock.settle()
-  expect(engine.ran).toContainEqual(['grep', '-a', '-b', '-F', '"type":"cost-state"', PATH])
+  expect(engine.runs.map(run => run.argv)).toContainEqual(['grep', '-a', '-b', '-F', '"type":"cost-state"', PATH])
   // $30 + 2 × $0.15
   expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
   const tree = await mounted($, true)
@@ -171,7 +171,7 @@ test('the transcript the engine names is read; without one, the band finds it by
   await $.session.start(START)
   await resume($, 10 * MIN, { path: '' })
   await clock.settle()
-  expect(engine.ran.find(argv => argv[0] === 'grep')?.at(-1)).toBe(BUILT_PATH)
+  expect(engine.runs.find(({ argv }) => argv[0] === 'grep')?.argv.at(-1)).toBe(BUILT_PATH)
 })
 
 test('a ledger that already counts the conversation is never added to it', async ($, on) => {
@@ -338,7 +338,7 @@ test('a new session and a /clear read nothing and stay warming', async ($, on) =
   await $.session.end(CLEAR)
   await $.classic.SessionStart({ source: 'clear', transcript_path: PATH })
   await clock.settle()
-  expect(engine.ran.filter(argv => argv[0] === 'grep' || argv[0] === 'tail')).toEqual([])
+  expect(engine.runs.filter(({ argv }) => argv[0] === 'grep' || argv[0] === 'tail')).toEqual([])
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache warming/)
   expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$0\.00/)
 })
@@ -349,7 +349,7 @@ test("a subagent's SessionStart reads nothing and leaves the conversation warmin
   await $.session.start(START)
   await $.classic.SessionStart({ source: 'resume', agent_id: 'a1', session_id: 's1', transcript_path: PATH })
   await clock.settle()
-  expect(engine.ran.filter(argv => argv[0] === 'grep' || argv[0] === 'tail')).toEqual([])
+  expect(engine.runs.filter(({ argv }) => argv[0] === 'grep' || argv[0] === 'tail')).toEqual([])
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache warming/)
 })
 
@@ -438,11 +438,8 @@ test('a fork counts its own cost record, not one its parent wrote', async ($, on
   expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
 })
 
-/** No TTL pinned, so the band has only the transcript to go by. */
-const UNPINNED = { HOME: '/Users/me' }
-
 test("a resumed session's cache lasts as long as its last main-loop cache write said", async ($, on) => {
-  const clock = setup(on, { usage: RESUMED, env: UNPINNED, now: 3 * HOUR })
+  const clock = setup(on, { usage: RESUMED, env: HOME, now: 3 * HOUR })
   // A subagent's reply after it, written for an hour, says nothing of the main loop's cache.
   engine.transcript = jsonl(RECORD, replyLine(0, { wrote: { '5m': 2_000 }, usage: REPLY_USAGE }), { ...replyLine(0, { wrote: { '1h': 2_000 }, usage: REPLY_USAGE }), isSidechain: true })
   await $.session.start(START)
@@ -453,7 +450,7 @@ test("a resumed session's cache lasts as long as its last main-loop cache write 
 })
 
 test('an hour seen on the last cache write is no longer assumed', async ($, on) => {
-  const clock = setup(on, { usage: RESUMED, env: UNPINNED, now: 3 * HOUR })
+  const clock = setup(on, { usage: RESUMED, env: HOME, now: 3 * HOUR })
   engine.transcript = jsonl(RECORD, replyLine(0, { wrote: { '1h': 2_000 }, usage: REPLY_USAGE }))
   await $.session.start(START)
   await resume($, 2 * MIN, { expired: false })
@@ -463,7 +460,7 @@ test('an hour seen on the last cache write is no longer assumed', async ($, on) 
 })
 
 test('an hour seen on the transcript speaks only until the first reply, so inference can still correct it', LONG, async ($, on) => {
-  const clock = setup(on, { usage: RESUMED, env: UNPINNED, now: 3 * HOUR })
+  const clock = setup(on, { usage: RESUMED, env: HOME, now: 3 * HOUR })
   engine.transcript = jsonl(RECORD, replyLine(0, { wrote: { '1h': 2_000 }, usage: REPLY_USAGE }))
   await $.session.start(START)
   await resume($, 2 * MIN, { expired: false })
@@ -475,7 +472,7 @@ test('an hour seen on the transcript speaks only until the first reply, so infer
 })
 
 test('a TTL read off the transcript after the first reply is no longer news', async ($, on) => {
-  const clock = setup(on, { usage: RESUMED, env: UNPINNED, now: 3 * HOUR })
+  const clock = setup(on, { usage: RESUMED, env: HOME, now: 3 * HOUR })
   engine.transcript = jsonl(RECORD, replyLine(0, { wrote: { '5m': 2_000 }, usage: REPLY_USAGE }))
   let release = (): void => undefined
   engine.hold = new Promise<void>(resolve => {
@@ -490,7 +487,7 @@ test('a TTL read off the transcript after the first reply is no longer news', as
 })
 
 test('a TTL seen on the last resume is forgotten when the same session is resumed again', async ($, on) => {
-  const clock = setup(on, { usage: RESUMED, env: UNPINNED, now: 3 * HOUR })
+  const clock = setup(on, { usage: RESUMED, env: HOME, now: 3 * HOUR })
   engine.transcript = jsonl(RECORD, replyLine(0, { wrote: { '5m': 2_000 }, usage: REPLY_USAGE }))
   await $.session.start(START)
   await resume($, 2 * MIN, { expired: false })
@@ -521,7 +518,7 @@ test("a recall that lands after the first reply leaves that reply's billed model
 })
 
 test('an hour seen on a resumed transcript is assumed again after a /clear', async ($, on) => {
-  const clock = setup(on, { usage: RESUMED, env: UNPINNED, now: 3 * HOUR })
+  const clock = setup(on, { usage: RESUMED, env: HOME, now: 3 * HOUR })
   engine.transcript = jsonl(RECORD, replyLine(0, { wrote: { '1h': 2_000 }, usage: REPLY_USAGE }))
   await $.session.start(START)
   await resume($, 2 * MIN, { expired: false })
@@ -531,7 +528,7 @@ test('an hour seen on a resumed transcript is assumed again after a /clear', asy
 })
 
 test('five minutes seen on the transcript never outlive the first reply: the hour is assumed again', LONG, async ($, on) => {
-  const clock = setup(on, { usage: RESUMED, env: UNPINNED, now: 3 * HOUR })
+  const clock = setup(on, { usage: RESUMED, env: HOME, now: 3 * HOUR })
   engine.transcript = jsonl(RECORD, replyLine(0, { wrote: { '5m': 2_000 }, usage: REPLY_USAGE }))
   await $.session.start(START)
   await resume($, 2 * MIN, { expired: false })
@@ -543,7 +540,7 @@ test('five minutes seen on the transcript never outlive the first reply: the hou
 })
 
 test('five minutes seen on a resumed transcript are forgotten at a /clear', async ($, on) => {
-  const clock = setup(on, { usage: RESUMED, env: UNPINNED, now: 3 * HOUR })
+  const clock = setup(on, { usage: RESUMED, env: HOME, now: 3 * HOUR })
   engine.transcript = jsonl(RECORD, replyLine(0, { wrote: { '5m': 2_000 }, usage: REPLY_USAGE }))
   await $.session.start(START)
   await resume($, 2 * MIN, { expired: false })
@@ -564,7 +561,7 @@ test('the TTL the environment pins wins over one seen on the transcript, even on
 })
 
 test('a TTL seen on another session resumed before the load is never this one', async ($, on) => {
-  const clock = setup(on, { usage: RESUMED, env: UNPINNED, now: 3 * HOUR })
+  const clock = setup(on, { usage: RESUMED, env: HOME, now: 3 * HOUR })
   engine.transcript = jsonl(RECORD, replyLine(0, { wrote: { '5m': 2_000 }, usage: REPLY_USAGE }))
   await resume($, 2 * MIN, { expired: false, sessionId: 's9' })
   await $.session.start(START)
@@ -576,13 +573,13 @@ test('a TTL seen on another session resumed before the load is never this one', 
 const isEndRead = (argv: string[]): boolean => argv[0] === 'tail' && argv[2] === String(1024 * 1024)
 
 test("a resume without the engine's idle time reads its transcript's end once, for the recall and the TTL alike", async ($, on) => {
-  const clock = setup(on, { usage: RESUMED, env: UNPINNED, now: 3 * HOUR })
+  const clock = setup(on, { usage: RESUMED, env: HOME, now: 3 * HOUR })
   engine.transcript = jsonl(RECORD, replyLine(0, { wrote: { '5m': 2_000 }, usage: REPLY_USAGE }))
   await $.session.start(START)
-  const before = engine.ran.length
+  const before = engine.runs.length
   await $.classic.SessionStart({ source: 'resume', session_id: 's1', transcript_path: PATH })
   await clock.settle()
-  expect(engine.ran.slice(before).filter(isEndRead)).toEqual([['tail', '-c', String(1024 * 1024), PATH]])
+  expect(engine.runs.slice(before).map(run => run.argv).filter(isEndRead)).toEqual([['tail', '-c', String(1024 * 1024), PATH]])
   // The recall found the reply logged at the epoch, and the TTL its write.
   expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache cold/)
   expect(fact(await mounted($, true), 'expires')).toBe('5m idle')
@@ -830,11 +827,11 @@ test('a fork whose file stays empty looks a few times, then stops', LONG, async 
   await respond($, BUILD_80K)
   await $.turn.complete(TURN_DONE)
   await clock.advance(MIN)
-  engine.ran.length = 0
+  engine.runs.length = 0
   await clock.advance(MIN)
   await $.turn.start(TURN_START)
   await respond($, resp(100, 80_000, 100, 10))
   await $.turn.complete(TURN_DONE)
   await clock.advance(MIN)
-  expect(engine.ran.filter(argv => argv[0] === 'grep')).toEqual([])
+  expect(engine.runs.filter(({ argv }) => argv[0] === 'grep')).toEqual([])
 })

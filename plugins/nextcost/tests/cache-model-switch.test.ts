@@ -4,16 +4,12 @@
 import { test, expect, type Engine } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
 import { LAYOUT_NAMES } from '../hooks/snapshot'
-import { BUILD_155K, LONG, MIN, START, TURN_DONE, TURN_START, engine, mountBand, resp, respond, setup, textOf } from './helpers'
+import { BUILD_155K, LONG, MIN, START, TURN_DONE, TURN_START, engine, resp, respond, setup, shutAndOpen, textOf } from './helpers'
 import { cacheView } from './matrix'
 
 const drawn = async ($: Engine): Promise<string> => {
-  const ui = await mountBand($, 'terminal', 160)
-  const shut = textOf(await ui.drawn())
-  await ui.press({ key: 'more' })
-  const open = textOf(await ui.drawn())
-  await ui.unmount()
-  return `${shut}\n${open}`
+  const { shut, open } = await shutAndOpen($, 160)
+  return `${textOf(shut)}\n${textOf(open)}`
 }
 
 const SAID = /model changed/i
