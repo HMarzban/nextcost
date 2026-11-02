@@ -245,30 +245,45 @@ test("the path's hover card says the whole state, so nothing a narrow line drops
   expect(cardText(card)).toBe('~/workspace/nextcost: branch main, 3 changed, 2 ahead, 1 behind')
 })
 
-test("the strip's hover cards are drawn after all of it, each sharing its own piece's scope", async ($, on) => {
+test("on a text surface the strip's hover cards are drawn after all of it, each sharing its own piece's scope", async ($, on) => {
   const clock = setup(on, { env: HOME })
   engine.root = WORKTREE
   engine.git = { status: DIRTY, dirs: WORKTREE_DIRS }
   await $.session.start(START)
-  for (const surface of ['terminal', 'desktop'] as const) {
-    const strip = stripOf(await expanded($, clock, surface))
-    const kids = ((strip?.children ?? []) as Node[]).filter(Boolean)
-    const first = kids.findIndex(isCard)
-    const found = cards(strip)
-    const tracking = surface === 'desktop' ? ['ws:ahead', 'ws:behind'] : ['ws:ab']
-    expect(found.map(([key]) => key)).toEqual(['ws:path', 'ws:head', 'ws:worktree', 'ws:changes', ...tracking])
-    expect(kids.slice(first)).toEqual(found.map(([, card]) => card))
-    expect(kids.slice(0, first).map(k => k.props?.key)).toEqual(['ws:where', 'ws:fill', 'ws:state'])
-    expect(new Set(found.map(([, card]) => card.hover?.scope)).size).toBe(found.length)
-    for (const [key, card] of found) {
-      expect(byKey(strip, key, 'Box')?.hover?.scope).toBe(card.hover?.scope)
-      expect(card.props).toMatchObject({ top: 0, display: 'none' })
-      expect(card.props?.key).toBeUndefined()
-      expect(card.hover?.display).toBe('flex')
-    }
-    // Ahead and behind, apart on the desktop, each explain the same.
-    expect(new Set(tracking.map(key => cardText(hoverCardOf(strip, key))))).toEqual(new Set(['2 commits to push, 1 to pull']))
+  const strip = stripOf(await expanded($, clock, 'terminal'))
+  const kids = ((strip?.children ?? []) as Node[]).filter(Boolean)
+  const first = kids.findIndex(isCard)
+  const found = cards(strip)
+  expect(found.map(([key]) => key)).toEqual(['ws:path', 'ws:head', 'ws:worktree', 'ws:changes', 'ws:ab'])
+  expect(kids.slice(first)).toEqual(found.map(([, card]) => card))
+  expect(kids.slice(0, first).map(k => k.props?.key)).toEqual(['ws:where', 'ws:fill', 'ws:state'])
+  expect(new Set(found.map(([, card]) => card.hover?.scope)).size).toBe(found.length)
+  for (const [key, card] of found) {
+    expect(byKey(strip, key, 'Box')?.hover?.scope).toBe(card.hover?.scope)
+    expect(card.props).toMatchObject({ top: 0, display: 'none' })
+    expect(card.props?.key).toBeUndefined()
+    expect(card.hover?.display).toBe('flex')
   }
+  expect(cardText(hoverCardOf(strip, 'ws:ab'))).toBe('2 commits to push, 1 to pull')
+})
+
+test("on the desktop each of the strip's hover cards sits inside its own piece, for the popover above it", async ($, on) => {
+  const clock = setup(on, { env: HOME })
+  engine.root = WORKTREE
+  engine.git = { status: DIRTY, dirs: WORKTREE_DIRS }
+  await $.session.start(START)
+  const strip = stripOf(await expanded($, clock, 'desktop'))
+  const kids = ((strip?.children ?? []) as Node[]).filter(Boolean)
+  expect(kids.some(isCard)).toBe(false)
+  const tracking = ['ws:ahead', 'ws:behind']
+  expect(cards(strip).map(([key]) => key)).toEqual(['ws:path', 'ws:head', 'ws:worktree', 'ws:changes', ...tracking])
+  for (const [key, card] of cards(strip)) {
+    expect(card.hover).toEqual({ display: 'flex' })
+    expect(card.props).toMatchObject({ position: 'absolute', display: 'none' })
+    expect(byKey(strip, key, 'Box')?.hover).toBeUndefined()
+  }
+  // Ahead and behind, apart on the desktop, each explain the same.
+  expect(new Set(tracking.map(key => cardText(hoverCardOf(strip, key))))).toEqual(new Set(['2 commits to push, 1 to pull']))
 })
 
 /** Where the terminal's top strip, `cols` wide, puts its cards: on the
@@ -371,8 +386,8 @@ test('a footer strip with no room for its cards still draws, and shows no card t
   for (const surface of ['terminal', 'desktop'] as const) {
     const strip = stripOf(byKey(await expanded($, clock, surface, 24, 12), 'actions', 'Box'))
     expect(strip).toBeDefined()
-    // Its padding and one character, and on the terminal its caps, or the hover shows a bare patch.
-    for (const [, card] of cards(strip)) expect(card.props?.width).toBeGreaterThanOrEqual(surface === 'terminal' ? 5 : 3)
+    // Its padding, caps and one character, or the hover shows a bare patch; the desktop's popover sizes itself.
+    if (surface === 'terminal') for (const [, card] of cards(strip)) expect(card.props?.width).toBeGreaterThanOrEqual(5)
   }
 })
 

@@ -1,9 +1,10 @@
-// Hover cards: one per pill, drawn over the row at the pill it explains.
+// Hover cards: one per pill, on a text surface drawn over the row at the pill
+// it explains, on the desktop a popover above it.
 
-import type { ElementTable, RenderChildren } from 'claude-code'
+import type { ElementTable } from 'claude-code'
 import { test, expect } from 'claude-code/testing'
 import { makeKit } from '../hooks/kit'
-import { DESKTOP, ROW_SLACK, cellsOf } from '../hooks/layout'
+import { ROW_SLACK } from '../hooks/layout'
 import { DARK, LIGHT, type Palette } from '../hooks/palette'
 import {
   BUILD_100K,
@@ -30,19 +31,26 @@ import {
 import { partCovered } from './cover'
 import { kitOf, snapOf } from './matrix'
 
-/** A card drawn inverted against `palette`, so it can't pass for a chip:
- *  its tooltip ground and ink. On a text surface its two ends are half blocks in the ground's
- *  colour on the band's own background, either side of a ground two cells
- *  narrower than the card, so the ends read as rounded edges; the desktop
- *  draws the ground alone. */
-const expectInvertedCard = (card: Node, surface: 'terminal' | 'desktop', palette: Readonly<Palette>) => {
+/** What the desktop lifts into a popover above the keyed Box `card` is in: a
+ *  hidden placed Box, shown on hover with no scope, naming no size or place,
+ *  and no ground or ink, which the surface's own card gives it. */
+const expectLifted = (card: Node) => {
+  expect(card.props).toMatchObject({ position: 'absolute', display: 'none' })
+  expect(card.hover).toEqual({ display: 'flex' })
+  expect(card.props?.key).toBeUndefined()
+  for (const prop of ['top', 'bottom', 'left', 'right', 'width', 'backgroundColor', 'paddingX']) expect(card.props?.[prop]).toBeUndefined()
   const kids = (card.children ?? []) as Node[]
-  if (surface === 'desktop') {
-    expect(card.props?.backgroundColor).toBe(palette.tooltipBg)
-    expect(kids).toHaveLength(1)
-    expect(kids[0]?.props).toMatchObject({ color: palette.tooltipFg, wrap: 'truncate-end' })
-    return
-  }
+  expect(kids).toHaveLength(1)
+  expect(kids[0]?.props?.color).toBeUndefined()
+  expect(kids[0]?.props?.wrap).toBeUndefined()
+}
+
+/** A text surface's card drawn inverted against `palette`, so it can't pass
+ *  for a chip: its tooltip ground and ink, its two ends half blocks in the
+ *  ground's colour on the band's own background, either side of a ground two
+ *  cells narrower than the card, so the ends read as rounded edges. */
+const expectInvertedCard = (card: Node, palette: Readonly<Palette>) => {
+  const kids = (card.children ?? []) as Node[]
   expect(card.props?.backgroundColor).toBeUndefined()
   expect(kids.map(textOf)).toEqual(['▐', cardText(card), '▌'])
   for (const cap of [kids[0], kids[2]]) {
@@ -63,21 +71,19 @@ const toggleOf = (row: unknown): Node | undefined => {
   return toggle
 }
 
-/** The columns a card in chips' row, `cols` wide, may span: the row short of
- *  its ▵ toggle and the gap before it. The desktop has no exact count of its
- *  own to check against, so its room comes from the band's measure. */
-const roomBefore = (toggle: Node | undefined, cols: number, surface: 'terminal' | 'desktop'): number =>
-  surface === 'terminal' ? cols - widthOf(toggle) - 1 : Math.floor(cols - cellsOf(toggle as RenderChildren, DESKTOP) - 1)
+/** The columns a card in chips' row, `cols` wide, may span on the terminal:
+ *  the row short of its ▵ toggle and the gap before it. */
+const roomBefore = (toggle: Node | undefined, cols: number): number => cols - widthOf(toggle) - 1
 
-/** What every hover card in the band's `row`, `cols` wide, holds to: drawn
+/** What every terminal hover card in the band's `row`, `cols` wide, holds to: drawn
  *  after every pill, so it paints over them all, and before ▵, which stacks
  *  over it and so stays pressable; revealed by the scope it shares with its
  *  own pill; a hidden one-line Box with no key, on the tooltip ground in the
- *  tooltip ink, ending short of ▵. On the terminal, where cells are exact, a
+ *  tooltip ink, ending short of ▵. A
  *  card covers its own pill and every pill it enters whole, its ▐ and ▌ in
  *  the gaps either side, and is no wider than its text and those pills need:
  *  the pills it leaves whole still switch it. */
-const expectCardsAt = (row: unknown, found: Array<[string, Node]>, cols: number, surface: 'terminal' | 'desktop') => {
+const expectCardsAt = (row: unknown, found: Array<[string, Node]>, cols: number) => {
   const kids = ((row as Node).children ?? []).filter(Boolean) as Node[]
   const toggle = toggleOf(row)
   expect(toggle?.props?.position).toBe('relative')
@@ -85,7 +91,7 @@ const expectCardsAt = (row: unknown, found: Array<[string, Node]>, cols: number,
   expect(first).toBeGreaterThan(0)
   expect(kids.slice(first, -1)).toEqual(found.map(([, card]) => card))
   const pills = kids.slice(0, first).filter(k => k.props?.key !== undefined)
-  const room = roomBefore(toggle, cols, surface)
+  const room = roomBefore(toggle, cols)
   const spans = pills.map((pill, i) => {
     const start = pills.slice(0, i).reduce((at, before) => at + widthOf(before) + 1, 0)
     return [start, start + widthOf(pill)] as const
@@ -104,32 +110,28 @@ const expectCardsAt = (row: unknown, found: Array<[string, Node]>, cols: number,
     expect(card.props?.right).toBeUndefined()
     expect(card.props?.key).toBeUndefined()
     expect(card.hover?.display).toBe('flex')
-    expectInvertedCard(card, surface, DARK)
+    expectInvertedCard(card, DARK)
     const left = Number(card.props?.left)
     const width = Number(card.props?.width)
     expect(Number.isInteger(left) && left >= 0).toBe(true)
-    if (surface === 'terminal') {
-      const [start, end] = spanOf(key)
-      const right = left + width
-      const at = `${key} ${left}+${width} in ${room}`
-      expect(`${at} ${left <= start && right >= end && right <= room}`).toBe(`${at} true`)
-      expect(width).toBeGreaterThanOrEqual(Math.min(cardText(card).length + 4, room))
-      // ▐ and ▌ sit in gaps, short of the row's ends.
-      expect(`${at} ${left === 0 || !inPill(left)} ${right === room || !inPill(right - 1)}`).toBe(`${at} true true`)
-      // No wider than it must be: past its text, it ends where a pill it enters does.
-      const snug = right === left + Math.min(cardText(card).length + 4, room) || right === room || spans.some(([, e]) => e === right - 1)
-      expect(`${at} ${snug}`).toBe(`${at} true`)
-      expect(partCovered({ children: [row] }, surface, cols)).toEqual([])
-    } else {
-      expect(left + width).toBeLessThanOrEqual(room)
-    }
+    const [start, end] = spanOf(key)
+    const right = left + width
+    const at = `${key} ${left}+${width} in ${room}`
+    expect(`${at} ${left <= start && right >= end && right <= room}`).toBe(`${at} true`)
+    expect(width).toBeGreaterThanOrEqual(Math.min(cardText(card).length + 4, room))
+    // ▐ and ▌ sit in gaps, short of the row's ends.
+    expect(`${at} ${left === 0 || !inPill(left)} ${right === room || !inPill(right - 1)}`).toBe(`${at} true true`)
+    // No wider than it must be: past its text, it ends where a pill it enters does.
+    const snug = right === left + Math.min(cardText(card).length + 4, room) || right === room || spans.some(([, e]) => e === right - 1)
+    expect(`${at} ${snug}`).toBe(`${at} true`)
+    expect(partCovered({ children: [row] }, 'terminal', cols)).toEqual([])
   }
 }
 
 /** The pills a wide row draws once a reply has landed, in order. */
 const PILLS = ['cache', 'cost', 'ctx', '5h', '7d', 'tokens']
 
-test('every pill explains itself on hover, on a card drawn over the row at its pill', async ($, on) => {
+test('every pill explains itself on hover: over the row at its pill on the terminal, above it on the desktop', async ($, on) => {
   setup(on)
   await $.session.start(DESKTOP_START)
   await turn($, 't1', 2.0, 2.41)
@@ -140,7 +142,8 @@ test('every pill explains itself on hover, on a card drawn over the row at its p
     const tree = await ui.drawn()
     const found = cards(tree)
     expect(found.map(([key]) => key)).toEqual(PILLS)
-    expectCardsAt(firstRow(tree), found, cols, surface)
+    if (surface === 'terminal') expectCardsAt(firstRow(tree), found, cols)
+    else for (const [, card] of found) expectLifted(card)
     for (const [, card] of found) expect(cardText(card).length).toBeLessThan(70)
     // Each leads with its value, then what changes, then what it means, so a
     // short row's cut only ever takes the description.
@@ -191,7 +194,7 @@ test('when narrower widths drop pills, each pill left keeps its card, slid to en
   const tree = await ui.drawn()
   const found = cards(tree)
   expect(found.length).toBeLessThan(6) // some pills gave way
-  expectCardsAt(firstRow(tree), found, 50, 'terminal')
+  expectCardsAt(firstRow(tree), found, 50)
   await ui.unmount()
 })
 
@@ -216,7 +219,7 @@ test('plain appearance draws no hover cards', async ($, on) => {
 
 // One test per surface and band height, each its own LONG budget: a sweep of
 // every width mounts the band hundreds of times.
-for (const surface of ['terminal', 'desktop'] as const) {
+for (const surface of ['terminal'] as const) {
   for (const maxRows of [40, 4]) {
     test(`on the ${surface}, ${maxRows} rows tall, every card, shut and open, ends within its row's room and covers whole pieces at every width from 20 to 200, its caps included`, LONG, async ($, on) => {
       setup(on)
@@ -234,15 +237,15 @@ for (const surface of ['terminal', 'desktop'] as const) {
           // strip's, whose room is at most the band's row.
           const row = firstRow(tree)
           const inRow = new Set(cards(row).map(([, card]) => card))
-          const rowRoom = roomBefore(toggleOf(row), cols, surface)
+          const rowRoom = roomBefore(toggleOf(row), cols)
           for (const [key, card] of cards(tree)) {
             const room = inRow.has(card) ? rowRoom : cols - ROW_SLACK
             const width = Number(card.props?.width)
             const from = Number(card.props?.left ?? card.props?.right)
             const at = `${cols}x${maxRows} ${key} ${from}+${width} in ${room}`
             expect(`${at} ${from >= 0 && from + width <= room}`).toBe(`${at} true`)
-            expectInvertedCard(card, surface, DARK)
-            expect(width).toBeGreaterThanOrEqual(surface === 'terminal' ? 5 : 3) // its edges and one character
+            expectInvertedCard(card, DARK)
+            expect(width).toBeGreaterThanOrEqual(5) // its edges and one character
           }
         }
         await ui.unmount()
@@ -301,50 +304,45 @@ test('in the light palette a card is inverted too: a dark ground under light ink
   setup(on, { env: { NEXTCOST_APPEARANCE: 'light', ...HOUR_1 } })
   await $.session.start(START)
   await respond($, BUILD_155K)
-  for (const [surface, cols] of [['desktop', 120], ['terminal', 160]] as const) {
-    const ui = await mountBand($, surface, cols)
-    const found = cards(await ui.drawn())
-    expect(found.map(([key]) => key)).toEqual(PILLS)
-    for (const [, card] of found) expectInvertedCard(card, surface, LIGHT)
-    await ui.unmount()
-  }
+  const ui = await mountBand($, 'terminal', 160)
+  const found = cards(await ui.drawn())
+  expect(found.map(([key]) => key)).toEqual(PILLS)
+  for (const [, card] of found) expectInvertedCard(card, LIGHT)
+  await ui.unmount()
 })
 
-test('a desktop whose element table holds no Svg still draws its cards without caps', () => {
+test('a desktop whose element table holds no Svg still lifts its cards', () => {
   const { Box, Text, Button } = fakeEl
-  const card = makeKit({ Box, Text, Button } as unknown as ElementTable, snapOf({ surface: 'desktop' })).hoverCard('cost', 'what it cost', { left: 0, room: 40, pieces: [] }) as Node
-  expectInvertedCard(card, 'desktop', DARK)
-  expect(card.props?.width).toBe(Math.ceil('what it cost'.length * 0.8) + 2)
+  const kit = makeKit({ Box, Text, Button } as unknown as ElementTable, snapOf({ surface: 'desktop' }))
+  // The fake element table keeps `hover` among the props.
+  expect((kit.liftedCard('what it cost') as Node).props).toMatchObject({ position: 'absolute', display: 'none', hover: { display: 'flex' } })
 })
 
-test("a desktop card is sized by the surface's measure, about 0.8 columns a character, not one", () => {
-  const kit = kitOf({ surface: 'desktop' })
-  // The 7d text, 57 characters, measures about 453px in the desktop's font.
-  const text = 'Resets in 2d 19h; weekly limit, all your Claude use today'
-  const card = kit.hoverCard('7d', text, { left: 10, room: 200, pieces: [] }) as Node
-  expect(card.props).toMatchObject({ left: 9, width: Math.ceil(text.length * 0.8) + 2 })
-  expect(Number(card.props?.width) * DESKTOP.pxPerCell).toBeGreaterThanOrEqual(453)
+test('the desktop draws no card after its row, and a text surface lifts none', () => {
+  const desktop = kitOf({ surface: 'desktop' })
+  const terminal = kitOf({ surface: 'terminal' })
+  expect(desktop.hoverCard('cost', 'what it cost', { left: 0, room: 40, pieces: [] })).toBeNull()
+  expect(terminal.liftedCard('what it cost')).toBeNull()
 })
 
-// The desktop joins a Box to its hover group only when the hover also styles
-// it: a bare `{ scope }` never lights, so the card it names never shows.
-test('every piece that reveals a card carries a style beside its scope, its own ground where it has one', LONG, async ($, on) => {
+// The desktop lifts a card into a popover above its piece only where the card
+// is a scope-less hidden Box inside a keyed one; a card drawn over the row, or
+// with a scope, stays in the band and covers the chips.
+test('on the desktop, shut and open, every card sits inside the keyed piece it explains, and no piece names a hover', LONG, async ($, on) => {
   setup(on)
   await $.session.start(DESKTOP_START)
   await respond($, BUILD_155K)
-  for (const surface of ['desktop', 'terminal'] as const) {
-    const ui = await mountBand($, surface, 160)
-    for (const tree of [await ui.drawn(), await ui.press({ key: 'more' }).then(() => ui.drawn())]) {
-      let pieces = 0
-      walk(tree, n => {
-        const scope = n.hover?.scope
-        if (scope === undefined || n.props?.position === 'absolute') return
-        pieces += 1
-        expect(typeof n.hover?.backgroundColor).toBe('string')
-        if (n.props?.backgroundColor !== undefined) expect(n.hover?.backgroundColor).toBe(n.props.backgroundColor)
-      })
-      expect(pieces).toBeGreaterThan(0)
+  const ui = await mountBand($, 'desktop', 160)
+  for (const tree of [await ui.drawn(), await ui.press({ key: 'more' }).then(() => ui.drawn())]) {
+    const found = cards(tree)
+    expect(found.length).toBeGreaterThan(0)
+    for (const [key, card] of found) {
+      expect(key).not.toBe('')
+      expectLifted(card)
     }
-    await ui.unmount()
+    walk(tree, n => {
+      if (n.props?.position !== 'absolute') expect(n.hover?.scope).toBeUndefined()
+    })
   }
+  await ui.unmount()
 })

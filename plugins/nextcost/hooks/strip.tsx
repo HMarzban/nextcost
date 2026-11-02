@@ -58,7 +58,7 @@ const keyOf = (n: RenderChildren): string | undefined => {
 type Said = Readonly<{ where: RenderChildren[]; state: RenderChildren[]; explained: ReadonlyMap<string, string> }>
 
 const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said => {
-  const { Box, Text, Svg, oneLine, hoverable, icon } = kit
+  const { Box, Text, Svg, oneLine, hoverable, liftedCard, icon } = kit
   const git = ws.git
   const { parent, name: fullName } = splitPath(ws.path)
   /** A name cut in the middle as the squeeze shortens it: whole, then 24
@@ -69,36 +69,48 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
   const parentShown = kept('parent') || shortParent.length >= parent.length ? parent : shortParent
   const clipped = parentShown !== parent || name !== fullName
 
-  // The card text each piece reveals, by its key; see the kit's hoverCard.
+  // The card text each piece reveals, by its key: a text surface's cards, the
+  // kit's hoverCard, are drawn after the strip from it.
   const explained = new Map<string, string>()
-  /** The props of a piece keyed `key` that reveals `text` on hover. */
-  const explains = (key: string, text: string) => {
+  /** A piece keyed `key` that draws `body` and reveals `text` on hover. */
+  const explaining = (key: string, text: string, ...body: RenderChildren[]): RenderElement => {
     explained.set(key, text)
-    return { key, ...hoverable(key) }
+    return (
+      <Box key={key} flexDirection="row" {...hoverable(key)}>
+        {body}
+        {liftedCard(text)}
+      </Box>
+    )
   }
 
   const where: RenderChildren[] = [
-    <Box flexDirection="row" {...explains('ws:path', git === undefined ? ws.path : `${ws.path}: ${gitSummary(git)}`)}>
-      {Svg ? icon('folder', BARE.icon, clipped ? `folder ${ws.path}` : ALT.folder) : null}
-      {parentShown === '' ? null : oneLine({ color: BARE.label }, parentShown)}
-      {oneLine({ color: BARE.value, bold: true }, name)}
-    </Box>,
+    explaining(
+      'ws:path',
+      git === undefined ? ws.path : `${ws.path}: ${gitSummary(git)}`,
+      Svg ? icon('folder', BARE.icon, clipped ? `folder ${ws.path}` : ALT.folder) : null,
+      parentShown === '' ? null : oneLine({ color: BARE.label }, parentShown),
+      oneLine({ color: BARE.value, bold: true }, name),
+    ),
   ]
   if (git?.branch !== undefined) {
     const branch = shortened(git.branch, 'branchLong', 'branchShort')
     where.push(
-      <Box flexDirection="row" {...explains('ws:head', `Branch ${git.branch}${git.commit === undefined ? ', no commits yet' : ''}: ${tracking(git)}`)}>
-        {Svg ? icon('branch', BARE.branch, branch === git.branch ? ALT.branch : `branch ${git.branch}`) : <Text color={BARE.label}>{'on '}</Text>}
-        {oneLine({ color: BARE.value }, branch)}
-      </Box>,
+      explaining(
+        'ws:head',
+        `Branch ${git.branch}${git.commit === undefined ? ', no commits yet' : ''}: ${tracking(git)}`,
+        Svg ? icon('branch', BARE.branch, branch === git.branch ? ALT.branch : `branch ${git.branch}`) : <Text color={BARE.label}>{'on '}</Text>,
+        oneLine({ color: BARE.value }, branch),
+      ),
     )
   } else if (git !== undefined) {
     where.push(
-      <Box flexDirection="row" {...explains('ws:head', 'HEAD is detached: new commits belong to no branch')}>
-        {Svg ? icon('commit', BARE.icon) : null}
-        <Text color={BARE.label}>{git.commit === undefined ? 'detached' : 'detached at '}</Text>
-        {git.commit === undefined ? null : <Text color={BARE.value}>{git.commit}</Text>}
-      </Box>,
+      explaining(
+        'ws:head',
+        'HEAD is detached: new commits belong to no branch',
+        Svg ? icon('commit', BARE.icon) : null,
+        <Text color={BARE.label}>{git.commit === undefined ? 'detached' : 'detached at '}</Text>,
+        git.commit === undefined ? null : <Text color={BARE.value}>{git.commit}</Text>,
+      ),
     )
   }
   if (git?.worktree !== undefined && kept('worktree')) {
@@ -108,13 +120,15 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
         ? 'A linked worktree: its own checkout of the repository'
         : `A linked worktree: its own checkout, sharing ${ws.repoName}'s history`
     where.push(
-      <Box flexDirection="row" {...explains('ws:worktree', text)}>
-        {Svg ? icon('worktree', BARE.icon) : null}
+      explaining(
+        'ws:worktree',
+        text,
+        Svg ? icon('worktree', BARE.icon) : null,
         <Text color={BARE.label}>
           {of === undefined ? 'worktree' : 'worktree of '}
           {of === undefined ? null : <Text key="of" color={BARE.value}>{of}</Text>}
-        </Text>
-      </Box>,
+        </Text>,
+      ),
     )
   }
 
@@ -122,13 +136,15 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
   if (git !== undefined && git.changed > 0) {
     const word = kept('changedWord')
     state.push(
-      <Box flexDirection="row" {...explains('ws:changes', plural(git.changed, 'uncommitted change'))}>
-        {Svg ? icon('changes', BARE.icon) : null}
+      explaining(
+        'ws:changes',
+        plural(git.changed, 'uncommitted change'),
+        Svg ? icon('changes', BARE.icon) : null,
         <Text color={BARE.value}>
           {`${!word && !Svg ? '±' : ''}${git.changed}`}
           {word ? <Text key="w" color={BARE.label}>{' changed'}</Text> : null}
-        </Text>
-      </Box>,
+        </Text>,
+      ),
     )
   } else if (git !== undefined && kept('clean')) {
     state.push(
@@ -143,17 +159,12 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
       for (const [side, n] of [['ahead', git.ahead], ['behind', git.behind]] as const) {
         if (n)
           state.push(
-            <Box flexDirection="row" {...explains(`ws:${side}`, tracking(git))}>
-              {icon(side, BARE.icon)}
-              <Text color={BARE.value}>{String(n)}</Text>
-            </Box>,
+            explaining(`ws:${side}`, tracking(git), icon(side, BARE.icon), <Text color={BARE.value}>{String(n)}</Text>),
           )
       }
     } else {
       state.push(
-        <Box flexDirection="row" {...explains('ws:ab', tracking(git))}>
-          <Text color={BARE.value}>{[git.ahead ? `↑${git.ahead}` : '', git.behind ? `↓${git.behind}` : ''].filter(Boolean).join(' ')}</Text>
-        </Box>,
+        explaining('ws:ab', tracking(git), <Text color={BARE.value}>{[git.ahead ? `↑${git.ahead}` : '', git.behind ? `↓${git.behind}` : ''].filter(Boolean).join(' ')}</Text>),
       )
     }
   }
@@ -161,7 +172,8 @@ const saidOf = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean): Said 
 }
 
 /** The strip at a squeeze, in `room` columns: the path's side, the fill,
- *  the state's side, then each piece's hover card, placed at its piece. */
+ *  the state's side, then on a text surface each piece's hover card, placed
+ *  at its piece. */
 const stripAt = (kit: Kit, ws: Workspace, kept: (piece: Piece) => boolean, place: 'top' | 'footer', edge: number, room: number): RenderElement => {
   const { Box, Text, Svg, measure, asDrawn, hoverCard } = kit
   const { where, state, explained } = saidOf(kit, ws, kept)
