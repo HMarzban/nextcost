@@ -384,6 +384,9 @@ as a reset. Pulse's tile says `! 5h full in ~40m`, `! 5h full ~40m`, and at
 its narrowest the value, `! 5h 85%`. Its hover says it is a projection at the current pace: a burst
 of work, such as a workflow fanning out, fills the window sooner. The limit is shared across all your Claude use, so the pace
 includes your other sessions and devices, and `/clear` keeps it. The
+figures come from the last reply, so the limit chips' hovers and the Limits
+card end `as of your last reply`, with how long ago once that is five
+minutes or more: another session or device may have moved the limit since. The
 projection hides once its newest reading is more than 15 minutes old, or
 once the time it gave has passed.
 

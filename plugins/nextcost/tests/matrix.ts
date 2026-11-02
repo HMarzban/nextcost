@@ -45,6 +45,7 @@ export const SNAP_PARTS: SnapshotParts = {
   costUsd: 3.19,
   history: NO_HISTORY,
   etaMs: null,
+  readAt: undefined,
   zone: undefined,
 }
 

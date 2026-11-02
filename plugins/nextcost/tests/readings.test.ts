@@ -78,6 +78,27 @@ test("a pace from the window's average says so in words and in its alt, a measur
   const average = (zone: ReturnType<typeof fixedZone> | undefined) => readingsOf(snapOf({ zone, sevenDay: { percentUsed: 66, resetsAt: 138 * HOUR } })).sevenDay?.fillText
   expect([average(fixedZone(0)), average(undefined)]).toEqual(['full ~15:30 at avg pace', 'full in ~15h 30m at avg pace'])
 })
+test("the limits say they are as of the last reply, and how long ago once that is past a few minutes", () => {
+  const seen = (ageMs: number | undefined) => readingsOf(snapOf({ limitsAt: ageMs === undefined ? undefined : -ageMs }))
+  expect(seen(undefined).asOf).toBe('as of your last reply')
+  expect(seen(4 * MIN).asOf).toBe('as of your last reply')
+  expect(seen(5 * MIN).asOf).toBe('as of your last reply, 5m ago')
+  expect(seen(125 * MIN).asOf).toBe('as of your last reply, 2h 05m ago')
+  // A clock that ran back leaves no negative age.
+  expect(readingsOf(snapOf({ limitsAt: 10 * MIN })).asOf).toBe('as of your last reply')
+  expect(seen(125 * MIN).chips.limitHover).toEqual({
+    '5h': "Resets in 3h 00m; 5-hour limit, all your Claude use; as of your last reply, 2h 05m ago",
+    '7d': "Resets in 2d 19h; weekly limit, all your Claude use; as of your last reply, 2h 05m ago",
+  })
+  // With a pace the hover ends on the age, which is the least that a short row's cut may take.
+  expect(readingsOf(snapOf({ fiveHour: { percentUsed: 40, resetsAt: 3 * HOUR, etaMs: 40 * MIN }, limitsAt: -7 * MIN })).chips.limitHover['5h']).toBe(
+    'Resets in 3h 00m; 5-hour limit, all your Claude use; full in ~40m at the current pace; as of your last reply, 7m ago',
+  )
+  // Nothing to say of a window that has reset, or of none.
+  expect(readingsOf(snapOf({ now: 4 * HOUR })).asOf).toBe('as of your last reply')
+  expect(readingsOf(snapOf({ now: 70 * HOUR })).asOf).toBeUndefined()
+  expect(readingsOf(snapOf({ fiveHour: undefined, sevenDay: undefined })).asOf).toBeUndefined()
+})
 test('a card says nothing of a window that has passed', () => {
   expect(readingsOf(snapOf({ now: 4 * HOUR })).fiveHour?.resetAndPace).toBeUndefined()
 })
@@ -126,7 +147,10 @@ test("chips' words say its hover cards and the context's amount", () => {
   const c = readingsOf(snapOf({ history: { costs: [{ usd: 0.21, reWarm: false }], context: [] } })).chips
   expect([c.costHover, c.tokensHover]).toEqual(['$0.21 spent during your last message, subagents included', 'input 18k · output 9.0k · cache reads 198k'])
   expect([c.contextPill(true), c.contextPill(false), c.contextHover]).toEqual(['40% full', '40%', '76k of 190k (40%); auto-compacts in ~114k'])
-  expect(c.limitHover).toEqual({ '5h': 'Resets in 3h 00m; 5-hour limit, all your Claude use', '7d': 'Resets in 2d 19h; weekly limit, all your Claude use' })
+  expect(c.limitHover).toEqual({
+    '5h': 'Resets in 3h 00m; 5-hour limit, all your Claude use; as of your last reply',
+    '7d': 'Resets in 2d 19h; weekly limit, all your Claude use; as of your last reply',
+  })
   const off = readingsOf(snapOf({ context: { ...snapOf().context, compactAt: undefined }, fiveHour: { percentUsed: 30, resetsAt: -1, etaMs: null }, sevenDay: undefined })).chips
   expect([off.contextPill(true), off.contextPill(false), off.contextHover]).toEqual(['76k / 200k', '38%', '76k of 200k (38%); older turns get summarized near full'])
   expect(off.limitHover).toEqual({ '5h': '5-hour limit has reset; it updates after your next message', '7d': undefined })

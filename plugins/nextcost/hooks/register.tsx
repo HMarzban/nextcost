@@ -665,6 +665,8 @@ export const register: Register = on => {
       // The ledger goes in with the response, so no other hook's step can
       // come between them and take its bill for this one's.
       band.cache.responded(result.usage, sentAt, isMain, { serverTools: served, ledger: await ledgerUsd($) })
+      // The reply brought the limits with it, whether or not they moved.
+      band.insights.noteReading(await $.clock.now())
       $.ui.invalidate('ui.render')
     }
     if (isMain && result?.stopReason === 'compaction') band.cache.compacted({ now: sentAt })
@@ -686,7 +688,10 @@ export const register: Register = on => {
   on('session.measure', async ($, e, next) => {
     const now = await $.clock.now()
     // Only a reading that moved is a point: another unit's measure holds the one from the last reply, which `now` would make look new.
-    if (e.changed.includes('rateLimits')) for (const limit of e.rateLimits.map(limitOf)) if (limit.kind === FIVE_HOUR) band.insights.noteFiveHour(now, limit.percentUsed, limit.resetsAt)
+    if (e.changed.includes('rateLimits')) {
+      band.insights.noteReading(now)
+      for (const limit of e.rateLimits.map(limitOf)) if (limit.kind === FIVE_HOUR) band.insights.noteFiveHour(now, limit.percentUsed, limit.resetsAt)
+    }
     const limits = limitToasts(band.warned, e.rateLimits)
     band.warned = limits.warned
     for (const text of limits.say) $.ui.toast(text)
@@ -732,6 +737,7 @@ export const register: Register = on => {
       costUsd,
       history: band.insights.trails(),
       etaMs: band.insights.fiveHourEtaMs(now),
+      readAt: band.insights.readingAt(),
       // Read at each instant drawn, so a daylight-saving change shows by
       // the next minute's repaint, with no reply needed.
       zone: readableZone(hostZone, now),

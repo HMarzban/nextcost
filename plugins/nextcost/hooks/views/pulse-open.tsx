@@ -105,8 +105,9 @@ const factsOf = (kit: Kit, read: Readings): Facts => {
 }
 
 /** What a step keeps: its units, and its charts' rows; `wakeRow`, a row in
- *  the cache's card for who restarted the countdown. */
-type Plan = Readonly<{ kept: ReadonlySet<Unit>; chart: ChartRows; wakeRow?: boolean }>
+ *  the cache's card for who restarted the countdown; `asOfRow`, one in
+ *  Limits' for the age of its reading. */
+type Plan = Readonly<{ kept: ReadonlySet<Unit>; chart: ChartRows; wakeRow?: boolean; asOfRow?: boolean }>
 
 /** The cards a plan's units draw, in the one order. */
 const cardsOf = (f: Facts, kept: ReadonlySet<Unit>): CardName[] => {
@@ -128,7 +129,7 @@ const cardRows = (kit: Kit, f: Facts, card: CardName, p: Plan, line: CardLine): 
   const across = halvesAcross(kit, f, line.inner)
   // Side by side, one chart and one fact row; else one over the other.
   const halfRows = halves === 0 ? 0 : across ? chartRows + 1 : halves * (chartRows + 1)
-  return line.edgeRows + 1 + halfRows + (p.kept.has('other') && f.others.length > 0 ? 1 : 0)
+  return line.edgeRows + 1 + halfRows + (p.kept.has('other') && f.others.length > 0 ? 1 : 0) + (p.asOfRow === true ? 1 : 0)
 }
 
 /** The lines of cards a plan draws, `perLine` to a line, and its rows: each
@@ -177,6 +178,14 @@ const withWake = (kit: Kit, read: Readings, f: Facts, p: Plan, body: number): Pl
   const line = planLines(kit, f, p).lines.find(cards => cards.includes('cache'))
   if (line === undefined || read.cache.wakeRow === undefined || wokenHead(kit, read, cardLine(kit, line.length).inner) !== undefined) return p
   const roomy = { ...p, wakeRow: true }
+  return planLines(kit, f, roomy).rows <= body ? roomy : p
+}
+
+/** The age of the limits' reading costs no chart or card: it takes a row of
+ *  Limits' own only if `body` has one to spare. */
+const withAsOf = (kit: Kit, read: Readings, f: Facts, p: Plan, body: number): Plan => {
+  if (read.asOf === undefined || !cardsOf(f, p.kept).includes('limits')) return p
+  const roomy = { ...p, asOfRow: true }
   return planLines(kit, f, roomy).rows <= body ? roomy : p
 }
 
@@ -306,6 +315,7 @@ const limitsCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
     others.length === 0 ? null : (
       <Box key="others">{oneLine({ color: onTone(othersAmber ? 'amber' : 'calm', palette.cardValue) }, others.map(l => l.line).join(DOT))}</Box>
     ),
+    at.p.asOfRow === true && read.asOf !== undefined ? clippedNote(kit, 'as-of', read.asOf) : null,
   ])
 }
 
@@ -338,7 +348,7 @@ export const pulseOpen = (kit: Kit, read: Readings, act: BandActions, collapsedR
   const body = bodyRowsFor(read.frame.maxRows, collapsedRows, 0)
   const f = factsOf(kit, read)
   const planned = planFor(kit, f, body)
-  const p = planned === undefined ? undefined : withWake(kit, read, f, planned, body)
+  const p = planned === undefined ? undefined : withAsOf(kit, read, f, withWake(kit, read, f, planned, body), body)
   const cards = p !== undefined ? drawCards(kit, read, f, p) : body < 1 ? null : alertLine(kit, read)
   return [cards, footer(kit, act, read.workspace)].filter(e => e !== null)
 }

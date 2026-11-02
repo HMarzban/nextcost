@@ -44,6 +44,8 @@ export type InsightState = {
   points: readonly PacePoint[]
   /** When the 5-hour window resets, epoch ms. */
   resetsAt: number | undefined
+  /** When the limits were last read, epoch ms: at a reply, or a measure that moved them. */
+  readAt: number | undefined
   /** Each trail, replaced on every push and never changed in place, so a
    *  snapshot that holds one holds it as it stood. */
   costs: readonly CostEntry[]
@@ -64,6 +66,11 @@ export type Insights = Readonly<{
   pushCost: (usd: number, reWarm: boolean) => void
   /** The context's tokens at a turn's end. */
   pushContext: (tokens: number) => void
+  /** The limits were read at `now`: a reply came back with them, or a
+   *  measure said they moved. */
+  noteReading: (now: number) => void
+  /** When the limits were last read; undefined before any was. */
+  readingAt: () => number | undefined
   /** session.measure: the 5-hour window's use at `now`, and its reset. */
   noteFiveHour: (now: number, percentUsed: number, resetsAt: number | undefined) => void
   /** Time until your pace fills the 5-hour window, or null while the
@@ -81,7 +88,7 @@ export type Insights = Readonly<{
 /** A session's insights: before anything is known of it, or carrying on from
  *  what the insights before a reload `kept`. */
 export const newInsights = (kept?: InsightState): Insights => {
-  const s: InsightState = { turnStartCost: {}, points: [], resetsAt: undefined, costs: [], context: [], ...kept }
+  const s: InsightState = { turnStartCost: {}, points: [], resetsAt: undefined, readAt: undefined, costs: [], context: [], ...kept }
   return {
     kept: () => ({ ...s }),
     noteTurnStart: (turnId, costUsd) => {
@@ -100,6 +107,10 @@ export const newInsights = (kept?: InsightState): Insights => {
     pushContext: tokens => {
       s.context = [...s.context, tokens].slice(-CONTEXT_TRAIL)
     },
+    noteReading: now => {
+      s.readAt = now
+    },
+    readingAt: () => s.readAt,
     noteFiveHour: (now, percentUsed, resetsAt) => {
       const last = s.points.at(-1)
       const kept = !sameReset(resetsAt, s.resetsAt) || (last !== undefined && percentUsed < last.pct) ? [] : s.points

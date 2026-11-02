@@ -27,6 +27,8 @@ import {
   svgRect,
   fact,
   cardOf,
+  cardText,
+  hoverCardOf,
   setup,
   mountBand,
 } from './helpers'
@@ -135,6 +137,25 @@ test('only a measure that moved the limits takes a pace point: a stale reading i
   // 16 minutes on from the reading that did move, the pace has gone stale.
   const ui = await mountBand($, 'terminal', 110)
   expect(await ui.find({ type: 'Text', text: /full in/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the limits say they are as of the last reply: in the hover and the card, with how long ago once it is more than a few minutes', LONG, async ($, on) => {
+  const clock = setup(on)
+  await $.session.start(START)
+  await respond($, BUILD_155K)
+  const ui = await mountBand($, 'terminal', 160)
+  expect(cardText(hoverCardOf(await ui.drawn(), '5h'))).toBe('Resets in 3h 00m; 5-hour limit, all your Claude use; as of your last reply')
+  await clock.advance(12 * MIN + 30_000)
+  expect(cardText(hoverCardOf(await ui.drawn(), '5h'))).toBe('Resets in 2h 47m; 5-hour limit, all your Claude use; as of your last reply, 12m ago')
+  await ui.press({ key: 'more' })
+  expect(shown(cardOf(await ui.drawn(), 'limits'))).toContain('as of your last reply, 12m ago')
+  // A measure that moved the limits is a new reading; one that didn't, isn't.
+  await $.session.measure({ context: USAGE.context, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: ['cost'] })
+  expect(shown(cardOf(await ui.drawn(), 'limits'))).toContain('as of your last reply, 12m ago')
+  await $.session.measure({ context: USAGE.context, rateLimits: USAGE.rateLimits, cost: USAGE.cost, changed: ['rateLimits'] })
+  expect(shown(cardOf(await ui.drawn(), 'limits'))).toContain('as of your last reply')
+  expect(shown(cardOf(await ui.drawn(), 'limits'))).not.toContain('ago')
   await ui.unmount()
 })
 

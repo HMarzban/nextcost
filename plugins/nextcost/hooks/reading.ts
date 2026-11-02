@@ -29,7 +29,7 @@ import { boardWords } from './board-words'
 import type { Board } from './board-words'
 import { chipsWords } from './chips-words'
 import type { ChipsWords } from './chips-words'
-import { cacheWords, contextWords, historyWords, limitWords, spendWords, weekWords } from './words'
+import { asOfWords, cacheWords, contextWords, historyWords, limitWords, spendWords, weekWords } from './words'
 import type { CacheWords, ContextWords, HistoryWords, LimitWords, SpendWords, WeekWords } from './words'
 
 // ---- the limits -------------------------------------------------------------
@@ -116,6 +116,9 @@ export type Readings = Readonly<{
   sevenDay: LimitReading | undefined
   /** 5h, 7d, then every other window the engine reports. */
   limits: readonly LimitReading[]
+  /** That they are as of the last reply, and how long ago past a few minutes;
+   *  undefined while none is still to reset. */
+  asOf: string | undefined
   worstLimit: LimitReading | undefined
   workspace: BandSnapshot['workspace']
   /** Built the first time a view calls it, then kept, so chips never pays for it. */
@@ -242,6 +245,8 @@ export const readingsOf = (snap: BandSnapshot): Readings => {
   const worstLimit = limits
     .filter(l => !l.passed)
     .reduce<LimitReading | undefined>((top, l) => (top === undefined || l.percentUsed > top.percentUsed ? l : top), undefined)
+  // One reading of the account's limits, so one age for them all.
+  const asOf = limits.some(l => !l.passed) ? asOfWords(snap.limitsAt === undefined ? undefined : Math.max(0, snap.now - snap.limitsAt)) : undefined
   const fiveHour = limits.find(l => l.key === '5h')
   const sevenDay = limits.find(l => l.key === '7d')
   let history: HistoryReading | undefined
@@ -255,12 +260,13 @@ export const readingsOf = (snap: BandSnapshot): Readings => {
     fiveHour,
     sevenDay,
     limits,
+    asOf,
     worstLimit,
     workspace: snap.workspace,
     // Plain functions, not getters: reading a property never runs code.
     history: () => (history ??= historyReading(snap.history, context, spend)),
     week: () => (week ??= weekReading(snap, sevenDay, fiveHour)),
     board: () => (board ??= boardWords({ frame, cache, spend, context, limits })),
-    chips: chipsWords({ frame, cache, spend, context, limits }),
+    chips: chipsWords({ frame, cache, spend, context, limits, asOf: asOf ?? asOfWords(undefined) }),
   }
 }

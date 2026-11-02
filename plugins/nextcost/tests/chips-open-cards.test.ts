@@ -5,6 +5,7 @@
 import { test, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { DARK } from '../hooks/palette'
+import { CALM_LIMITS, bandOf } from './matrix'
 import {
   BUILD_100K,
   DESKTOP_START,
@@ -14,6 +15,7 @@ import {
   CLEAR,
   FRESH,
   HOUR,
+  MIN,
   START,
   USAGE,
   breakdown,
@@ -473,4 +475,17 @@ test('the token split shows cache reads in the warm colour, so the bar never loo
   expect(String(split?.props?.source)).toContain(DARK.warm)
   expect(String(split?.props?.source)).not.toContain(`fill="${DARK.meterTrack}"`)
   await ui.unmount()
+})
+
+test('Limits ends on that its reading is as of the last reply, and drops it first when the card is short of rows', () => {
+  const open = (maxRows: number, columns = 120) => bandOf({ layout: 'chips', surface: 'terminal', columns, maxRows, expanded: true, ...CALM_LIMITS, limitsAt: -12 * MIN })
+  const rows = (maxRows: number, columns?: number) => shown(cardOf(open(maxRows, columns), 'limits') as Node)
+  expect(rows(40)).toMatch(/as of your last reply, 12m ago$/)
+  // At 40 columns the line is cut to the card, never past it.
+  expect(rows(40, 40)).toContain('as of your last reply')
+  // Short of rows, its facts stay and it goes.
+  for (let maxRows = 4; maxRows <= 40; maxRows++) {
+    const text = rows(maxRows)
+    if (text !== '' && !/as of your last reply/.test(text)) expect(text).toMatch(/resets|\d%/)
+  }
 })

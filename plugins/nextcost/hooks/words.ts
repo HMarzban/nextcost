@@ -22,6 +22,7 @@ import {
   fmtPercent,
   fmtSmallCost,
   fmtTokens,
+  MINUTE_MS,
   severityMark,
 } from './format'
 import { IDLE_COMPACT_MS } from './cache'
@@ -106,6 +107,17 @@ export const paceText = (p: Readonly<{ etaMs: number | null; projectedPct: numbe
       : fillsBeforeReset(p.projectedPct)
         ? `full ${AVERAGE_PACE}`
         : `~${fmtPercent(p.projectedPct)} ${AVERAGE_PACE}`
+
+/** How old the limits' reading is before it is said: they are read at the
+ *  last reply, and a few minutes is no news. */
+const AS_OF_AFTER_MS = 5 * MINUTE_MS
+
+/** That the limits are as of the last reply, and past a few minutes how long
+ *  ago: `as of your last reply, 2h 05m ago`. They are the account's, shared
+ *  with every other session and device, and this one's engine only reads
+ *  them as a reply brings them. `ageMs` is undefined when unknown. */
+export const asOfWords = (ageMs: number | undefined): string =>
+  ageMs === undefined || ageMs < AS_OF_AFTER_MS ? 'as of your last reply' : `as of your last reply, ${fmtAgo(ageMs)} ago`
 
 /** What a screen reader hears for a drawn reading: `<name> <value>, <state>,
  *  <more>`, in words. A caller passes "about" and "resets in", never ~ or ↻. */
