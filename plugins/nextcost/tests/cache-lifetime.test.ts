@@ -80,6 +80,22 @@ test('a turn whose last step only read still reads the lifetime of its earlier w
   expect(fact(open, 'expires')).toBe('5m idle')
 })
 
+test('a read the next turn cut off is read again after that turn, even if it wrote nothing', LONG, async ($, on) => {
+  const clock = setup(on, { env: HOME })
+  await $.session.start(START)
+  await respond($, BUILD_80K)
+  engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '5m': 80_000 } }))
+  await $.turn.complete(TURN_DONE)
+  // The next turn opens before the first look, and writes nothing.
+  await $.turn.start({ text: 'hi', turnId: 't2' })
+  await clock.advance(LOOK)
+  await respond($, resp(1, 80_000, 0, 10))
+  await $.turn.complete({ ...TURN_DONE, turnId: 't2' })
+  await clock.advance(LOOK)
+  const { open } = await shutAndOpen($)
+  expect(fact(open, 'expires')).toBe('5m idle')
+})
+
 test('a turn that wrote nothing runs no read', LONG, async ($, on) => {
   const clock = setup(on, { env: HOME })
   await $.session.start(START)

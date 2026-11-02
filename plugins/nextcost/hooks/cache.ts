@@ -145,13 +145,9 @@ type Turn = Readonly<{
   measured: boolean
   /** Since the last turn's end, a main-loop request rebuilt a cache that existed. */
   rebuilt: boolean
-  /** When the request behind the main loop's last write unread went: a turn
-   *  whose last step only read still wrote earlier, and one that wrote nothing
-   *  has nothing new to read. */
-  writeSentAt: number | undefined
 }>
 
-const NO_TURN: Turn = { open: false, waker: undefined, measured: false, rebuilt: false, writeSentAt: undefined }
+const NO_TURN: Turn = { open: false, waker: undefined, measured: false, rebuilt: false }
 
 /** A cache model's facts, plain data, for a reload to carry on from. */
 export type CacheState = {
@@ -171,6 +167,10 @@ export type CacheState = {
   idleCompactFrom: number | undefined
   /** The main-loop turn under way, or what is noted for the next to end. */
   turn: Turn
+  /** When the request behind the main loop's last write not yet read off the
+   *  transcript went. A turn whose last step only read still wrote earlier; one
+   *  that wrote nothing has nothing new to read, unless a read was cut off. */
+  writeUnreadSince: number | undefined
   /** Who started the last main-loop turn that made a request, when the user
    *  didn't type it. */
   lastWake: Wake | undefined
@@ -235,6 +235,7 @@ const INITIAL: Readonly<CacheState> = {
   ttlSeen: undefined,
   idleCompactFrom: undefined,
   turn: NO_TURN,
+  writeUnreadSince: undefined,
   lastWake: undefined,
   requests: 0,
   tokens: NO_TOKENS,
@@ -409,6 +410,7 @@ const noteWrittenFor = (s: CacheState, ttl: Ttl): void => {
   if (s.ttlBasis === 'pinned' || s.turn.open) return
   s.ttl = ttl
   s.ttlBasis = 'read'
+  s.writeUnreadSince = undefined
   const { bill, hourTokens } = writesReadAs(s.bill, ttl)
   s.bill = bill
   s.tokens = { ...s.tokens, writtenHour: s.tokens.writtenHour + hourTokens }
@@ -485,13 +487,13 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   s.messageCount = messages ?? s.messageCount
   s.namedAtRequest = s.namedModel
   s.windowGuessed = rounds !== 1
+  if (usage.cache_creation_input_tokens > 0) s.writeUnreadSince = sentAt
   s.model = model ?? s.model
   if (model) s.billedModel = model
   s.turn = {
     ...s.turn,
     measured: true,
     rebuilt: rebuilt || s.turn.rebuilt,
-    writeSentAt: usage.cache_creation_input_tokens > 0 ? sentAt : s.turn.writeSentAt,
   }
 }
 
@@ -626,8 +628,8 @@ export const newCache = (kept?: CacheState): CacheModel => {
     },
     wroteFor: ttl => noteWrittenFor(s, ttl),
     turnEnded: ledger => {
-      const { rebuilt, writeSentAt, waker, measured } = s.turn
-      const lifetimeSince = s.ttlBasis === 'pinned' ? undefined : writeSentAt
+      const { rebuilt, waker, measured } = s.turn
+      const lifetimeSince = s.ttlBasis === 'pinned' ? undefined : s.writeUnreadSince
       s.turn = NO_TURN
       // A turn that made no request (a limit hit, a lost connection) left the
       // countdown where it was, so what it says stays too.

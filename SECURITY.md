@@ -59,7 +59,9 @@ it:
   3-second timeout, at the path Claude Code names for the session, else the
   path above. Claude Code logs a turn's last line a moment after the turn
   ends, so it looks up to three times, waiting 0.5, 2 and 8 seconds in turn,
-  and stops at the first look that finds that write. Where `tail` can't run,
+  and stops at the first look that finds that write. A write not read by then,
+  or a read the next turn cut off, is read after the next turn, even one that
+  wrote nothing. Where `tail` can't run,
   it reads the whole file through `$.fs` instead, if it is 4 MiB or smaller.
   It keeps one fact: whether the last main-conversation cache write was for
   five minutes or an hour. Nothing else in the transcript is kept, shown or
