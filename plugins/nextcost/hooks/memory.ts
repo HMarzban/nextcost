@@ -12,7 +12,7 @@ import { MINUTE_MS, SEVEN_DAY_MS } from './format'
 import { modelName } from './prices'
 import { splitLimits } from './snapshot'
 import type { ReportedLimit } from './snapshot'
-import { isRecord, lastReplyAt, lastReplyModel, rateFromTranscript } from './transcript'
+import { isRecord, lastRequestAt, lastReplyModel, rateFromTranscript } from './transcript'
 
 /** Store keys. */
 export const SESSIONS_KEY = 'sessions'
@@ -150,7 +150,7 @@ export const recallOf = (r: StoreRecall, transcript: string | undefined): Recall
   // /model may name an alias; the last reply names the model it was billed under.
   const billed = lastReplyModel(transcript) ?? r.billed
   return {
-    lastAt: r.lastAt ?? lastReplyAt(transcript),
+    lastAt: r.lastAt ?? lastRequestAt(transcript),
     rate: r.rate ?? (billed === undefined ? rateFromTranscript(transcript, r.model) : (r.rates[rateKey(billed)] ?? rateFromTranscript(transcript, billed))),
     billed,
   }

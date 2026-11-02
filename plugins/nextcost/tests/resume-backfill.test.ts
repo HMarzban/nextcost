@@ -786,3 +786,46 @@ test('a write of the counts held up by the host never lands on a newer one', asy
   await $.session.start(START)
   expect(fact(await mounted($, true), 'input')).toBeDefined()
 })
+
+// ---- a fork, whose file gains its lines only after its first prompt ----------
+
+const FORK_PATH = '/Users/me/.claude/projects/-Users-me-elsewhere/f1.jsonl'
+const FORKED = { source: 'fork', session_id: 'f1', transcript_path: FORK_PATH, seconds_since_last_response: 60 } as const
+
+test('a fork whose file is empty at its start reads it again after the first turn, and its tokens come back', LONG, async ($, on) => {
+  const clock = setup(on, { env: ENV, usage: RESUMED, now: 3 * HOUR })
+  engine.transcript = undefined
+  await $.session.start(START)
+  await $.classic.SessionStart(FORKED)
+  await clock.settle()
+  // Open once, as pressing again would shut it.
+  expect(shown(pillOf(await mounted($), 'cost'))).not.toMatch(/\$30/)
+  await $.turn.start(TURN_START)
+  await respond($, BUILD_80K)
+  await $.turn.complete(TURN_DONE)
+  engine.transcript = jsonl(RECORD)
+  await clock.advance(MIN)
+  // 20M read of 21.4M before this process, with this reply's 82k on top.
+  const tree = await mounted($, true)
+  expect(fact(tree, 'hit rate')).toBe('93%')
+  expect(shown(pillOf(tree, 'cost'))).toMatch(/\$30/)
+})
+
+test('a fork whose file stays empty looks a few times, then stops', LONG, async ($, on) => {
+  const clock = setup(on, { env: ENV, usage: RESUMED, now: 3 * HOUR })
+  engine.transcript = undefined
+  await $.session.start(START)
+  await $.classic.SessionStart(FORKED)
+  await clock.settle()
+  await $.turn.start(TURN_START)
+  await respond($, BUILD_80K)
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(MIN)
+  engine.ran.length = 0
+  await clock.advance(MIN)
+  await $.turn.start(TURN_START)
+  await respond($, resp(100, 80_000, 100, 10))
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(MIN)
+  expect(engine.ran.filter(argv => argv[0] === 'grep')).toEqual([])
+})

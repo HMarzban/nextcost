@@ -134,7 +134,9 @@ claude plugin marketplace remove hossein-mods
 ![The chip row, labelled: the cache countdown and what a re-warm will cost, the session cost, context toward auto-compaction, the 5-hour limit with its pace, the weekly limit and its reset, and the toggle that opens the cards](docs/band-anatomy.png)
 
 - **Cache**: time until it goes cold, and the re-warm price in its last
-  minute; `compacted` once Claude Code has compacted an idle session
+  minute; `compacted` until the next reply once the conversation is compacted,
+  `model changed` when the next message rebuilds on another model, and
+  `not caching` when replies read and write no cache
 - **Cost**: the session's total
 - **Context**: how close auto-compaction is
 - **5h**: your 5-hour limit, and whether your pace runs out first
@@ -239,15 +241,17 @@ cache, 1.25× on five minutes. Until the cache shows its lifetime, the band
 assumes the hour.
 
 **How does it know if my cache lasts 5 minutes or an hour?** It can't read
-your billing, so it assumes an hour and corrects itself to 5 minutes if it
-sees the cache rebuild sooner. On a resumed session, the transcript's last
+your billing, so it reads the last cache write's lifetime off the session's
+transcript at each turn's end. Until a read succeeds it assumes an hour, and
+corrects itself to 5 minutes if a request after a gap finds near nothing. On a resumed session, the transcript's last
 cache write says which until the band's first reply. Set
 `CLAUDE_CODE_PROMPT_CACHE_TTL=5m` or `1h`, or `"promptCacheTtl"` in
 settings.json, to remove the guess.
 
-**What if Claude Code compacts while I'm away?** In a terminal session on
-the hour's cache, Claude Code compacts a long conversation left idle about
-54 minutes. The band warns that it may, then reads `compacted`, calm, with
+**What if Claude Code compacts while I'm away?** On the hour's cache, in a
+terminal, the VS Code panel or the desktop's Code tab, Claude Code compacts a
+long conversation left idle about an hour, which the band takes as about 54
+minutes. The band warns that it may, then reads `compacted`, calm, with
 what the next message costs to write the summary.
 
 **How is it different from ccusage or a status line?** ccusage reports

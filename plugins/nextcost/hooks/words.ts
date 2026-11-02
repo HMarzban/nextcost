@@ -254,6 +254,8 @@ export const MOOD_ALT: Readonly<Record<CacheFacts['mood'], string>> = {
   expiring: 'cache in its last minute',
   cold: 'cache cold',
   compacted: 'cache compacted',
+  uncached: 'not caching',
+  switched: 'model changed, next message rebuilds the cache',
 }
 
 /** A cache gone, short: its mood and the next message's price, `cold ~$1.66`. */
@@ -290,9 +292,29 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
         figureShort: goneShort('compacted', f.estimate),
         amber: undefined,
         cardHead: [['compacted', 'value']],
-        cardNote: 'Compacted while idle: next message writes the summary.',
+        cardNote: `${f.compactedIdle ? 'Compacted while idle' : 'Compacted'}: next message writes the summary.`,
         estimateLabel: 'next message',
-        alt: altOf('cache', 'compacted while idle', `next message about ${price}`),
+        alt: altOf('cache', f.compactedIdle ? 'compacted while idle' : 'compacted', f.window === 0 ? 'next message writes the summary' : `next message about ${price}`),
+      }
+    case 'uncached':
+      return {
+        figure: [['not caching', 'value']],
+        figureShort: 'no cache',
+        amber: undefined,
+        cardHead: [['not caching', 'value']],
+        cardNote: 'The last reply read and wrote no cache, so all input bills in full.',
+        estimateLabel: 'input',
+        alt: MOOD_ALT.uncached,
+      }
+    case 'switched':
+      return {
+        figure: [['model changed', 'value'], [' · next ', 'label'], [f.estimate, 'value']],
+        figureShort: `new model ${f.estimate}`,
+        amber: undefined,
+        cardHead: [['model changed', 'value']],
+        cardNote: 'Each model has its own cache: next message rebuilds it.',
+        estimateLabel: 'next message',
+        alt: altOf('cache', 'model changed', `next message rebuilds ${f.estimate}`),
       }
     case 'cold':
       return {
@@ -337,7 +359,7 @@ const WAKER_WORDS: Readonly<Record<Waker, Readonly<{ noun: string; subject: stri
 }
 
 /** Whether the cache has gone since: what the last turn did no longer holds. */
-const goneMoods: ReadonlySet<CacheFacts['mood']> = new Set(['cold', 'compacted'])
+const goneMoods: ReadonlySet<CacheFacts['mood']> = new Set(['cold', 'compacted', 'uncached', 'switched'])
 
 /** A turn the user didn't type, as a hover says it: `a background task
  *  re-warmed it`, `another session kept it warm`; the cache gone since,
@@ -377,7 +399,7 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     savedText: f.measured && f.savedUsd !== null ? fmtEstimate(f.savedUsd) : undefined,
     hitText: f.hitFrac === undefined ? undefined : fmtPct(f.hitFrac),
     // Unpinned, an hour is assumed until a pin or the transcript says it.
-    lastsText: `${f.ttl} idle${!f.ttlPinned && f.ttl === '1h' ? ' · assumed' : ''}`,
+    lastsText: f.mood === 'uncached' ? 'nothing cached' : `${f.ttl} idle${!f.ttlPinned && f.ttl === '1h' ? ' · assumed' : ''}`,
     rebuildsText: f.misses > 0 ? String(f.misses) : undefined,
     idleText: f.recalled && f.idleMs !== null ? fmtAgo(f.idleMs) : undefined,
     wakeRow: f.wake === undefined ? undefined : wakeRowOf(f.wake, f.mood),

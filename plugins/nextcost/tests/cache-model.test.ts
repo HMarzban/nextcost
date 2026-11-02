@@ -179,7 +179,7 @@ test('after a compaction the cold price is for the compacted size', LONG, async 
   await clock.advance(61 * MIN)
 
   const ui = await mountBand($, 'terminal', 160)
-  expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/next message 20k tokens/)
+  expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/compacted · next 20k tokens/)
   await ui.unmount()
 })
 

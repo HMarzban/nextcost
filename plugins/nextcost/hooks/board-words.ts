@@ -70,14 +70,16 @@ const cacheBoard = (r: BoardFacts): BoardRow => {
   /** A row with no time to show: its status alone, in every column. */
   const statusOnly = (status: string): BoardRow => at({ status, time: undefined, remarks: '', cell: status, cellShort: status, tone: 'calm' })
   const reWarm = `RE-WARM ${c.estimate}`
+  if (c.mood === 'uncached') return statusOnly('NOT CACHING')
   if (c.untimed) return statusOnly('CHECK-IN')
-  if (r.frame.isWorking) return statusOnly('BOARDING')
   const clock = c.coldAt === null || zone === undefined ? undefined : `${c.measured ? '' : '~'}${fmtClock(c.coldAt, zone)}`
   /** A cache gone: when it went, where the clock is known, and what the next message costs. */
   const gone = (status: string, remarks: string): BoardRow =>
     at({ status, time: clock, remarks, cell: clock === undefined ? `${status} · ${remarks}` : `${status} ${clock} · ${remarks}`, cellShort: remarks, tone: 'calm' })
   if (c.mood === 'compacted') return gone('COMPACTED', `NEXT ${c.estimate}`)
   if (c.mood === 'cold') return gone('DEPARTED', reWarm)
+  if (c.mood === 'switched') return at({ status: 'MODEL CHANGED', time: undefined, remarks: `NEXT ${c.estimate}`, cell: `MODEL CHANGED · NEXT ${c.estimate}`, cellShort: `NEXT ${c.estimate}`, tone: 'calm' })
+  if (r.frame.isWorking) return statusOnly('BOARDING')
   const left = c.coldInMs ?? 0
   if (c.tone === 'amber') {
     const secs = boardSpan(left)

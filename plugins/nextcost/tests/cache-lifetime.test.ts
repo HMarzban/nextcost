@@ -166,3 +166,99 @@ test('a read carries through a reload', () => {
   expect(cache.ttlPinned).toBe(true)
 })
 
+
+// ---- a short read, once the lifetime has been read --------------------------
+
+/** A turn that wrote 157k, its hour read off the transcript. */
+const readAnHour = async ($: Parameters<typeof respond>[0], clock: { now: () => number; advance: (ms: number) => Promise<unknown> }) => {
+  await $.session.start(START)
+  await respond($, resp(2_000, 0, 157_000, 500), { messageCount: 40 })
+  engine.transcript = jsonl(wroteFor(clock.now(), '1h'))
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(LOOK)
+}
+
+const openFacts = async ($: Parameters<typeof mountBand>[0]) => {
+  const ui = await mountBand($, 'terminal', 110)
+  await ui.press({ key: 'more' })
+  const tree = await ui.drawn()
+  await ui.unmount()
+  return { expires: fact(tree, 'expires'), rebuilds: fact(tree, 'unexpected rebuilds') }
+}
+
+test('a read hour stands against a short read 12 minutes on: a /rewind is no five-minute cache', LONG, async ($, on) => {
+  const clock = setup(on, { env: HOME })
+  await readAnHour($, clock)
+  await clock.advance(12 * MIN)
+  await respond($, resp(1_000, 60_000, 97_000, 500), { messageCount: 20 })
+  expect(await openFacts($)).toEqual({ expires: '1h idle', rebuilds: undefined })
+})
+
+test('a /rewind inside five minutes is no unexpected rebuild', LONG, async ($, on) => {
+  const clock = setup(on, { env: HOME })
+  await readAnHour($, clock)
+  await clock.advance(2 * MIN)
+  await respond($, resp(1_000, 60_000, 97_000, 500), { messageCount: 20 })
+  expect((await openFacts($)).rebuilds).toBeUndefined()
+})
+
+test('with the conversation still growing, a short read of a read hour is one unexpected rebuild, and the hour stands', LONG, async ($, on) => {
+  const clock = setup(on, { env: HOME })
+  await readAnHour($, clock)
+  await clock.advance(12 * MIN)
+  await respond($, resp(1_000, 60_000, 97_000, 500), { messageCount: 42 })
+  expect(await openFacts($)).toEqual({ expires: '1h idle', rebuilds: '1' })
+})
+
+// With no read to go by: the inference, only on a read of near nothing.
+const unread = (hit: number, messages = 42) => {
+  const c = newCache()
+  c.responded({ ...resp(2_000, 0, 157_000, 500), ...OPUS }, 0, true, { messages: 40 })
+  c.responded({ ...resp(1_000, hit, 157_000 - hit, 500), ...OPUS }, 12 * MIN, true, { messages })
+  return c.view({ now: 12 * MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.ttl
+}
+
+test('no read yet: a request 12 minutes on that read near nothing means five minutes', () => {
+  expect(unread(0)).toBe('5m')
+  expect(unread(45_000)).toBe('5m')
+})
+
+test('no read yet: a partial read beyond the shared system prompt infers nothing', () => {
+  expect(unread(60_000)).toBe('1h')
+})
+
+test('no read yet: a /rewind infers nothing, even reading near nothing', () => {
+  expect(unread(0, 20)).toBe('1h')
+})
+
+// ---- a tool loop's rounds -----------------------------------------------------
+
+/** An advisor reply reading all 100k: one server tool block, its usage over `rounds`. */
+const advisor = (read: number, iterations?: readonly object[]) => {
+  const c = newCache()
+  c.configured({ ttl: '1h', idleCompactFrom: undefined })
+  c.responded({ ...resp(100, 0, 100_000, 100), ...OPUS }, 0, true)
+  c.responded({ ...resp(100, read, 500, 100), ...OPUS, ...(iterations === undefined ? {} : { iterations }) }, MIN, true, { serverTools: 1 })
+  return c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache
+}
+const MESSAGE = { type: 'message' }
+const ADVISOR = { type: 'advisor_message' }
+
+test('a tool block with one round in its usage reads the whole prefix: no miss, as its usage lists', () => {
+  const cache = advisor(100_000, [MESSAGE])
+  expect([cache.misses, cache.window]).toEqual([0, 100_700])
+})
+
+test('two rounds listed read the prefix twice: no miss, and the window is one round', () => {
+  const cache = advisor(200_000, [MESSAGE, ADVISOR, MESSAGE])
+  expect(cache.misses).toBe(0)
+  expect(cache.window).toBeLessThan(101_000)
+})
+
+test('two rounds listed that each read half are a miss', () => {
+  expect(advisor(100_000, [MESSAGE, ADVISOR, MESSAGE]).misses).toBe(1)
+})
+
+test('with no rounds listed, a read halved by the tool blocks counts no miss', () => {
+  expect(advisor(100_000).misses).toBe(0)
+})
