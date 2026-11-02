@@ -264,7 +264,7 @@ const contextCard = (kit: Kit, read: Readings, at: CardAt): RenderElement => {
   const values = hist.context.length > 1 ? hist.context.slice(-turns) : Array.from({ length: Math.max(2, Svg ? 2 : turns) }, () => context.used)
   const chart = at.size === undefined || !at.f.charted.context ? null
     : sparkline(kit, { key: 'chart', alt: hist.contextTrailAlt, values, color: onTone(context.tone, palette.label), px: at.px, ...at.size, headroom: at.headroom, max: context.compactAt ?? context.window, levelFrac: context.compactAt === undefined ? undefined : 1 })
-  return card(kit, 'context', markedHead(context.cardHead, context.tone), context.tone, [plot(kit, chart), fill(kit), fact(kit, at, context.fact.label, context.fact.values)])
+  return card(kit, 'context', markedHead(context.cardHeadNamed, context.tone), context.tone, [plot(kit, chart), fill(kit), fact(kit, at, context.fact.label, context.fact.values)])
 }
 
 /** A window's half of Limits: its chart, `halfPx` wide, then its fact;

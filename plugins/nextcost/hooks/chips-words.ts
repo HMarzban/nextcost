@@ -5,7 +5,7 @@
 import type { CacheFacts } from './cache'
 import type { ContextFacts, Frame, LimitFacts } from './facts'
 import { clamp01, fmtCountdown, fmtTokens, severityMark } from './format'
-import { IDLE_COMPACT_AT, MOOD_ALT, PRICE_EXTRA, UNKNOWN, compactsIn, goneShort, lifetimeAssumed, paceText, wakeSaid } from './words'
+import { IDLE_COMPACT_AT, MOOD_ALT, PRICE_EXTRA, UNKNOWN, SINCE_LOADED, compactsIn, countedSinceLoad, goneShort, lifetimeAssumed, paceText, saidJoined, wakeSaid } from './words'
 import type { SpendWords } from './words'
 
 /** Every word chips' row says about the cache, for one mood: the pill, its
@@ -113,7 +113,7 @@ export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend:
   return {
     cache: cacheCopy(r.cache, r.frame),
     costHover: spend.lastText === undefined ? `${spend.totalText} so far this session` : `${spend.lastText} spent during your last message, subagents included`,
-    tokensHover: spend.split.map(s => `${s.label} ${s.text}`).join(' · '),
+    tokensHover: saidJoined([...spend.split.map(s => `${s.label} ${s.text}`), countedSinceLoad(r.cache) ? SINCE_LOADED : undefined], ' · '),
     contextPill: long => {
       const amount =
         x.compactAt !== undefined ? (long ? `${x.pct} full` : x.pct) : !long || x.tokens === undefined ? x.pct : `${fmtTokens(x.tokens)} / ${fmtTokens(x.window)}`
@@ -123,7 +123,7 @@ export const chipsWords = (r: Readonly<{ frame: Frame; cache: CacheFacts; spend:
     contextHover:
       x.compactAt === undefined
         ? `${fmtTokens(x.used)} of ${fmtTokens(x.window)} (${x.pct}); older turns get summarized near full`
-        : `${fmtTokens(x.used)} of ${fmtTokens(x.compactAt)} (${x.pct}); auto-${compactsIn(x.toCompact)}`,
+        : `${fmtTokens(x.used)} of the ${fmtTokens(x.compactAt)} auto-compaction point (${x.pct}); model window ${fmtTokens(x.window)}; auto-${compactsIn(x.toCompact)}`,
     limitHover: { '5h': limitHover('5h'), '7d': limitHover('7d') },
   }
 }

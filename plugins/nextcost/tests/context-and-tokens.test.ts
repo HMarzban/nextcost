@@ -46,7 +46,7 @@ test('near auto-compaction the context chip turns amber and counts down', async 
   expect(ctx).toBeDefined()
   expect(ctx?.props?.color).toBe(DARK.amberFg)
   // Its card leads with the figure, as every card does.
-  expect(cardText(hoverCardOf(await ui.drawn(), 'ctx'))).toBe('152k of 160k (95%); auto-compacts in ~8.0k')
+  expect(cardText(hoverCardOf(await ui.drawn(), 'ctx'))).toBe('152k of the 160k auto-compaction point (95%); model window 200k; auto-compacts in ~8.0k')
   await ui.unmount()
 })
 
@@ -103,7 +103,7 @@ test('the tokens chip totals every token and breaks them down', async ($, on) =>
   const ui = await mountBand($, 'terminal', 140)
   const drawn = await ui.drawn()
   expect(textOf(pillOf(drawn, 'tokens'))).toMatch(/225k/)
-  expect(cardText(hoverCardOf(drawn, 'tokens'))).toBe('input 120k · output 5.0k · cache reads 100k')
+  expect(cardText(hoverCardOf(drawn, 'tokens'))).toBe('input 120k · output 5.0k · cache reads 100k · since the band loaded')
   await ui.press({ key: 'more' })
   const tree = await ui.drawn()
   expect(fact(tree, 'input')).toBe('120k')

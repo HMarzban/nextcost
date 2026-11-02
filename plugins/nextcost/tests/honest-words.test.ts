@@ -7,7 +7,7 @@ import { test, expect } from 'claude-code/testing'
 import { readingsOf } from '../hooks/reading'
 import { PLAIN } from '../hooks/palette'
 import { MIN, byKey, cardOf, fact, shown, walk, wordsOf, type Node } from './helpers'
-import { LAST_MINUTE_CACHE, SNAP_PARTS, bandOf, cacheWith, snapOf } from './matrix'
+import { LAST_MINUTE_CACHE, NEAR_COMPACTION, SNAP_PARTS, bandOf, cacheWith, snapOf } from './matrix'
 import type { BandSnapshot } from '../hooks/snapshot'
 
 // ---- the departures board: an amber last call carries its mark ----------------
@@ -137,4 +137,61 @@ test("the board's REMARKS say the price is the cache rewrite; its collapsed cell
   expect(cold?.cellShort).toBe('RE-WARM ~$1.66')
   const warm = readingsOf(snapOf({ cache: cacheWith({ coldAt: 52 * MIN }) })).board().rows[0]
   expect(warm?.remarks).toMatch(/RE-WARM ~\$1\.66 IF MISSED · CACHE REWRITE, NOT YOUR REPLY$/)
+})
+
+// ---- counts say when they began ---------------------------------------------
+
+/** Loaded into a conversation already under way: its cost is the engine's whole ledger, its tokens only the band's own. */
+const UNDER_WAY = cacheWith({ fresh: false, recovered: false, requests: 2, misses: 1 })
+const factsAndNotes = (card: Node | undefined): string[] => {
+  const out: string[] = []
+  walk(card, n => {
+    const key = n.props?.key
+    if (typeof key === 'string' && (key.startsWith('fact:') || key === 'note')) out.push(key === 'note' ? shown(n) : key.slice(5))
+  })
+  return out
+}
+
+test('the tokens hover says since the band loaded, only where the counts started there', () => {
+  const hover = (cache: BandSnapshot['cache']) => readingsOf(snapOf({ cache })).chips.tokensHover
+  expect(hover(UNDER_WAY)).toBe('input 18k · output 9.0k · cache reads 198k · since the band loaded')
+  // A conversation that began here, or whose transcript was read, counts every token.
+  expect(hover(cacheWith({}))).toBe('input 18k · output 9.0k · cache reads 198k')
+  expect(hover({ ...UNDER_WAY, recovered: true })).not.toMatch(/since/)
+  expect(readingsOf(snapOf({ cache: UNDER_WAY })).cache.sinceLoaded).toBe(true)
+})
+
+test('the Spend and Cache cards say it above the rows it covers, so none of them shows without it', () => {
+  const open = (cache: BandSnapshot['cache'], maxRows = 40) => bandOf({ columns: 100, maxRows, expanded: true, cache })
+  const spend = factsAndNotes(cardOf(open(UNDER_WAY), 'spend'))
+  expect(spend).toEqual(['counted since the band loaded', 'input', 'output', 'cache reads'])
+  const cache = factsAndNotes(cardOf(open(UNDER_WAY), 'cache'))
+  expect(cache.slice(cache.indexOf('counted since the band loaded'))).toEqual(['counted since the band loaded', 'unexpected rebuilds', 'saved on cache reads', 'hit rate', 'expires'])
+  expect(factsAndNotes(cardOf(open(cacheWith({})), 'spend')).join()).not.toMatch(/since/)
+  for (let maxRows = 6; maxRows <= 30; maxRows++)
+    for (const name of ['spend', 'cache']) {
+      const rows = factsAndNotes(cardOf(open(UNDER_WAY, maxRows), name))
+      const counted = rows.findIndex(r => ['input', 'unexpected rebuilds', 'saved on cache reads', 'hit rate'].includes(r))
+      const said = rows.indexOf('counted since the band loaded')
+      if (counted >= 0) expect(`${name} ${maxRows} ${said >= 0 && said < counted}`).toBe(`${name} ${maxRows} true`)
+    }
+})
+
+// ---- a percentage says what it is of --------------------------------------------
+
+test('pulse names what its context percentage is of, and chips\' hover names both numbers', () => {
+  const head = (over: Partial<BandSnapshot>) => shown(byKey(byKey(bandOf({ layout: 'pulse', columns: 100, maxRows: 40, expanded: true, ...over }), 'pulse:context', 'Box'), 'head', 'Box'))
+  expect(head({})).toBe('CONTEXT40% toward compaction')
+  expect(head({ context: NEAR_COMPACTION })).toBe('CONTEXT! 95% toward compaction')
+  // With compaction off the percentage is of the window, which the fact beside it says.
+  expect(head({ context: { ...SNAP_PARTS.usage.context, tokens: 170_000, window: 200_000, compactAt: undefined, autoCompactOff: true } })).toBe('CONTEXT! 85%! full')
+  const hover = (context: BandSnapshot['context']) => readingsOf(snapOf({ context })).chips.contextHover
+  expect(hover(snapOf().context)).toBe('76k of the 190k auto-compaction point (40%); model window 200k; auto-compacts in ~114k')
+  expect(hover({ ...snapOf().context, compactAt: undefined })).toBe('76k of 200k (38%); older turns get summarized near full')
+})
+
+test("the board's REMARKS say a calm context percentage is toward compaction; without compaction it is used of the window", () => {
+  const row = (context: BandSnapshot['context']) => readingsOf(snapOf({ context })).board().rows.find(r => r.key === 'context')
+  expect([row(snapOf().context)?.status, row(snapOf().context)?.remarks]).toEqual(['40% USED', 'TOWARD COMPACTION AT 190K · ~114K LEFT'])
+  expect([row({ ...snapOf().context, compactAt: undefined })?.status, row({ ...snapOf().context, compactAt: undefined })?.remarks]).toEqual(['38% USED', ''])
 })

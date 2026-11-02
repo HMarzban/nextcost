@@ -10,7 +10,7 @@ import { textCells } from '../layout'
 import type { BarSize } from '../layout'
 import type { LimitReading, Readings } from '../reading'
 import type { BandActions } from '../snapshot'
-import { SPLIT_LABELS, type Say } from '../words'
+import { SINCE_LOADED, SPLIT_LABELS, type Say } from '../words'
 import { bodyRowsFor, footer, topStrip } from './frame'
 import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, factRow, fitForm, headHolds, headline, limitAccent, linesOf } from './shell'
 import type { CardName } from './shell'
@@ -129,6 +129,8 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
       assumed ? expires : null,
       cache.wakeRow === undefined ? null : factRow(kit, cache.wakeRow.label, cache.wakeRow.value),
       knownRow(kit, 'idle for', cache.idleText),
+      // The counts below start where the band loaded: said above the first of them, never below.
+      cache.sinceLoaded && (cache.rebuildsText ?? cache.savedText ?? cache.hitText) !== undefined ? sinceNote(kit) : null,
       knownRow(kit, 'unexpected rebuilds', cache.rebuildsText),
       knownRow(kit, 'saved on cache reads', cache.savedText),
       knownRow(kit, 'hit rate', cache.hitText),
@@ -137,13 +139,16 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
   )
 }
 
+/** What a card's counts say of where they began, in a label's ink. */
+const sinceNote = (kit: Kit): RenderElement => wrappedNote(kit, `counted ${SINCE_LOADED}`)
+
 const spendCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
   const { spend } = read
   const tokenParts = tokenPartsOf(kit, read)
   const lastRow = spend.lastText === undefined ? null : factRow(kit, 'last message', spend.lastText)
   const splitShown = read.cache.measured
   const tokenRows = splitShown
-    ? spend.split.map((part, i) => factRow(kit, part.label, part.text, tokenParts[i]))
+    ? [read.cache.sinceLoaded ? sinceNote(kit) : null, ...spend.split.map((part, i) => factRow(kit, part.label, part.text, tokenParts[i]))]
     : [wrappedNote(kit, 'Breakdown counts from your next message.')]
   return card(kit, fit, 'spend', { say: [[spend.totalText, 'value']] }, splitShown ? splitBar(kit, { alt: SPLIT_ALT, parts: tokenParts, size: fit.bar }) : null, [lastRow, ...tokenRows])
 }

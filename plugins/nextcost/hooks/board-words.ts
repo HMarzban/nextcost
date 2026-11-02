@@ -104,7 +104,8 @@ const contextBoard = (r: BoardFacts): BoardRow => {
   const x = r.context
   const base = { key: 'context', item: 'CONTEXT', time: undefined, alt: x.alt } as const
   if (!x.known) return { ...base, status: EMPTY.context, remarks: '', cell: EMPTY.context, cellShort: EMPTY.context, tone: 'calm' }
-  const remarks = saidJoined([x.roomText === undefined ? undefined : `${x.roomText} LEFT`, x.compactsAtText === undefined ? undefined : `COMPACTS AT ${x.compactsAtText}`], ' · ')
+  // With compaction known the percentage is toward it, which REMARKS say first; else it is of the window.
+  const remarks = saidJoined([x.compactsAtText === undefined ? undefined : `TOWARD COMPACTION AT ${x.compactsAtText}`, x.roomText === undefined ? undefined : `${x.roomText} LEFT`], ' · ')
   if (x.tone === 'calm') return { ...base, status: `${x.valueText} USED`, remarks, cell: x.valueText, cellShort: x.valueText, tone: 'calm' }
   // Near compaction the board names the event; with compaction off, the
   // fill. The group's ITEM already says CONTEXT, so its cell never does.

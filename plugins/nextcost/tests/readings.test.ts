@@ -84,7 +84,7 @@ test('the cache facts carry its mood, tone, charge and price', () => {
 test("chips' words say its hover cards and the context's amount", () => {
   const c = readingsOf(snapOf({ history: { costs: [{ usd: 0.21, reWarm: false }], context: [] } })).chips
   expect([c.costHover, c.tokensHover]).toEqual(['$0.21 spent during your last message, subagents included', 'input 18k · output 9.0k · cache reads 198k'])
-  expect([c.contextPill(true), c.contextPill(false), c.contextHover]).toEqual(['40% full', '40%', '76k of 190k (40%); auto-compacts in ~114k'])
+  expect([c.contextPill(true), c.contextPill(false), c.contextHover]).toEqual(['40% full', '40%', '76k of the 190k auto-compaction point (40%); model window 200k; auto-compacts in ~114k'])
   expect(c.limitHover).toEqual({ '5h': 'Resets in 3h 00m; 5-hour limit, all your Claude use', '7d': 'Resets in 2d 19h; weekly limit, all your Claude use' })
   const off = readingsOf(snapOf({ context: { ...snapOf().context, compactAt: undefined }, fiveHour: { percentUsed: 30, resetsAt: -1, etaMs: null }, sevenDay: undefined })).chips
   expect([off.contextPill(true), off.contextPill(false), off.contextHover]).toEqual(['76k / 200k', '38%', '76k of 200k (38%); older turns get summarized near full'])

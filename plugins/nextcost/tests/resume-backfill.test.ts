@@ -626,7 +626,8 @@ const figures = async ($: Engine) => {
     hit: fact(tree, 'hit rate'),
     saved: fact(tree, 'saved on cache reads'),
     rebuilds: fact(tree, 'rebuilds'),
-    spend: shown(cardOf(tree, 'spend')),
+    // Whether the counts began with the conversation is not what a reload changes: after /clear the fixture's ledger isn't 0, so the two runs differ in it alone.
+    spend: shown(cardOf(tree, 'spend')).replace('counted since the band loaded', ''),
     cost: shown(pillOf(shut, 'cost')),
     cache: shown(pillOf(shut, 'cache')),
   }

@@ -54,6 +54,16 @@ export const estimateForms = (estimate: string): readonly string[] => [
   estimate,
 ]
 
+/** What a count says of when it began, where the band loaded into a
+ *  conversation already under way. */
+export const SINCE_LOADED = 'since the band loaded'
+
+/** Whether the tokens, the hit rate, the savings and the rebuilds count only
+ *  from where the band loaded: the conversation didn't begin here and no
+ *  transcript was read for what came before. The cost is the engine's whole
+ *  ledger either way. */
+export const countedSinceLoad = (f: Pick<CacheFacts, 'measured' | 'fresh' | 'recovered'>): boolean => f.measured && !f.fresh && !f.recovered
+
 /** A value not known yet: unknown, never 0. */
 export const UNKNOWN = '–'
 
@@ -149,6 +159,8 @@ export type CacheWords = Readonly<{
   hitText: string | undefined
   /** How long it lasts idle: `1h idle`, or `1h idle · assumed` while the hour is a guess. */
   lastsText: string
+  /** The tokens, hit rate, savings and rebuilds count from where the band loaded. */
+  sinceLoaded: boolean
   /** The hour is a guess, which no row may drop and the headline says where
    *  its row can't be drawn. */
   lifetimeAssumed: boolean
@@ -201,6 +213,9 @@ export type ContextWords = Readonly<{
   windowText: string
   /** The context card's headline: `87% full`, marked past 80% when compaction is off. */
   cardHead: Say
+  /** The same where a card has room to name what the percentage is of: `87%
+   *  toward compaction`; with compaction off, of the window and the same as `cardHead`. */
+  cardHeadNamed: Say
   /** Pulse's context card's fact: `in context`, then phrase by phrase
    *  `76k of 200k` and `compacts at 190k`, or near it `compacts in ~10k`. */
   fact: Readonly<{ label: string; values: readonly string[] }>
@@ -406,6 +421,7 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     // Unpinned, an hour is assumed until a pin or the transcript says it.
     lastsText: `${f.ttl} idle${lifetimeAssumed(f) ? ' · assumed' : ''}`,
     lifetimeAssumed: lifetimeAssumed(f),
+    sinceLoaded: countedSinceLoad(f),
     assumedHead: [[' · assumed', 'label']],
     rebuildsText: f.misses > 0 ? String(f.misses) : undefined,
     idleText: f.recalled && f.idleMs !== null ? fmtAgo(f.idleMs) : undefined,
@@ -431,6 +447,7 @@ export const contextWords = (f: ContextFacts): ContextWords => {
   const roomText = !f.known || f.compactAt === undefined ? undefined : roomOf(f.toCompact)
   const amber = f.tone !== 'amber' ? undefined : f.compactAt !== undefined ? AMBER.context(f.frac, f.toCompact) : AMBER.contextNoCompaction(f.frac)
   const cardHead: Say = [[`${f.pct}${f.compactAt === undefined ? severityMark(f.frac) : ''}`, 'value'], [' full', 'label']]
+  const cardHeadNamed: Say = f.compactAt === undefined ? cardHead : [[f.pct, 'value'], [' toward compaction', 'label']]
   const compactsAtText = f.compactAt === undefined ? undefined : fmtTokens(f.compactAt)
   // Near compaction, the room before it; else where it compacts.
   const compaction = f.compactAt === undefined ? undefined : amber !== undefined ? compactsIn(f.toCompact) : `compacts at ${fmtTokens(f.compactAt)}`
@@ -444,6 +461,7 @@ export const contextWords = (f: ContextFacts): ContextWords => {
     bandName: 'context',
     windowText: fmtTokens(f.window),
     cardHead,
+    cardHeadNamed,
     fact: {
       label: 'in context',
       values: said([`${inContext} of ${fmtTokens(f.window)}`, compaction]),
