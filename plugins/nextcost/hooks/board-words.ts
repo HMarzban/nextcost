@@ -20,6 +20,10 @@ export type BoardRow = Readonly<{
   /** `17:24`, `SAT 13:30`, `IN 38 MIN`, `IN 1H 04M`, `PASSED`; none where it has no time. */
   time: string | undefined
   remarks: string
+  /** After a turn the user didn't type, what REMARKS say in its place, widest
+   *  first, the waker leading each: the board keeps the widest its column
+   *  holds, and the last when every other remark gives way. */
+  woken?: readonly string[]
   /** Collapsed, long: `DEPARTS 17:24`, `26% RESET 17:50`, `85% RESET SAT 13:30 ! NEAR LIMIT`. */
   cell: string
   /** Collapsed, short: `17:24`, `! 47S`, `26%`. */
@@ -49,10 +53,20 @@ type BoardFacts = Readonly<{
 /** A projection on the board: `~40 MIN`, `~1H 15M`. */
 const boardEta = (ms: number): string => (etaMinutes(ms) < 60 ? `~${etaMinutes(ms)} MIN` : fmtEta(ms))
 
+/** REMARKS after a turn the user didn't type, widest first: what it did and
+ *  every remark; who and the `price` alone; what it did; who. */
+const wokenForms = (c: CacheWords, remarks: string, price: string): Pick<BoardRow, 'woken'> => {
+  if (c.wakeRow === undefined || c.wakeShort === undefined) return {}
+  const long = `${c.wakeRow.label} ${c.wakeRow.value}`
+  return { woken: [saidJoined([long, remarks], ' · '), saidJoined([c.wakeShort, price], ' · '), long, c.wakeShort] }
+}
+
 const cacheBoard = (r: BoardFacts): BoardRow => {
   const c = r.cache
   const zone = r.frame.zone
-  const at = (cell: Omit<BoardRow, 'key' | 'item' | 'alt'>): BoardRow => ({ key: 'cache', item: 'CACHE', alt: c.alt, ...cell })
+  /** The cache's line; `price`, the part of its remarks a waker keeps beside it. */
+  const at = (cell: Omit<BoardRow, 'key' | 'item' | 'alt' | 'woken'>, price = cell.remarks): BoardRow =>
+    ({ key: 'cache', item: 'CACHE', alt: c.alt, ...cell, ...wokenForms(c, cell.remarks, price) })
   /** A row with no time to show: its status alone, in every column. */
   const statusOnly = (status: string): BoardRow => at({ status, time: undefined, remarks: '', cell: status, cellShort: status, tone: 'calm' })
   const reWarm = `RE-WARM ${c.estimate}`
@@ -72,7 +86,7 @@ const cacheBoard = (r: BoardFacts): BoardRow => {
   const status = c.lastCall ? 'LAST CALL' : 'DEPARTS'
   const countdown = `IN ${boardSpan(left)}`
   const time = clock ?? countdown
-  return at({ status, time, remarks: `${clock === undefined ? '' : `${countdown} · `}${reWarm} IF MISSED`, cell: `${status} ${time}`, cellShort: time, tone: 'calm' })
+  return at({ status, time, remarks: `${clock === undefined ? '' : `${countdown} · `}${reWarm} IF MISSED`, cell: `${status} ${time}`, cellShort: time, tone: 'calm' }, reWarm)
 }
 
 const spendBoard = (r: BoardFacts): BoardRow => ({
@@ -120,6 +134,7 @@ const upRow = (row: BoardRow): BoardRow => ({
   ...row, item: row.item.toUpperCase(), status: row.status.toUpperCase(), time: row.time?.toUpperCase(),
   remarks: row.remarks.toUpperCase(), cell: row.cell.toUpperCase(), cellShort: row.cellShort.toUpperCase(),
   ...(row.cellNoReset === undefined ? {} : { cellNoReset: row.cellNoReset.toUpperCase() }),
+  ...(row.woken === undefined ? {} : { woken: row.woken.map(form => form.toUpperCase()) }),
 })
 
 /** The departures board: a row per reading in the one order, in the

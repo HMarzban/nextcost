@@ -1,7 +1,7 @@
 {
   "name": "nextcost",
   "displayName": "nextcost",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "See what your next message costs: a live band above the prompt with the prompt-cache countdown, the re-warm price, session cost, context and your 5h/7d limits.",
   "types": "./types/index.d.ts",
   "author": {

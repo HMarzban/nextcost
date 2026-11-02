@@ -162,7 +162,8 @@ test('a measured fill is an estimate, with ~', () => {
   const now = Date.UTC(2026, 9, 9, 13, 40)
   const r = readingsOf(snapOf({ now, zone: fixedZone(0), fiveHour: { percentUsed: 84, resetsAt: now + 70 * MIN, etaMs: 40 * MIN } }))
   expect(r.fiveHour?.fullIn).toBe('~40m')
-  expect([r.fiveHour?.amber?.long, r.fiveHour?.amber?.short]).toEqual(['! 5h full in ~40m', '! 5h ~40m'])
+  expect([r.fiveHour?.amber?.long, r.fiveHour?.amber?.short]).toEqual(['! 5h full in ~40m', '! 5h full ~40m'])
+  expect(r.fiveHour?.amberValue?.short).toBe('! 5h 84%')
   expect(r.fiveHour?.alt).toBe('5h limit 84 percent used, needs attention, full in about 40 minutes')
 })
 test('a landing at or over 100% is full before reset, never ~112%', () => {

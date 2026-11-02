@@ -6,7 +6,7 @@
 import { test, expect } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { SessionUsage } from 'claude-code'
-import { BUILD_155K, BUILD_80K, CLEAR, HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, cardOf, engine, fact, jsonl, pillOf, resp, respond, setup, shown, startTurn, endTurn, svgAlts, turn, mountBand, usage } from './helpers'
+import { BUILD_155K, BUILD_80K, CLEAR, HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, cardOf, engine, fact, toasts, jsonl, pillOf, resp, respond, setup, shown, startTurn, endTurn, svgAlts, turn, mountBand, usage } from './helpers'
 
 const ENV = { ENABLE_PROMPT_CACHING_1H: '1', HOME: '/Users/me' }
 const BUILT_PATH = '/Users/me/.claude/projects/-Users-me-workspace-nextcost/s1.jsonl'
@@ -595,4 +595,194 @@ test("the first reply after a resume the engine calls expired is pulse's re-warm
   const costs = svgAlts(open).filter(a => a.startsWith('cost of'))
   expect(costs.length).toBeGreaterThan(0)
   expect(costs.filter(a => !a.endsWith('the newest a re-warm'))).toEqual([])
+})
+
+// A reload of the band's code (/reload-plugins, a worker respawn) raises
+// session.start alone: same process, same ledger, same conversation. Whatever
+// the band had counted carries on, held by the host in the session's state.
+
+/** Two turns with the cache warm: 100k read, and the ledger at $3. */
+const beforeReload = async ($: Engine) => {
+  await startTurn($, 't1', 2)
+  await respond($, BUILD_80K)
+  await endTurn($, 't1', 2.5)
+  await startTurn($, 't2', 2.5)
+  await respond($, resp(1_000, 80_000, 1_000, 1_000))
+  await endTurn($, 't2', 3)
+}
+
+/** The figures a reload must leave as they were, the view left shut. */
+const figures = async ($: Engine) => {
+  const shut = await mounted($)
+  const ui = await mountBand($, 'terminal', 140)
+  await ui.press({ key: 'more' })
+  const tree = await ui.drawn()
+  await ui.press({ key: 'more' })
+  await ui.unmount()
+  return {
+    input: fact(tree, 'input'),
+    output: fact(tree, 'output'),
+    reads: fact(tree, 'cache reads'),
+    hit: fact(tree, 'hit rate'),
+    saved: fact(tree, 'saved by cache'),
+    rebuilds: fact(tree, 'rebuilds'),
+    spend: shown(cardOf(tree, 'spend')),
+    cost: shown(pillOf(shut, 'cost')),
+    cache: shown(pillOf(shut, 'cache')),
+  }
+}
+
+test('a reload leaves every count as it was: tokens, hit rate, saved, price and cost', async ($, on) => {
+  const clock = setup(on, { usage: { ...USAGE, cost: { usd: 2 } }, env: ENV, now: 3 * HOUR })
+  await $.session.start(START)
+  await beforeReload($)
+  await clock.advance(61 * MIN)
+  const before = await figures($)
+  expect(before.reads).toBe('80k')
+  expect(before.saved).toMatch(/\$/)
+  expect(before.cost).toMatch(/\$3\.00/)
+  expect(before.cache).toMatch(/cache cold · next message ~\$/)
+  await $.session.start(START)
+  expect(await figures($)).toEqual(before)
+})
+
+test('a reply after a reload counts once, and the re-warm price stays solved from the whole conversation', LONG, async ($, on) => {
+  const run = async (reload: boolean) => {
+    usage.current = { ...USAGE, cost: { usd: 2 } }
+    await $.session.start(START)
+    await beforeReload($)
+    if (reload) await $.session.start(START)
+    await startTurn($, 't3', 3)
+    await respond($, resp(1_000, 81_000, 1_000, 1_000))
+    await endTurn($, 't3', 3.5)
+    await clock.advance(61 * MIN)
+    return figures($)
+  }
+  const clock = setup(on, { usage: { ...USAGE, cost: { usd: 2 } }, env: ENV, now: 3 * HOUR })
+  const reloaded = await run(true)
+  await $.session.end(CLEAR)
+  const straight = await run(false)
+  expect(reloaded).toEqual(straight)
+  expect(reloaded.reads).toBe('161k')
+})
+
+test('a reload mid-turn keeps the rate off the ledger of earlier turns, and the turn its cost', LONG, async ($, on) => {
+  const run = async (reload: boolean) => {
+    usage.current = { ...USAGE, cost: { usd: 2 } }
+    await $.session.start(START)
+    await startTurn($, 't1', 2)
+    await respond($, BUILD_80K)
+    usage.current = { ...USAGE, cost: { usd: 2.5 } }
+    if (reload) await $.session.start(START)
+    await respond($, resp(1_000, 80_000, 1_000, 1_000))
+    await endTurn($, 't1', 3)
+    await clock.advance(61 * MIN)
+    return figures($)
+  }
+  const clock = setup(on, { usage: { ...USAGE, cost: { usd: 2 } }, env: ENV, now: 3 * HOUR })
+  const reloaded = await run(true)
+  await $.session.end(CLEAR)
+  const straight = await run(false)
+  expect(reloaded).toEqual(straight)
+  expect(reloaded.reads).toBe('80k')
+  expect(reloaded.spend).toMatch(/last message\$1\.00/)
+})
+
+test("a reload keeps a resumed conversation's earlier spend and tokens, read once", async ($, on) => {
+  const clock = setup(on, { usage: RESUMED, env: ENV, now: 3 * HOUR })
+  engine.transcript = TRANSCRIPT
+  await $.session.start(START)
+  await resume($, 10 * MIN)
+  await clock.settle()
+  await turn($, 't1', 0, 1)
+  const before = await figures($)
+  expect(before.cost).toMatch(/\$31\.30/)
+  expect(before.reads).toBe('20.2M')
+  await $.session.start(START)
+  await clock.settle()
+  expect(await figures($)).toEqual(before)
+})
+
+test('a reload after /clear stays the new conversation: nothing of the old one comes back', async ($, on) => {
+  const clock = setup(on, { usage: { ...USAGE, cost: { usd: 2 } }, env: ENV, now: 3 * HOUR })
+  await $.session.start(START)
+  await beforeReload($)
+  await $.session.end(CLEAR)
+  await $.session.start(START)
+  await clock.settle()
+  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache warming/)
+  expect(fact(await mounted($, true), 'cache reads')).toBeUndefined()
+})
+
+test("another session's counts never come back on a reload", async ($, on) => {
+  const clock = setup(on, { usage: { ...USAGE, cost: { usd: 2 } }, env: ENV, now: 3 * HOUR })
+  await $.session.start(START)
+  await beforeReload($)
+  engine.sessionId = 's2'
+  await $.session.start(START)
+  await clock.settle()
+  expect(fact(await mounted($, true), 'cache reads')).toBeUndefined()
+})
+
+test("a reload keeps pulse's trails and the last message's cost", async ($, on) => {
+  setup(on, { usage: { ...USAGE, cost: { usd: 2 } }, env: ENV, now: 3 * HOUR, store: { layout: 'pulse' } })
+  await $.session.start(START)
+  await beforeReload($)
+  const open = async () => {
+    const ui = await mountBand($, 'desktop', 160)
+    await ui.press({ key: 'more' })
+    const tree = await ui.drawn()
+    await ui.press({ key: 'more' })
+    await ui.unmount()
+    return svgAlts(tree)
+  }
+  const before = await open()
+  expect(before.filter(a => a.startsWith('cost of')).length).toBeGreaterThan(0)
+  await $.session.start(START)
+  expect(await open()).toEqual(before)
+})
+
+test('a toast spoken before a reload is not spoken again at the same level', async ($, on) => {
+  setup(on, { usage: { ...USAGE, cost: { usd: 2 } }, env: ENV, now: 3 * HOUR })
+  await $.session.start(START)
+  const measure = () => $.session.measure({ context: { tokens: 164_000, window: 200_000, percent: 82 }, rateLimits: [], changed: [] })
+  await measure()
+  expect(toasts.length).toBe(1)
+  await $.session.start(START)
+  await measure()
+  expect(toasts.length).toBe(1)
+})
+
+test('a write of the counts held up by the host never lands on a newer one', async ($, on) => {
+  setup(on, { usage: { ...USAGE, cost: { usd: 2 } }, env: ENV, now: 3 * HOUR })
+  let release = (): void => undefined
+  const held = new Promise<void>(resolve => {
+    release = resolve
+  })
+  let hold = false
+  let writing = 0
+  let overlapped = false
+  on('state.set', async ($, e, next) => {
+    if (e.key !== 'kept') return next(e)
+    overlapped ||= writing > 0
+    writing++
+    if (hold) {
+      hold = false
+      await held
+    }
+    const result = await next(e)
+    writing--
+    return result
+  })
+  await $.session.start(START)
+  hold = true
+  const started = startTurn($, 't1', 2)
+  const replied = respond($, BUILD_80K)
+  // A whole draw through the engine: time for a second write to start, if it would.
+  await mounted($)
+  release()
+  await Promise.all([started, replied])
+  expect(overlapped).toBe(false)
+  await $.session.start(START)
+  expect(fact(await mounted($, true), 'input')).toBeDefined()
 })

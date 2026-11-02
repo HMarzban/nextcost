@@ -66,7 +66,7 @@ const pill = (kit: Kit, { key, tone, body, hover, paintsOwnBg, bg }: PillSpec): 
   }
   const fill = paintsOwnBg ? {} : { backgroundColor: onTone(tone, bg ?? palette.surface, palette.amberBg), paddingX: 1 }
   return (
-    <Box key={key} flexShrink={0} {...fill} {...(hover === undefined ? {} : hoverable(key))}>
+    <Box key={key} flexShrink={0} {...fill} {...(hover === undefined ? {} : hoverable(key, fill.backgroundColor))}>
       {body}
     </Box>
   )

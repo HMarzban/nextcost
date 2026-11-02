@@ -182,6 +182,30 @@ test('at 40 columns a calm row of tiles is the cache and the 7d, a cold one too;
   }
 })
 
+// ---- the 5h's forecast -----------------------------------------------------
+
+test('no width draws the forecast as a bare time, which beside a reset reads as one', LONG, () => {
+  const forecast = { fiveHour: { percentUsed: 85, resetsAt: 3 * HOUR, etaMs: 20 * MIN } }
+  const amber = { cache: LAST_MINUTE_CACHE, context: NEAR_COMPACTION, sevenDay: { percentUsed: 90, resetsAt: 67 * HOUR } }
+  for (const surface of ['desktop', 'terminal'] as const)
+    for (const palette of [DARK, PLAIN])
+      for (const state of [forecast, { ...forecast, ...amber }])
+        for (let columns = 40; columns <= 200; columns++) {
+          const five = shown(byKey(rowOf({ surface, palette, columns, ...state }), '5h', 'Box'))
+          expect(`${surface} ${columns} ${/^\[?! 5h ~/.test(five)}`).toBe(`${surface} ${columns} false`)
+        }
+})
+test('the row says the forecast short while it fits; past every other step, the 5h says its value', () => {
+  const said = (columns: number) => shown(byKey(rowOf({ surface: 'terminal', columns, ...ALL_AMBER }), '5h', 'Box'))
+  expect(said(120)).toMatch(/^! 5h full in ~20m/)
+  expect(said(40)).toBe('! 5h 85%')
+  const widths = Array.from({ length: 81 }, (_, i) => 40 + i)
+  // Going wider: the value, then the forecast short, then the forecast long, never back.
+  const forms = widths.map(columns => (/full in/.test(said(columns)) ? 2 : /full/.test(said(columns)) ? 1 : 0))
+  expect(forms).toEqual([...forms].sort((a, b) => a - b))
+  expect(forms).toContain(1)
+})
+
 // ---- no overflow -----------------------------------------------------------
 
 const AMBER = {
@@ -201,10 +225,7 @@ test('no width overflows: the tiles\' padding measured, every width from 40 to 2
         for (let columns = 40; columns <= 200; columns++) {
           const row = rowOf({ surface, palette, columns, ...state })
           const width = cellsOf(row as unknown as RenderChildren, surface === 'desktop' ? DESKTOP : TERMINAL)
-          // Every reading amber at once on a 40-column terminal: its four
-          // amber words alone, short, with no padding, are a column over its
-          // room, as the row was before its tiles; no wider.
-          const room = surface === 'terminal' ? columns - ROW_SLACK + (name === 'all' && columns === 40 ? 1 : 0) : columns
+          const room = surface === 'terminal' ? columns - ROW_SLACK : columns
           if (width > room) over.push(`${surface} ${name} ${columns}: ${width}`)
           // Plain's readings stand a column apart only when each is led by its `!`.
           if (palette === PLAIN && Number(row.props?.columnGap) < 2) {
@@ -224,7 +245,7 @@ test('last of all, every reading amber: the tiles drop their padding, their grou
     const plain = rowOf({ surface, palette: PLAIN, columns: 40, ...ALL_AMBER })
     // The terminal's plain row needs that last column; the desktop's fits before it.
     expect(`${surface} ${plain.props?.columnGap}`).toBe(`${surface} ${surface === 'terminal' ? 1 : 2}`)
-    expect(shown(plain)).toMatch(/^! \d+s! ctx \d+%! 5h ~\d+m! 7d \d+%/)
+    expect(shown(plain)).toMatch(/^! \d+s! ctx \d+%! 5h (full ~\d+m|\d+%)! 7d \d+%/)
     // Wider, the padding is back.
     expect(byKey(rowOf({ surface, columns: 120, ...ALL_AMBER }), 'cache', 'Box')?.props?.paddingX).toBe(1)
   }
