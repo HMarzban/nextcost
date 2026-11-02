@@ -52,7 +52,8 @@ it:
   transcript, by the same command with the same timeout. It keeps one fact:
   whether the last main-conversation cache write was for five minutes or an
   hour. Nothing else in the transcript is kept, shown or sent.
-- **Reads**, once when Claude Code says a session was resumed or forked,
+- **Reads**, once when Claude Code says a session was resumed or forked, and
+  again after its first turn where that found no cost record,
   that session's transcript, at the path Claude Code names or else at the
   path above, with the same 3-second timeout:
   - its cost records, by `grep -a -b -F '"type":"cost-state"' <transcript>`,

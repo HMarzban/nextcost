@@ -516,7 +516,8 @@ it, each given 3 seconds, and never while the band draws:
 | `grep -a -b -F '"type":"cost-state"' <transcript>`, then `tail -c +<offset> <transcript>` | the same | only when a conversation is resumed, and again after its first turn where that found nothing, as a fork's file fills only after its first prompt: what it spent before this process, so the session's cost includes it |
 
 **It reads** the session's id, model and usage from Claude Code (cost, token
-counts, context fill and rate-limit percentages), where each prompt came
+counts, context fill and rate-limit percentages), how many messages each
+request carries (never their content), where each prompt came
 from (never its text), the clock, the project's
 folder and repository root, three keys of your Claude Code settings
 (`promptCacheTtl`, `subagentPromptCacheTtl` and `idleCompaction`), and these
@@ -559,11 +560,11 @@ carry on from.
 | `classic.SessionStart` | On a resume or fork, notes that the conversation isn't new and reads its transcript as above. |
 | `turn.start`, `turn.complete` | Note the session's cost as each main turn starts and ends, the turn's cost, the context, and a limit reading; then read the layout and git again. A subagent's turn is left alone. |
 | `prompt.submit` | Notes where a prompt that starts a turn came from (your own, a background task, another session, a schedule), never its text, so each layout's open view can say who restarted the countdown. |
-| `turn.step` | Reads each response's token counts, and how many tool calls Anthropic ran in it (the advisor), for the cache model and the price per token. |
+| `turn.step` | Reads each response's token counts, how many tool calls Anthropic ran in it (the advisor), and how many messages the request carried (a count, never their content), for the cache model and the price per token. |
 | `session.compact` | Notes that the conversation was compacted, so the cache reads `compacted` at the summary's size until the next reply. |
 | `session.measure` | Reads where auto-compaction runs, and shows a toast as the context or the 5-hour limit crosses its warning levels. |
 | `command.run` | Answers `/nextcost` and `/usage-band`, and no other command; `/nextcost more` reads git. |
-| `ui.render` (above the prompt) | Draws the band; steps aside while a survey holds the space or the band is hidden. Opening the cards with `▵` reads git. |
+| `ui.render` (above the prompt) | Draws the band, reading the model `/model` names to tell a pending switch; steps aside while a survey holds the space or the band is hidden. Opening the cards with `▵` reads git. |
 
 ## Developing
 
