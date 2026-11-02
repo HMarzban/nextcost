@@ -42,7 +42,7 @@ test("a fill's clock is rounded as its ETA is: to 5 minutes under an hour, 15 fr
   const filling = (etaMs: number, zone = fixedZone(0)) => readingsOf(snapOf({ now, zone, fiveHour: { percentUsed: 84, resetsAt: now + 4 * HOUR, etaMs } })).fiveHour
   // 14:23 is the minute the arithmetic gives; the ETA says ~45m, to 5 minutes.
   expect(filling(43 * MIN)?.fillText).toBe('full ~14:25')
-  expect(filling(43 * MIN)?.fullIn).toBe('~45m')
+  expect(filling(43 * MIN)?.fact.value).toBe('~45m')
   expect(filling(127 * MIN)?.fillText).toBe('full ~15:45') // 15:47
   expect(filling(70 * MIN)?.fillText).toBe('full ~14:45') // 14:50: its ETA, ~1h 15m, is to 15
   // At +5:30 the wall clock reads 19:10; its minutes round, not UTC's.
@@ -109,7 +109,7 @@ test('a card heads its section with one figure, the rest in words, in lowercase'
   const r = readingsOf(snapOf())
   expect(r.cache.cardHead).toEqual([['52m', 'value'], [' left', 'label']])
   expect(r.context.cardHead).toEqual([['40%', 'value'], [' full', 'label']])
-  const off = readingsOf(snapOf({ context: { tokens: 170_000, window: 200_000, percent: 85, compactAt: undefined, autoCompactOff: true } }))
+  const off = readingsOf(snapOf({ context: { tokens: 170_000, window: 200_000, percent: 85, compactAt: undefined } }))
   expect(off.context.cardHead).toEqual([['85%!', 'value'], [' full', 'label']]) // the mark rides on the figure
   const moods = [
     snapOf({ cache: { ...snapOf().cache, requests: 0, fresh: false } }),
@@ -216,7 +216,7 @@ test('what a figure shows and how it is classed agree: 79.6% shows 80% and is am
   expect([five(79.6)?.value, five(79.6)?.tone, five(79.6)?.valueMarked]).toEqual(['80%', 'amber', '80%!'])
   expect([five(79.4)?.value, five(79.4)?.tone, five(79.4)?.valueMarked]).toEqual(['79%', 'calm', '79%'])
   expect([five(94.6)?.valueMarked, five(94.4)?.valueMarked]).toEqual(['95%!!', '94%!'])
-  const ctx = (percent: number) => readingsOf(snapOf({ context: { tokens: percent * 2000, window: 200_000, percent, compactAt: undefined, autoCompactOff: true } })).context
+  const ctx = (percent: number) => readingsOf(snapOf({ context: { tokens: percent * 2000, window: 200_000, percent, compactAt: undefined } })).context
   expect([ctx(79.6).pct, ctx(79.6).tone, ctx(79.4).pct, ctx(79.4).tone]).toEqual(['80%', 'amber', '79%', 'calm'])
 })
 test('clock times appear only when the offset is known', () => {
@@ -237,7 +237,7 @@ test('limits speak in words, amber with one "! "', () => {
 test('a measured fill is an estimate, with ~', () => {
   const now = Date.UTC(2026, 9, 9, 13, 40)
   const r = readingsOf(snapOf({ now, zone: fixedZone(0), fiveHour: { percentUsed: 84, resetsAt: now + 70 * MIN, etaMs: 40 * MIN } }))
-  expect(r.fiveHour?.fullIn).toBe('~40m')
+  expect(r.fiveHour?.fact.value).toBe('~40m')
   expect([r.fiveHour?.amber?.long, r.fiveHour?.amber?.short]).toEqual(['! 5h full in ~40m', '! 5h full ~40m'])
   expect(r.fiveHour?.amberValue?.short).toBe('! 5h 84%')
   expect(r.fiveHour?.alt).toBe('5h limit 84 percent used, needs attention, full in about 40 minutes')
@@ -262,18 +262,18 @@ test('a limit reads its value, or once its window has passed, reset', () => {
 })
 test('a passed window has no fill time', () => {
   const r = readingsOf(snapOf({ now: 4 * HOUR, fiveHour: { percentUsed: 84, resetsAt: 3 * HOUR, etaMs: 0 } }))
-  expect([r.fiveHour?.fullIn, r.fiveHour?.fillText]).toEqual([undefined, undefined])
+  expect([r.fiveHour?.fullShort, r.fiveHour?.fillText]).toEqual([undefined, undefined])
   expect(r.fiveHour?.alt).not.toMatch(/full in/)
 })
 test('context speaks toward compaction, or of the window when it is off', () => {
-  const near = readingsOf(snapOf({ context: { tokens: 176_000, window: 200_000, percent: 88, compactAt: 190_000, autoCompactOff: false } })).context
+  const near = readingsOf(snapOf({ context: { tokens: 176_000, window: 200_000, percent: 88, compactAt: 190_000 } })).context
   expect([near.amber?.long, near.amber?.short]).toEqual(['! context 93% · compacts in ~14k', '! ctx 93%'])
   expect([near.alt, near.roomText]).toEqual(['context 93 percent toward compaction, near the limit', '~14k'])
-  const off = readingsOf(snapOf({ context: { tokens: 170_000, window: 200_000, percent: 85, compactAt: undefined, autoCompactOff: true } })).context
+  const off = readingsOf(snapOf({ context: { tokens: 170_000, window: 200_000, percent: 85, compactAt: undefined } })).context
   expect([off.amber?.long, off.alt]).toEqual(['! context 85%', 'context 85 percent of the window, near the limit'])
 })
 test('context not reported reads as unknown, never 0%', () => {
-  const x = readingsOf(snapOf({ context: { tokens: undefined, window: 200_000, percent: undefined, compactAt: 190_000, autoCompactOff: false } })).context
+  const x = readingsOf(snapOf({ context: { tokens: undefined, window: 200_000, percent: undefined, compactAt: 190_000 } })).context
   expect(x.known).toBe(false)
   expect([x.valueText, x.inContextText, x.roomText]).toEqual(['–', '–', undefined])
   expect(x.alt).toBe('context not reported')
@@ -282,7 +282,7 @@ test('spend splits its tokens, each with its share', () => {
   const s = readingsOf(snapOf({ history: { costs: [{ usd: 0.21, reWarm: false }], context: [] } })).spend
   expect([s.totalText, s.lastText, s.tokensText]).toEqual(['$3.19', '$0.21', '225k'])
   expect(s.split.map(p => p.label)).toEqual(['input', 'output', 'cache reads'])
-  expect(Math.abs((s.split[2]?.frac ?? 0) - 198 / 225)).toBeLessThan(1e-5)
+  expect(Math.abs(s.cached / s.total - 198 / 225)).toBeLessThan(1e-5)
 })
 test('the history speaks its numbers and its trend', () => {
   const history = { costs: [{ usd: 0.2, reWarm: false }, { usd: 0.2, reWarm: false }, { usd: 0.84, reWarm: true }], context: [] }
@@ -299,7 +299,7 @@ test('the history speaks its numbers and its trend', () => {
 test('the context trail is spoken with where it compacts, when compaction is on', () => {
   const history = { costs: [], context: [60_000, 50_000, 76_000] }
   expect(readingsOf(snapOf({ history })).history().contextTrailAlt).toBe('context over the conversation, rising, compacts at 190k')
-  const off = readingsOf(snapOf({ history: { ...history, context: [90_000, 76_000] }, context: { tokens: 76_000, window: 200_000, percent: 38, compactAt: undefined, autoCompactOff: true } })).history()
+  const off = readingsOf(snapOf({ history: { ...history, context: [90_000, 76_000] }, context: { tokens: 76_000, window: 200_000, percent: 38, compactAt: undefined } })).history()
   expect(off.contextTrailAlt).toBe('context over the conversation, falling')
   expect(readingsOf(snapOf()).history().contextTrailAlt).toBe('context over the conversation, steady, compacts at 190k')
 })
@@ -499,7 +499,7 @@ test("`no costs yet` is said only while there is no cost at all: no message's an
 })
 
 test('a context window of 0 reads 0%, never NaN%', () => {
-  const r = readingsOf(snapOf({ context: { tokens: 0, window: 0, percent: undefined, compactAt: undefined, autoCompactOff: false } }))
+  const r = readingsOf(snapOf({ context: { tokens: 0, window: 0, percent: undefined, compactAt: undefined } }))
   expect(r.context.pct).toBe('0%')
   expect(r.context.alt).not.toMatch(/NaN|Infinity/)
 })

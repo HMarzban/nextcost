@@ -202,7 +202,7 @@ test('pulse names what its context percentage is of, and chips\' hover names bot
   expect(head({})).toBe('CONTEXT40% toward compaction')
   expect(head({ context: NEAR_COMPACTION })).toBe('CONTEXT! 95% toward compaction')
   // With compaction off the percentage is of the window, which the fact beside it says.
-  expect(head({ context: { ...snapOf().context, tokens: 170_000, window: 200_000, percent: 85, compactAt: undefined, autoCompactOff: true } })).toBe('CONTEXT! 85%! full')
+  expect(head({ context: { ...snapOf().context, tokens: 170_000, window: 200_000, percent: 85, compactAt: undefined } })).toBe('CONTEXT! 85%! full')
   const hover = (context: BandSnapshot['context']) => readingsOf(snapOf({ context })).chips.contextHover
   expect(hover(snapOf().context)).toBe('76k of 190k (40%) toward compaction; window 200k; compacts in ~114k')
   expect(hover({ ...snapOf().context, compactAt: undefined })).toBe('76k of 200k (38%); older turns get summarized near full')

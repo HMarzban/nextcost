@@ -161,7 +161,7 @@ export const headline = (kit: Kit, say: Say, tone: Tone): RenderElement => {
 }
 
 /** A card's title: on the desktop its mark, then its name. */
-export const cardTitle = (kit: Kit, name: CardName): RenderElement => {
+const cardTitle = (kit: Kit, name: CardName): RenderElement => {
   const { Box, Text, Svg, palette, icon } = kit
   const [mark, ink] = CARD_ICONS[name]
   return (

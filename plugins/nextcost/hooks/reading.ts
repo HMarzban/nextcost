@@ -147,7 +147,6 @@ const contextFacts = (snap: BandSnapshot): ContextFacts => {
     pct: fmtPct(frac),
     tone: amber ? 'amber' : 'calm',
     tokens: ctx.tokens,
-    autoCompactOff: ctx.autoCompactOff,
     window: ctx.window,
   }
   return ctx.compactAt === undefined

@@ -178,7 +178,7 @@ export type CacheWords = Readonly<{
    *  its row can't be drawn. */
   lifetimeAssumed: boolean
   /** The same after the card's headline: ` · assumed`. */
-  assumedHead: Say
+  assumedHead: Say | undefined
   /** Unexpected rebuilds, `2`, when there were any. */
   rebuildsText: string | undefined
   /** How long a recalled cache sat idle, `2h 05m`; undefined unless recalled. */
@@ -238,7 +238,7 @@ export type ContextWords = Readonly<{
 /** The kinds the session's tokens split into, in the order they are drawn. */
 export const SPLIT_LABELS = ['input', 'output', 'cache reads'] as const
 
-type SpendSplit = Readonly<{ label: (typeof SPLIT_LABELS)[number]; tokens: number; text: string; frac: number }>
+type SpendSplit = Readonly<{ label: (typeof SPLIT_LABELS)[number]; text: string }>
 
 export type SpendWords = Readonly<{
   /** Pulse's spend tile's name: `spend`. */
@@ -247,7 +247,7 @@ export type SpendWords = Readonly<{
   totalText: string
   lastText: string | undefined
   tokensText: string
-  /** The tokens by kind, each with its share of the total. */
+  /** The tokens by kind. */
   split: readonly SpendSplit[]
 }>
 
@@ -275,8 +275,6 @@ export type LimitWords = Readonly<{
   /** Pulse's limits card's line for another window: its amber words, else
    *  `text`, its name among them. */
   line: string
-  /** A measured fill, `~40m`. */
-  fullIn: string | undefined
   /** The measured fill as a chip says it short, `full ~40m`: never the span
    *  alone, which beside a reset reads as one. */
   fullShort: string | undefined
@@ -455,7 +453,7 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     lastsText: f.mood === 'uncached' ? 'nothing cached' : `${f.ttl} idle${lifetimeAssumed(f) ? ' · assumed' : ''}`,
     lifetimeAssumed: lifetimeAssumed(f),
     sinceLoaded: countedSinceLoad(f),
-    assumedHead: [[' · assumed', 'label']],
+    assumedHead: lifetimeAssumed(f) ? [[' · assumed', 'label']] : undefined,
     rebuildsText: f.misses > 0 ? String(f.misses) : undefined,
     idleText: f.recalled && f.idleMs !== null ? fmtAgo(f.idleMs) : undefined,
     wakeRow: f.wake === undefined ? undefined : wakeRowOf(f.wake, f.mood),
@@ -514,10 +512,7 @@ export const spendWords = (f: SpendFacts): SpendWords => {
     totalText,
     lastText: f.lastTurnUsd === null ? undefined : fmtSmallCost(f.lastTurnUsd),
     tokensText: fmtTokens(f.total),
-    split: SPLIT_LABELS.map(label => {
-      const tokens = tokensByLabel[label]
-      return { label, tokens, text: fmtTokens(tokens), frac: f.total > 0 ? tokens / f.total : 0 }
-    }),
+    split: SPLIT_LABELS.map(label => ({ label, text: fmtTokens(tokensByLabel[label]) })),
   }
 }
 
@@ -560,7 +555,6 @@ export const limitWords = (f: LimitFacts, frame: Frame): LimitWords => {
     fillText: fillAt === undefined ? undefined : `full ${fillAt}${f.etaMs === null ? ` ${AVERAGE_PACE}` : ''}`,
     bandName: f.name,
     line: amber?.long ?? text,
-    fullIn,
     fullShort: fullIn === undefined ? undefined : `full ${fullIn}`,
     amber,
     amberValue,

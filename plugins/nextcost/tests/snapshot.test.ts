@@ -30,9 +30,9 @@ test('a snapshot is its mount, its band, the cache and the insights, as given', 
 })
 
 test("the context is the engine's, with where the band found it compacts, or that compaction is off", () => {
-  expect(snapshotOf(SNAP_PARTS).context).toEqual({ tokens: 76_000, window: 200_000, percent: 38, compactAt: 190_000, autoCompactOff: false })
-  const off = snapshotOf({ ...SNAP_PARTS, usage: { ...USAGE, context: { window: 200_000 } }, band: { ...SNAP_PARTS.band, compactAt: undefined, autoCompactOff: true } })
-  expect(off.context).toEqual({ tokens: undefined, window: 200_000, percent: undefined, compactAt: undefined, autoCompactOff: true })
+  expect(snapshotOf(SNAP_PARTS).context).toEqual({ tokens: 76_000, window: 200_000, percent: 38, compactAt: 190_000 })
+  const off = snapshotOf({ ...SNAP_PARTS, usage: { ...USAGE, context: { window: 200_000 } }, band: { ...SNAP_PARTS.band, compactAt: undefined } })
+  expect(off.context).toEqual({ tokens: undefined, window: 200_000, percent: undefined, compactAt: undefined })
 })
 
 test('with no window reported there is no 5h, 7d or other limit, and the pace is dropped with the 5h', () => {

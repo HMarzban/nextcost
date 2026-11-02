@@ -107,7 +107,7 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
   const ahead = (cache.cardNote === undefined ? 0 : 1) + (cache.known ? 1 : 0)
   const assumed = cache.lifetimeAssumed
   const tails = [
-    assumed && fit.bodyRows <= ahead ? cache.assumedHead : undefined,
+    fit.bodyRows <= ahead ? cache.assumedHead : undefined,
     cache.wakeHead !== undefined && fit.bodyRows <= ahead + (assumed ? 1 : 0) ? cache.wakeHead : undefined,
   ]
   const head = tails.reduce<Say>((say, tail) => {
