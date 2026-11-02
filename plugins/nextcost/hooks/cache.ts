@@ -328,20 +328,19 @@ const idleMsOf = (s: CacheState, now: number): number | null => {
   return lastAt === undefined ? null : now - lastAt
 }
 
-/** Where Claude Code compacts an idle conversation, of where the band draws:
- *  an interactive terminal, the VS Code panel, the desktop's Code tab. */
-const idleCompactsOn = (surface: RenderSurface | undefined): boolean => surface !== 'mobile'
-
 /** Whether /model names another model than the last turn took, while there
  *  is a cache to lose. Name against name, as /model gives them, since a name
  *  may be an alias that the API's own name for it would never match. */
 const modelChangedTo = (s: CacheState, modelNow: string | undefined, now: number): boolean =>
   (s.requests > 0 || isRecalled(s, now)) && modelNow !== undefined && (s.requestModel ?? s.priceModel) !== undefined && modelName(modelNow) !== modelName(s.requestModel ?? s.priceModel ?? '')
 
+/** What ui.render hands the model to show. */
+type Look = Readonly<{ now: number; ledger: number | undefined; contextTokens: number; autoCompactOff: boolean; modelNow?: string | undefined; surface?: RenderSurface }>
+
 /** The cache as the band shows it, at `now`: measured once a reply has been
  *  seen, recalled before that. `contextTokens` is the context as it stands,
  *  which a recalled cold cache would rebuild. */
-const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, contextTokens: number, autoCompactOff: boolean, at: Readonly<{ modelNow?: string | undefined; surface?: RenderSurface }>): CacheView => {
+const viewOf = (s: CacheState, { now, ledger: sessionCost, contextTokens, autoCompactOff, modelNow, surface }: Look): CacheView => {
   const recalled = isRecalled(s, now)
   const recallRate = s.recall?.rate ?? null
   // A resume's price is the engine's own; else it is solved from the rate recalled.
@@ -372,9 +371,11 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
     savedUsd: tokens.read <= 0 ? null : savedUsdOf(s.bill, pricing, sessionCost, rate, s.prior?.tokens.read ?? 0),
     readShare: share,
     fresh: s.knownFresh,
-    interrupted: s.compaction !== undefined ? 'compacted' : s.notCaching ? 'uncached' : modelChangedTo(s, at.modelNow, now) ? 'switched' : undefined,
+    interrupted: s.compaction !== undefined ? 'compacted' : s.notCaching ? 'uncached' : modelChangedTo(s, modelNow, now) ? 'switched' : undefined,
     compactedIdle: s.compaction?.idle ?? false,
-    idleCompacts: idleCompactsOn(at.surface) && s.idleCompactFrom !== undefined && !autoCompactOff && contextTokens >= s.idleCompactFrom,
+    // Claude Code compacts an idle conversation on every surface the band draws
+    // on but mobile: an interactive terminal, the VS Code panel, the desktop's Code tab.
+    idleCompacts: surface !== 'mobile' && s.idleCompactFrom !== undefined && !autoCompactOff && contextTokens >= s.idleCompactFrom,
     recovered: s.prior !== undefined,
     tokens: { sent: tokens.uncached + tokens.written, back: tokens.output, cached: tokens.read },
     wake: s.lastWake,
@@ -557,7 +558,7 @@ export type CacheModel = Readonly<{
   /** ui.render, with the ledger as it reads now, the model /model names now
    *  and the surface drawn on: the cache's view, and what the session has
    *  cost, to show. */
-  view: (o: Readonly<{ now: number; ledger: number | undefined; contextTokens: number; autoCompactOff: boolean; modelNow?: string | undefined; surface?: RenderSurface }>) => Readonly<{ cache: CacheView; costUsd: number }>
+  view: (o: Look) => Readonly<{ cache: CacheView; costUsd: number }>
   /** The cache's time left at `now`, for the timer's repaint. */
   leftMs: (now: number) => number
   /** How long a recalled cache has sat idle at `now`, for the timer's
@@ -646,9 +647,9 @@ export const newCache = (kept?: CacheState): CacheModel => {
       const { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turn } = s
       Object.assign(s, INITIAL, { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turn: { ...NO_TURN, open: turn.open }, bill: billOfNewConversation(ledger), knownFresh: !resumed })
     },
-    view: ({ now, ledger, contextTokens, autoCompactOff, modelNow, surface }) => {
-      s.bill = billAtRedraw(s.bill, ledger)
-      return { cache: viewOf(s, now, ledger, contextTokens, autoCompactOff, { modelNow, ...(surface === undefined ? {} : { surface }) }), costUsd: spentUsd(s.bill, s.prior?.usd, ledger) }
+    view: look => {
+      s.bill = billAtRedraw(s.bill, look.ledger)
+      return { cache: viewOf(s, look), costUsd: spentUsd(s.bill, s.prior?.usd, look.ledger) }
     },
     leftMs: now => leftMsOf(s, now),
     idleMs: now => idleMsOf(s, now),
