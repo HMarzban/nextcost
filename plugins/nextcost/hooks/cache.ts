@@ -425,20 +425,32 @@ const shortOf = (s: CacheState, hit: number, switched: boolean): boolean | undef
   return shortfall >= MISS_MIN_TOKENS && shortfall > prefix * MISS_MIN_SHARE
 }
 
-/** A main-loop response, sent at `sentAt`, as a measure of the cache: a
- *  miss or a rebuild, what it leaves in the cache, and the model its reply
- *  was billed under. A
- *  subagent's prefix is its own, so it says nothing of the main conversation's
- *  cache or its countdown. Over `rounds` of a server-side tool loop each round
- *  read the prefix again, so the cache is measured by a round's share; where
- *  those are guessed, not `roundsSure`, the share may be half a whole read, so
- *  it counts as no miss. `messages` is how many messages it carried, where told. */
-const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: number, roundsSure: boolean, messages: number | undefined): void => {
+/** The lifetime is read off the transcript at each turn's end. Until a read
+ *  succeeds, it is inferred from a request after five idle minutes: one that
+ *  read all it could, an hour; one that found only what other sessions keep
+ *  warm, the system prompt, five minutes. A read of more is a change to part
+ *  of the prefix (tool results cleared, the tools changed), which says nothing
+ *  of the lifetime. */
+const inferLifetime = (s: CacheState, short: boolean | undefined, gap: number, hit: number): void => {
+  if (s.ttlBasis !== 'assumed' || short === undefined || gap <= TTL_MS['5m'] || gap > TTL_MS['1h']) return
+  if (!short) s.ttl = '1h'
+  else if (hit <= COLD_READ_MAX_TOKENS) s.ttl = '5m'
+}
+
+/** A main-loop response, sent at `sentAt`, as a measure of the cache: a miss
+ *  or a rebuild, what it leaves in the cache, and the model its reply was billed
+ *  under. A subagent's prefix is its own, so it says nothing of the main
+ *  conversation's cache or its countdown. Over `rounds` of a server-side tool
+ *  loop each round read the prefix again, so the cache is measured by a round's
+ *  share. Claude Code hands a mod no list of a step's rounds, and a server tool's
+ *  block doesn't always start one, so with more than one that share is a guess
+ *  that may be half a whole read: it counts as no miss, and `window` as guessed.
+ *  `messages` is how many messages it carried, where told. */
+const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: number, messages: number | undefined): void => {
   const model = usage.model
   const perRound = (n: number): number => Math.round(n / rounds)
   const hit = perRound(usage.cache_read_input_tokens)
   const written = perRound(usage.cache_creation_input_tokens)
-  if (model) s.billedModel = model
 
   // Read as cold already: a resume the engine called expired, or a recalled
   // reply past its TTL.
@@ -450,17 +462,8 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   const uncached = hit === 0 && written === 0 && perRound(usage.input_tokens) > UNCACHED_MIN_TOKENS
   // Fewer messages than last time: a /rewind, which reads the earlier entry.
   const rewound = messages !== undefined && s.messageCount !== undefined && messages < s.messageCount
-  const short = uncached || rewound || !roundsSure ? undefined : shortOf(s, hit, switched)
-  // The lifetime is read off the transcript at each turn's end. Until a read
-  // succeeds, it is inferred from a request after five idle minutes: one that
-  // read all it could, an hour; one that found only what other sessions keep
-  // warm, the system prompt, five minutes. A read of more is a change to part
-  // of the prefix (tool results cleared, the tools changed), which says
-  // nothing of the lifetime.
-  if (s.ttlBasis === 'assumed' && short !== undefined && gap > TTL_MS['5m'] && gap <= TTL_MS['1h']) {
-    if (!short) s.ttl = '1h'
-    else if (hit <= COLD_READ_MAX_TOKENS) s.ttl = '5m'
-  }
+  const short = uncached || rewound || rounds !== 1 ? undefined : shortOf(s, hit, switched)
+  inferLifetime(s, short, gap, hit)
   // Short of a cache that should have been warm: within its TTL.
   const missed = short === true && gap <= TTL_MS[s.ttl]
   if (missed) s.misses += 1
@@ -483,8 +486,9 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   s.messageCount = messages ?? s.messageCount
   s.requestModel = s.priceModel
   if (usage.cache_creation_input_tokens > 0) s.writeUnreadSince = sentAt
-  s.windowGuessed = !roundsSure
+  s.windowGuessed = rounds !== 1
   s.model = model ?? s.model
+  if (model) s.billedModel = model
 }
 
 // ---- the model --------------------------------------------------------------
@@ -603,9 +607,7 @@ export const newCache = (kept?: CacheState): CacheModel => {
       const { bill: ledgered, told } = billAtStep(s.bill, after.ledgerBefore, after.ledger)
       s.bill = ledgered
       if (isMain && sent > 0) {
-        // Claude Code hands a mod no list of a step's rounds, and a server
-        // tool's block doesn't always start one, so a step with one is a guess.
-        measureCache(s, usage, sentAt, rounds, rounds === 1, after.messages)
+        measureCache(s, usage, sentAt, rounds, after.messages)
         s.turnMeasured = true
       }
       // Its writes last as long as its bucket's TTL: the main loop's as just
