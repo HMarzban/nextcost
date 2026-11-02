@@ -388,14 +388,17 @@ projection hides once its newest reading is more than 15 minutes old.
 
 ## Toasts
 
-A toast speaks where a chip turns amber:
-- the 5-hour limit at 80% and 95%
+A toast speaks where a limit or the context turns amber:
+- the 5-hour limit, the weekly limit and a gateway's spend limit, each at 80%
+  and 95%
 - context within 10% of auto-compaction, or at 80% and 95% when
   auto-compaction is off
 
-Each fires once per crossing. The 5h chip also turns amber when your pace
-would fill it before it resets; that has no toast, since the projection
-moves with every reading.
+Each fires once per crossing, and speaks again only after its figure falls
+back under 75%. The 5h chip also turns amber when your pace would fill it
+before it resets, and the cache's last minute turns amber too; neither has a
+toast, since the first moves with every reading and the second is a countdown
+already on screen.
 
 ## Appearance
 
@@ -539,7 +542,7 @@ carry on from.
 | `prompt.submit` | Notes where a prompt that starts a turn came from (your own, a background task, another session, a schedule), never its text, so each layout's open view can say who restarted the countdown. |
 | `turn.step` | Reads each response's token counts, and how many tool calls Anthropic ran in it (the advisor), for the cache model and the price per token. |
 | `session.compact` | Notes that the conversation was compacted, so the cache counts as rebuilt at the summary's size. |
-| `session.measure` | Reads where auto-compaction runs, and shows a toast as the context or the 5-hour limit crosses its warning levels. |
+| `session.measure` | Reads where auto-compaction runs, and shows a toast as the context or a limit (5-hour, weekly, a gateway's spend) crosses its warning levels. |
 | `command.run` | Answers `/nextcost` and `/usage-band`, and no other command; `/nextcost more` reads git. |
 | `ui.render` (above the prompt) | Draws the band; steps aside while a survey holds the space or the band is hidden. Opening the cards with `▵` reads git. |
 

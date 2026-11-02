@@ -1,9 +1,9 @@
-// When the band speaks a toast, and what it says: the 5-hour limit's and the
+// When the band speaks a toast, and what it says: the limits' and the
 // context's, each once per threshold crossed. Pure: register.tsx speaks the
 // texts and keeps the levels reached.
 
 import { SEVERE_AT, WARN_AT, contextPressure, fmtPct, toCompaction } from './format'
-import { FIVE_HOUR } from './snapshot'
+import { FIVE_HOUR, SEVEN_DAY } from './snapshot'
 import { roomOf } from './words'
 
 /** Each toast's level reached, by its key, so it speaks once per crossing. */
@@ -38,17 +38,26 @@ const note = (warned: Warned, key: string, frac: number, levels: readonly number
   return { warned: new Map(warned).set(key, level), say: speak ? [text(fmtPct(frac))] : [] }
 }
 
-/** The 5-hour limit's toasts, from the windows the engine reports. */
+/** What each window that speaks is called in its toast, by the kind the
+ *  engine reports it under, which is also the key its level is kept by. */
+const LIMIT_NAMES: ReadonlyMap<string, string> = new Map([
+  [FIVE_HOUR, '5-hour limit'],
+  [SEVEN_DAY, 'weekly limit'],
+  ['spend_limit', 'spend limit'],
+])
+
+/** The limits' toasts, from the windows the engine reports: the 5-hour and
+ *  weekly limits and a gateway's spend limit, each on its own count. */
 export const limitToasts = (warned: Warned, limits: ReadonlyArray<Readonly<{ kind: string; percentUsed: number }>>): Toasts =>
-  limits
-    .filter(l => l.kind === FIVE_HOUR)
-    .reduce<Toasts>(
-      (t, l) => {
-        const next = note(t.warned, FIVE_HOUR, l.percentUsed / 100, [WARN_AT, SEVERE_AT], pct => `You've used ${pct} of your 5-hour limit.`)
-        return { warned: next.warned, say: [...t.say, ...next.say] }
-      },
-      { warned, say: [] },
-    )
+  limits.reduce<Toasts>(
+    (t, l) => {
+      const name = LIMIT_NAMES.get(l.kind)
+      if (name === undefined) return t
+      const next = note(t.warned, l.kind, l.percentUsed / 100, [WARN_AT, SEVERE_AT], pct => `You've used ${pct} of your ${name}.`)
+      return { warned: next.warned, say: [...t.say, ...next.say] }
+    },
+    { warned, say: [] },
+  )
 
 /** The context as a toast reads it: the tokens in use, undefined when the
  *  engine reports none, the window, where auto-compaction runs when it is
@@ -72,7 +81,7 @@ export const contextToasts = (warned: Warned, c: ContextNow): Toasts => {
 }
 
 /** The warnings once a conversation ends: the context's start over; the
- *  5-hour limit is the account's, and /clear changes nothing about it. */
+ *  limits are the account's, and /clear changes nothing about them. */
 export const forgetConversation = (warned: Warned): Warned => {
   const kept = new Map(warned)
   kept.delete(CONTEXT.window)

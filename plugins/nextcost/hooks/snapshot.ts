@@ -50,7 +50,7 @@ export const limitOf = (l: SessionRateLimit): ReportedLimit => ({ kind: l.kind, 
 
 /** The engine's names for the two limits the band reads by name. */
 export const FIVE_HOUR = 'five_hour'
-const SEVEN_DAY = 'seven_day'
+export const SEVEN_DAY = 'seven_day'
 
 /** The 5-hour and 7-day windows the engine reports, and every other one. */
 export const splitLimits = <L extends Readonly<{ kind: string }>>(limits: readonly L[]): Readonly<{ five: L | undefined; seven: L | undefined; others: L[] }> => ({

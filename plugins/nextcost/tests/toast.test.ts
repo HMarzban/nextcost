@@ -37,8 +37,26 @@ test('falling back holds the level until under the re-arm share, then re-arms', 
   expect(fiveHourSays([96, 78, 81, 70, 81])).toEqual([["You've used 96% of your 5-hour limit."], [], [], [], ["You've used 81% of your 5-hour limit."]])
 })
 
-test('only the 5-hour window speaks', () => {
-  expect(limitToasts(NO_WARNINGS, [{ kind: 'seven_day', percentUsed: 99 }]).say).toEqual([])
+test('the weekly limit and a gateway spend limit speak where their chips turn amber, each once per crossing on its own count', () => {
+  const says = (limits: ReadonlyArray<{ kind: string; percentUsed: number }>, from: Warned = NO_WARNINGS) => limitToasts(from, limits)
+  const week = says([{ kind: 'seven_day', percentUsed: 82 }])
+  expect(week.say).toEqual(["You've used 82% of your weekly limit."])
+  expect(says([{ kind: 'seven_day', percentUsed: 84 }], week.warned).say).toEqual([])
+  expect(says([{ kind: 'seven_day', percentUsed: 96 }], week.warned).say).toEqual(["You've used 96% of your weekly limit."])
+  const spend = says([{ kind: 'spend_limit', percentUsed: 92 }])
+  expect(spend.say).toEqual(["You've used 92% of your spend limit."])
+  // One count each: the week at 82% leaves the 5 hours to speak at 82% too.
+  expect(says([{ kind: 'five_hour', percentUsed: 82 }, { kind: 'seven_day', percentUsed: 82 }, { kind: 'spend_limit', percentUsed: 82 }]).say).toHaveLength(3)
+  expect(says([{ kind: 'five_hour', percentUsed: 82 }], week.warned).say).toEqual(["You've used 82% of your 5-hour limit."])
+  // Under the line they say nothing; a window the band doesn't name, nothing at any level.
+  expect(says([{ kind: 'seven_day', percentUsed: 79 }]).say).toEqual([])
+  expect(says([{ kind: 'something_else', percentUsed: 99 }]).say).toEqual([])
+})
+
+test("a conversation's end leaves the weekly and spend limits' levels alone", () => {
+  const warned = limitToasts(NO_WARNINGS, [{ kind: 'seven_day', percentUsed: 85 }, { kind: 'spend_limit', percentUsed: 85 }]).warned
+  const forgot = forgetConversation(warned)
+  expect(limitToasts(forgot, [{ kind: 'seven_day', percentUsed: 86 }, { kind: 'spend_limit', percentUsed: 86 }]).say).toEqual([])
 })
 
 test('the context speaks its fill toward the window, and that compaction is off when it is', () => {
