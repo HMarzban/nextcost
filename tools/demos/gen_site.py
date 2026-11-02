@@ -6,11 +6,13 @@ output (from the test kit) rendered in as the hero's live band.
 demo.txt (beside site.txt unless given) fills {{demo-chips-amber}}, the
 hero's first drawing, and {{demo-json}}, every drawing as
 {layout: {state: {shut, open}}} for <script type="application/json"
-id="demo-data">. The layouts are the ones it draws: a line holding
-{{layout-radio}} is repeated with each layout's radio button, and
-{{layout-names}} lists them in words. site.txt itself feeds the stills, not
-the page."""
+id="demo-data">. {{faq-json}} fills the JSON-LD FAQ from the page's own fine
+print (the `<div class="q">` blocks), so the two can't differ. The layouts
+are the ones it draws: a line holding {{layout-radio}} is repeated with each
+layout's radio button, and {{layout-names}} lists them in words. site.txt
+itself feeds the stills, not the page."""
 import datetime
+import html
 import json
 import os
 import re
@@ -86,6 +88,21 @@ def in_words(names):
     return names[0] if len(names) == 1 else f'{", ".join(names[:-1])} or {names[-1]}'
 
 
+def faq_json(page):
+    """The page's fine print (each `<div class="q"><h3>…</h3><p>…</p></div>`)
+    as a schema.org FAQPage, in plain text: tags dropped, entities decoded,
+    the non-breaking hyphen a plain one."""
+    def plain(fragment):
+        return html.unescape(re.sub(r'<[^>]+>', '', fragment)).replace('\u2011', '-')
+    blocks = re.findall(r'<div class="q"><h3>(.*?)</h3><p>(.*?)</p></div>', page, flags=re.DOTALL)
+    assert blocks, 'no fine print to build the FAQ from'
+    questions = [
+        {'@type': 'Question', 'name': plain(q), 'acceptedAnswer': {'@type': 'Answer', 'text': plain(a)}}
+        for q, a in blocks
+    ]
+    return script_json({'@context': 'https://schema.org', '@type': 'FAQPage', 'mainEntity': questions})
+
+
 def script_json(data):
     """JSON safe inside <script type="application/json">."""
     return json.dumps(data, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/').replace('<!--', '<\\u0021--')
@@ -98,6 +115,7 @@ page = read(template)
 # The release the page describes is the manifest's, and it is dated the day
 # it was built (UTC), as the sitemap is: neither is typed into the template.
 page = page.replace('{{version}}', plugin_version())
+page = page.replace('{{faq-json}}', faq_json(page))
 page = page.replace('{{built}}', datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d'))
 if '{{demo-' in page or '{{layout-' in page:
     layouts = demo_layouts(demo_src)

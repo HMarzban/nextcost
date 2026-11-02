@@ -72,84 +72,7 @@
 }
 </script>
 <script type="application/ld+json" id="faq-ld">
-{
- "@context": "https://schema.org",
- "@type": "FAQPage",
- "mainEntity": [
-  {
-   "@type": "Question",
-   "name": "Why did one message cost so much more than the others?",
-   "acceptedAnswer": {
-    "@type": "Answer",
-    "text": "Most likely the prompt cache went cold. Claude Code caches your conversation for 5 minutes or an hour after each request; after that, the next message writes all of it again, at 2× the input price on the hour's cache and 1.25× on five minutes. On Opus 5.5, on the hour, that's 40× the warm read, for the context part."
-   }
-  },
-  {
-   "@type": "Question",
-   "name": "Is the re-warm price exact?",
-   "acceptedAnswer": {
-    "@type": "Answer",
-    "text": "It's an estimate, always shown with ~. The band solves the per-token rate from the session's own bill, weighing each cache write as Claude Code's ledger bills it: 2× on the hour's cache, 1.25× on five minutes. Until it has read the cache's lifetime off the session's transcript, the band assumes the hour."
-   }
-  },
-  {
-   "@type": "Question",
-   "name": "Is that what I'll be charged?",
-   "acceptedAnswer": {
-    "@type": "Answer",
-    "text": "No. Every dollar figure is a list-price estimate, marked ~ where the band solved it, not an invoice. On a subscription it shows how much of your 5-hour and weekly limits a message will use compared with a warm one, not a charge to your card. On an API key it estimates your API bill, and your Console's usage page is the real one."
-   }
-  },
-  {
-   "@type": "Question",
-   "name": "How does it know whether my cache lasts 5 minutes or an hour?",
-   "acceptedAnswer": {
-    "@type": "Answer",
-    "text": "Claude Code uses the hour on a subscription within plan usage, and 5 minutes on an API key, usage credits or a cloud provider. A mod isn't told which, so at the end of each turn that reached the API the band reads the lifetime of the last cache write off the session's own transcript, and the countdown runs on it. Until a read succeeds it assumes an hour. Set CLAUDE_CODE_PROMPT_CACHE_TTL or promptCacheTtl to pin it instead."
-   }
-  },
-  {
-   "@type": "Question",
-   "name": "Does it work in the Claude desktop app?",
-   "acceptedAnswer": {
-    "@type": "Answer",
-    "text": "Yes. It draws in the desktop app's Code tab with icons and meters, and in the terminal as text. It is tested on Claude Code 2.1.299 and the latest release; the one-line install needs 2.1.292 or later, and an accurate price needs 2.1.290 or later. The desktop app bundles its own Claude Code, which can differ from the terminal's. The README says what changes on older ones."
-   }
-  },
-  {
-   "@type": "Question",
-   "name": "What happens when Claude Code compacts an idle session, or I resume one?",
-   "acceptedAnswer": {
-    "@type": "Answer",
-    "text": "In the terminal, on the hour's cache, Claude Code can compact a conversation over 200k tokens (by default) left idle about 54 minutes; the band then reads compacted, with what the summary will cost. A resumed session keeps its idle time and its spend, from Claude Code and one read of the transcript."
-   }
-  },
-  {
-   "@type": "Question",
-   "name": "How is it different from ccusage or a status line?",
-   "acceptedAnswer": {
-    "@type": "Answer",
-    "text": "ccusage reports what you spent, from past logs. A status line can show a cache countdown. This band shows the re-warm price from the session's own bill, live above the prompt, in the desktop app too, with your 5-hour and weekly pace beside it."
-   }
-  },
-  {
-   "@type": "Question",
-   "name": "Does it send my data anywhere, or spend tokens?",
-   "acceptedAnswer": {
-    "@type": "Answer",
-    "text": "No. It makes no network calls, never calls a model and writes no files of its own; it keeps its small store through Claude Code. It never suggests a message to keep the cache warm either: that would be burning tokens to avoid burning tokens. SECURITY.md lists everything it reads."
-   }
-  },
-  {
-   "@type": "Question",
-   "name": "How does it show my 5-hour and weekly limits?",
-   "acceptedAnswer": {
-    "@type": "Answer",
-    "text": "/usage shows them when you ask. The band keeps them on screen: each chip turns amber at 80%, the 7d with a !, and the 5h says when your pace would fill it before it resets."
-   }
-  }
- ]
-}
+{{faq-json}}
 </script>
 
 <style>
@@ -592,7 +515,7 @@
         <ul>
           <li class="ln"><span>Cost, tokens, context, limits</span><span class="lead" aria-hidden="true"></span><span class="v">from Claude Code</span></li>
           <li class="ln"><span>Two read-only git commands</span><span class="lead" aria-hidden="true"></span><span class="v">3 s timeout</span></li>
-          <li class="ln"><span>The session's own transcript</span><span class="lead" aria-hidden="true"></span><span class="v">its last 1 MB after each turn, for the cache's real lifetime; a reopened session's cost records too (grep, tail)</span></li>
+          <li class="ln"><span>The session's own transcript</span><span class="lead" aria-hidden="true"></span><span class="v">its last 1 MB after a turn that wrote to the cache, for its real lifetime; a reopened session's cost records too (grep, tail)</span></li>
           <li class="ln"><span>Settings</span><span class="lead" aria-hidden="true"></span><span class="v">3 keys</span></li>
           <li class="ln"><span>Where each prompt came from</span><span class="lead" aria-hidden="true"></span><span class="v">its origin, never its text</span></li>
           <li class="ln"><span>Layout, last replies, a week of limits</span><span class="lead" aria-hidden="true"></span><span class="v">its own store, kept through Claude Code</span></li>
@@ -618,9 +541,9 @@
       <div class="q"><h3>Why did one message cost so much more than the others?</h3><p>Most likely the prompt cache went cold. Claude Code caches your conversation for 5 minutes or an hour after each request; after that, the next message writes all of it again, at 2× the input price on the hour's cache and 1.25× on five minutes. On Opus 5.5, on the hour, that's 40× the warm read, for the context part.</p></div>
       <div class="q"><h3>Is the re-warm price exact?</h3><p>It's an estimate, always shown with <code>~</code>. The band solves the per&#8209;token rate from the session's own bill, weighing each cache write as Claude Code's ledger bills it: 2× on the hour's cache, 1.25× on five minutes. Until it has read the cache's lifetime off the session's transcript, the band assumes the hour.</p></div>
       <div class="q"><h3>Is that what I'll be charged?</h3><p>No. Every dollar figure is a list&#8209;price estimate, marked <code>~</code> where the band solved it, not an invoice. On a subscription it shows how much of your 5&#8209;hour and weekly limits a message will use compared with a warm one, not a charge to your card. On an API key it estimates your API bill, and your Console's usage page is the real one.</p></div>
-      <div class="q"><h3>How does it know whether my cache lasts 5 minutes or an hour?</h3><p>Claude Code uses the hour on a subscription within plan usage, and 5 minutes on an API key, usage credits or a cloud provider. A mod isn't told which, so at the end of each turn that reached the API the band reads the lifetime of the last cache write off the session's own transcript, and the countdown runs on it. Until a read succeeds it assumes an hour. Set <code>CLAUDE_CODE_PROMPT_CACHE_TTL</code> or <code>promptCacheTtl</code> to pin it instead.</p></div>
-      <div class="q"><h3>Does it work in the Claude desktop app?</h3><p>Yes. It draws in the desktop app's Code tab with icons and meters, and in the terminal as text. It's tested on Claude Code 2.1.299 and the latest release; the one-line install needs 2.1.292 or later, and an accurate price needs 2.1.290 or later. The desktop app bundles its own Claude Code, which can differ from the terminal's. The <a href="https://github.com/HMarzban/nextcost/blob/main/README.md#install">README</a> says what changes on older ones.</p></div>
-      <div class="q"><h3>What happens when Claude Code compacts an idle session, or I resume one?</h3><p>In the terminal, on the hour's cache, Claude Code can compact a conversation over 200k tokens (by default) left idle about 54 minutes; the band then reads <code>compacted</code>, with what the summary will cost. A resumed session keeps its idle time and its spend, from Claude Code and one read of the transcript.</p></div>
+      <div class="q"><h3>How does it know whether my cache lasts 5 minutes or an hour?</h3><p>Claude Code uses the hour on a subscription within plan usage, and 5 minutes on an API key, usage credits or a cloud provider. A mod isn't told which, so after a turn that wrote to the cache the band reads the lifetime of that write off the session's own transcript, and the countdown runs on it. Until a read succeeds it assumes an hour. Set <code>CLAUDE_CODE_PROMPT_CACHE_TTL</code> or <code>promptCacheTtl</code> to pin it instead.</p></div>
+      <div class="q"><h3>Does it work in the Claude desktop app?</h3><p>Yes. It draws in the desktop app's Code tab with icons and meters, and in the terminal as text. It's tested on Claude Code 2.1.299 and the latest release; the one-line install needs 2.1.292 or later, and an accurate price needs 2.1.290 or later. The desktop app bundles its own Claude Code, which can differ from the terminal's. The <a href="https://github.com/HMarzban/nextcost/blob/main/plugins/nextcost/README.md#install">README</a> says what changes on older ones.</p></div>
+      <div class="q"><h3>What happens when Claude Code compacts an idle session, or I resume one?</h3><p>In the terminal, the VS Code panel or the desktop's Code tab, on the hour's cache, Claude Code can compact a conversation of 200k tokens or more (by default) left idle about an hour, which the band takes as 54 minutes; the band then reads <code>compacted</code>, with what the summary will cost. A resumed session keeps its idle time and its spend, from Claude Code and one read of the transcript.</p></div>
       <div class="q"><h3>How is it different from ccusage or a status line?</h3><p>ccusage reports what you spent, from past logs. A status line can show a cache countdown. This band shows the re&#8209;warm price from the session's own bill, live above the prompt, in the desktop app too, with your 5-hour and weekly pace beside it.</p></div>
       <div class="q"><h3>Does it send my data anywhere, or spend tokens?</h3><p>No. It makes no network calls, never calls a model and writes no files of its own; it keeps its small store through Claude Code. It never suggests a message to keep the cache warm either: that would be burning tokens to avoid burning tokens. <a href="https://github.com/HMarzban/nextcost/blob/main/SECURITY.md">SECURITY.md</a> lists everything it reads.</p></div>
       <div class="q"><h3>How does it show my 5-hour and weekly limits?</h3><p><code>/usage</code> shows them when you ask. The band keeps them on screen: each chip turns amber at 80%, the 7d with a <code>!</code>, and the 5h says when your pace would fill it before it resets.</p></div>
