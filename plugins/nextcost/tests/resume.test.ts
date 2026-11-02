@@ -47,7 +47,8 @@ test('a stored reply dated after now is unknown: the transcript says when it was
   const clock = setup(on, { env: ENV, store: { sessions: { s1: { lastAt: 1e15 }, other: { lastAt: 6 * HOUR } } }, now: 10 * MIN })
   engine.transcript = transcriptOf(5 * MIN)
   await $.session.start(START)
-  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache 55m/)
+  // Counted from the request its prompt sent, a minute before the reply.
+  expect(shown(pillOf(await mounted($), 'cache'))).toMatch(/cache 54m/)
   await $.turn.start(TURN_START)
   await respond($, BUILD_155K)
   await $.turn.complete(TURN_DONE)

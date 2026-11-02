@@ -5,6 +5,39 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/). Before
 1.0.0, a minor version may change how the band reads.
 
+## [0.22.0] - 2026-11-02
+
+A full audit of what the band shows, by seven reviews, among them the real engine and 1,383 real transcripts. On them, the hour's cache expired on schedule, and a cold cache's re-warm was usually within 5 to 9%. This release fixes what they found wrong.
+
+### Added
+- The README says what the dollars mean on each plan: list-price estimates, not your bill. On a subscription they tell you how much of your limits a message will use.
+- `not caching`, where a reply reads and writes no cache, as when a gateway strips the markers: no countdown and no price. `model changed`, where `/model` has named another model, so the next message rebuilds in the tokens it writes. Both in every layout.
+- A toast as the weekly limit or a gateway's spend limit reaches 80% and 95%, as the 5-hour limit has.
+- A limit's hover and card say how old its reading is: `as of your last reply`, then `12m ago`. The limit is shared with your other sessions and devices.
+
+### Changed
+- The price's words say what it covers. The pill still says `next message ~$2.44`; its hover says `~$2.44 rewrites 208k tokens to the cache, plus your reply`, and the card's row says `cache rewrite`. `saved by cache` is `saved on cache reads`, which is what it counts.
+- A limit's average-based forecast says so: `~10% at avg pace`, `full at avg pace`. The 5-hour limit claims a fill only from its measured pace, and the weekly limit's average waits for a day of the window.
+- Pulse's and the board's context say `toward compaction`, and the chip's hover names the window too. A background subagent's message, which reads like another session's, reads `a message`.
+- In the ascii tier, the marks that were dropped are words: `tok 225k`, `resets 3h 00m`, `ahead 2 behind 1`. The board's amber last call is `! LAST CALL` in every appearance.
+- Counts that began when the band loaded into a session under way say `since the band loaded`, beside a cost that counts the whole session.
+- The site's demo is billed as the ledger bills it, so its $2.11 re-warm reads $2.52, as its calculator always did, and says its session is simulated.
+
+### Fixed
+- The cache's lifetime is read, not guessed. Claude Code hands a mod no split of a reply's cache write, so on an API key, a cloud provider or after moving onto usage credits, the band could count about 40 minutes on a cold cache. It now reads the last write's lifetime off the session's transcript after each turn that reached the API, unless a setting pins it. `SECURITY.md` and the README say what this reads. Until a read succeeds, it says `· assumed`, in the card's row, its headline and the hover. The fallback now moves to `5m` only when a read finds near nothing beyond the shared system prompt: on real transcripts, it had moved 10 times and never been right.
+- `/rewind` and a partial change to the prompt no longer read as a five-minute cache or an unexpected rebuild, where a warm cache could then read cold.
+- A model switch no longer blends the re-warm's rate. It is solved from each model's own bill, step by step: after 40 Opus turns, a re-warm on Haiku read $3.85 where it costs $0.37, and that rate was remembered for Haiku. Subagents on another model no longer skew it, and `saved on cache reads` prices each model's reads at that model's rate, so it can't fall.
+- Spend no reply reports no longer raises the rate. A compaction's own request is on the ledger with no step, which read 33% high on a real session.
+- A change to fast mode is taken as its own prices and cache, not an unexpected rebuild, where its bill says so. Provider model ids (`us.anthropic.claude-opus-5-5-v1:0`) price as their model. The rate read off a cost record uses its lifetime split, since 2.1.310.
+- After a manual or mid-turn compaction, the cache reads `compacted` until the next reply, not the old countdown. A cold cache mid-turn reads `DEPARTED`, not `BOARDING`.
+- Idle compaction is expected on the desktop and in VS Code too, as Claude Code's docs say. A recalled countdown runs from the request, not the end of its reply. A fork reads its spend after its first turn, since its file is empty before.
+- A week's or an hour's cell no longer holds a rise from several slices as if measured. A plan with no 5-hour limit records its history. A 5-hour forecast hides once its time has passed or its reading is stale, and a clock time rounds as its forecast does. A limit's amber and its shown percent agree: `80%` is amber.
+- A fresh session reads where compaction runs at its start, so its percent doesn't jump, and past that point the toast says `Auto-compaction is due.`
+- A time after now, a VM's or a stored one, no longer counts down `277286786h`. Missing or negative figures no longer draw `NaN` or `$-3.00`. A control character in a folder's name no longer blanks the band, and bidi characters are shown as `?`. Git runs at most once at a time, not at exit, and a truncated status counts as unknown.
+
+### Docs
+- `core.fsmonitor=false` stops fsmonitor only; other git config can still run programs, as any git command in that folder does. The plugin keeps a store through Claude Code and writes no file of its own. The README states the versions tested, and that an accurate price with the advisor needs 2.1.290.
+
 ## [0.21.0] - 2026-11-02
 
 ### Added

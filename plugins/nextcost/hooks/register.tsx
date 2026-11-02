@@ -821,7 +821,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
     // A /model switch shows at the next redraw, before the message it rebuilds on.
     const modelNow = await $.session.model().catch(() => undefined)
-    const { cache, costUsd } = band.cache.view({ now, ledger: usage.cost?.usd, contextTokens: contextUsed(usage.context) ?? 0, autoCompactOff: band.autoCompactOff, modelNow, surface: e.surface })
+    const { cache, costUsd } = band.cache.view({ now, ledger: dollarsOf(usage.cost?.usd), contextTokens: contextUsed(usage.context) ?? 0, autoCompactOff: band.autoCompactOff, modelNow, surface: e.surface })
     const snap = snapshotOf({
       usage,
       now,
