@@ -63,8 +63,10 @@ export const limitToasts = (warned: Warned, limits: ReadonlyArray<Readonly<{ kin
 
 /** The context as a toast reads it: the tokens in use, undefined when the
  *  engine reports none, the window, where auto-compaction runs when it is
- *  on and known, and whether it is off. */
-export type ContextNow = Readonly<{ used: number | undefined; window: number; compactAt: number | undefined; autoCompactOff: boolean }>
+ *  on and known, whether it is off, and whether that is known yet: before
+ *  it, the figure's scale isn't, and a toast on the window's would be
+ *  followed by one on the compaction point's. */
+export type ContextNow = Readonly<{ used: number | undefined; window: number; compactAt: number | undefined; autoCompactOff: boolean; scaleKnown: boolean }>
 
 /** The context's toast. It speaks where the context pill turns amber: by the
  *  same rule. A level counts on the scale it was reached on, and each scale
@@ -73,10 +75,10 @@ export type ContextNow = Readonly<{ used: number | undefined; window: number; co
  *  turns never speaks the same warning twice. */
 export const contextToasts = (warned: Warned, c: ContextNow): Toasts => {
   const { used, compactAt } = c
-  if (used === undefined) return { warned, say: [] }
+  if (used === undefined || !c.scaleKnown) return { warned, say: [] }
   const { frac, levels } = contextPressure(used, c.window, compactAt)
   return note(warned, compactAt === undefined ? CONTEXT.window : CONTEXT.compaction, frac, levels, pct =>
-    compactAt !== undefined ? `Auto-compaction in ${roomOf(toCompaction(used, compactAt))} tokens.`
+    compactAt !== undefined ? (used >= compactAt ? 'Auto-compaction is due.' : `Auto-compaction in ${roomOf(toCompaction(used, compactAt))} tokens.`)
     : c.autoCompactOff ? `Context is ${pct} full and auto-compaction is off, so the conversation will run out of room.`
     : `Context is ${pct} full.`,
   )

@@ -87,6 +87,10 @@ type Band = {
   compactAt: number | undefined
   /** The breakdown said auto-compaction is off. */
   autoCompactOff: boolean
+  /** The breakdown has been read this session, so the context's scale is known. */
+  compactKnown: boolean
+  /** Measures that found no breakdown before one was read: the first holds the context's toast. */
+  compactMisses: number
   /** Where the session is: its project, home-relative, and git there. Read
    *  between redraws, never while drawing, since git takes a process. */
   workspace: Workspace | undefined
@@ -116,7 +120,7 @@ type Band = {
 /** What each session.start begins the band from: its cache model, insights
  *  and warnings spoken, new or carrying on after a reload, nothing drawn or
  *  read yet, and the default layout until the store is read. */
-const freshSession = (from?: Readonly<{ cache: unknown; insights: unknown; warned: ReadonlyArray<readonly [string, number]> }> | null): Pick<Band, 'cache' | 'insights' | 'warned' | 'lastPaintKey' | 'resets' | 'workspace' | 'layout'> => ({
+const freshSession = (from?: Readonly<{ cache: unknown; insights: unknown; warned: ReadonlyArray<readonly [string, number]> }> | null): Pick<Band, 'cache' | 'insights' | 'warned' | 'lastPaintKey' | 'resets' | 'workspace' | 'layout' | 'compactAt' | 'autoCompactOff' | 'compactKnown' | 'compactMisses'> => ({
   // Only this band writes them, as keepCounts wrote them.
   cache: newCache(from?.cache as CacheState | undefined),
   insights: newInsights(from?.insights as InsightState | undefined),
@@ -125,6 +129,10 @@ const freshSession = (from?: Readonly<{ cache: unknown; insights: unknown; warne
   resets: [],
   workspace: undefined,
   layout: DEFAULT_LAYOUT,
+  compactAt: undefined,
+  autoCompactOff: false,
+  compactKnown: false,
+  compactMisses: 0,
 })
 
 /** The band. A reload starts it over with the module; session.start starts
@@ -136,8 +144,6 @@ const band: Band = {
   palette: DARK,
   removed: undefined,
   glyphs: 'unicode',
-  compactAt: undefined,
-  autoCompactOff: false,
   samples: [],
   reads: 0,
   resume: undefined,
@@ -383,6 +389,22 @@ const noteSample = async ($: EngineInterface, sample: Sample): Promise<void> => 
 const ledgerUsd = async ($: EngineInterface): Promise<number | undefined> =>
   (await $.session.usage().catch(() => undefined))?.cost?.usd
 
+/** Reads where auto-compaction runs, or that it is off, from the context
+ *  breakdown. Local and token-free, but it can fail, or have nothing yet:
+ *  the last answer stands until a new one. */
+const readCompaction = async ($: EngineInterface): Promise<void> => {
+  try {
+    const breakdown = (await $.session.usage({ breakdown: 'summary' })).context.breakdown
+    if (breakdown === undefined) return
+    // On without a threshold says nothing about where: leave it unknown.
+    band.autoCompactOff = !breakdown.isAutoCompactEnabled
+    band.compactAt = breakdown.isAutoCompactEnabled ? breakdown.autoCompactThreshold : undefined
+    band.compactKnown = true
+  } catch {
+    // keep the last known setting
+  }
+}
+
 /** The stored layout, or chips: a name this version doesn't know, or a value
  *  that isn't a name, draws chips. A read that fails keeps the layout drawn.
  *  Never throws. */
@@ -531,6 +553,8 @@ export const register: Register = on => {
     if (band.resume?.sessionId !== id) band.resume = undefined
     const now = await $.clock.now()
     band.samples = samplesUpTo((await storedSamples($)) ?? [], now)
+    // Where the context compacts, before any measure: a resumed one is already past its window's levels.
+    await readCompaction($)
     band.reads++ // any read still out began before this load
     // A read that fails keeps the layout drawn: none yet, so chips.
     await readLayout($)
@@ -667,19 +691,17 @@ export const register: Register = on => {
     band.warned = limits.warned
     for (const text of limits.say) $.ui.toast(text)
 
-    // Local and token-free, but it can fail; the last answer stands until a new one.
-    try {
-      const breakdown = (await $.session.usage({ breakdown: 'summary' })).context.breakdown
-      if (breakdown !== undefined) {
-        // On without a threshold says nothing about where: leave it unknown.
-        band.autoCompactOff = !breakdown.isAutoCompactEnabled
-        band.compactAt = breakdown.isAutoCompactEnabled ? breakdown.autoCompactThreshold : undefined
-      }
-    } catch {
-      // keep the last known setting
-    }
+    await readCompaction($)
+    if (!band.compactKnown) band.compactMisses++
 
-    const context = contextToasts(band.warned, { used: contextUsed(e.context), window: e.context.window, compactAt: band.compactAt, autoCompactOff: band.autoCompactOff })
+    // The first measure with no breakdown holds the toast, for the point it would speak on; a second says the engine has none.
+    const context = contextToasts(band.warned, {
+      used: contextUsed(e.context),
+      window: e.context.window,
+      compactAt: band.compactAt,
+      autoCompactOff: band.autoCompactOff,
+      scaleKnown: band.compactKnown || band.compactMisses > 1,
+    })
     band.warned = context.warned
     for (const text of context.say) $.ui.toast(text)
     await keepCounts($)

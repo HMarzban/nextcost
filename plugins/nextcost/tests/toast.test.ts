@@ -19,7 +19,7 @@ const fiveHourSays = (percents: readonly number[], from: Warned = NO_WARNINGS): 
 const contextSays = (steps: ReadonlyArray<Partial<ContextNow>>, from: Warned = NO_WARNINGS): string[][] => {
   let warned = from
   return steps.map(step => {
-    const t = contextToasts(warned, { used: undefined, window: 200_000, compactAt: undefined, autoCompactOff: false, ...step })
+    const t = contextToasts(warned, { used: undefined, window: 200_000, compactAt: undefined, autoCompactOff: false, scaleKnown: true, ...step })
     warned = t.warned
     return [...t.say]
   })
@@ -76,13 +76,13 @@ test('near compaction the context speaks the room before it', () => {
 })
 
 test('a context the engine reports none of says nothing and keeps the levels', () => {
-  const t = contextToasts(NO_WARNINGS, { used: undefined, window: 200_000, compactAt: undefined, autoCompactOff: false })
+  const t = contextToasts(NO_WARNINGS, { used: undefined, window: 200_000, compactAt: undefined, autoCompactOff: false, scaleKnown: true })
   expect(t).toEqual({ warned: NO_WARNINGS, say: [] })
 })
 
 test("a conversation's end forgets the context's level, not the 5-hour limit's", () => {
   const five = limitToasts(NO_WARNINGS, [{ kind: 'five_hour', percentUsed: 85 }]).warned
-  const both = contextToasts(five, { used: 170_000, window: 200_000, compactAt: undefined, autoCompactOff: false }).warned
+  const both = contextToasts(five, { used: 170_000, window: 200_000, compactAt: undefined, autoCompactOff: false, scaleKnown: true }).warned
   const forgot = forgetConversation(both)
   expect(contextSays([{ used: 170_000 }], forgot)).toEqual([['Context is 85% full.']])
   expect(fiveHourSays([86], forgot)).toEqual([[]])
@@ -117,4 +117,10 @@ test('a compaction point the engine gives and drops by turns, at 85% of the wind
 
 test('a window of 0 speaks no toast, never an Infinity%', () => {
   expect(contextSays([{ used: 76_000, window: 0 }])).toEqual([[]])
+})
+
+test('a context whose scale is not known yet says nothing and keeps its levels; once it is, the compaction point past says so', () => {
+  const held = contextToasts(NO_WARNINGS, { used: 170_000, window: 200_000, compactAt: undefined, autoCompactOff: false, scaleKnown: false })
+  expect(held).toEqual({ warned: NO_WARNINGS, say: [] })
+  expect(contextSays([{ used: 170_000, compactAt: 167_000 }])).toEqual([['Auto-compaction is due.']])
 })
