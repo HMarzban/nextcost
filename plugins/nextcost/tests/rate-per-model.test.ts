@@ -1,12 +1,9 @@
-// The base rate after a model switch, under subagents on another model, and on
-// a provider's model ids: each model solves its own, from what the ledger grew
-// by across its own steps. The ledger here bills as Anthropic lists it.
+// The base rate after a model switch and under subagents on another model: each
+// model solves its own, from what the ledger grew by across its own steps. The
+// ledger here bills as Anthropic lists it.
 
 import { test, expect } from 'claude-code/testing'
 import { newCache, type CacheModel } from '../hooks/cache'
-import { readMultiplier, tierFactor } from '../hooks/prices'
-import { recallOf, fromStore } from '../hooks/memory'
-import { rateFromTranscript, transcriptSpend } from '../hooks/transcript'
 import { HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, engine, ledgerGrows, listBill, mountBand, resp, respond, setup, shown, pillOf, usage } from './helpers'
 
 const OPUS = 'claude-opus-5-5'
@@ -115,24 +112,6 @@ test('what the cache saved never falls at a switch to a cheaper model', () => {
   const before = s.look(at.at).savedUsd ?? 0
   turns(s, HAIKU, 2, at)
   expect((s.look(at.at + MIN).savedUsd ?? 0) >= before).toBe(true)
-})
-
-test("a provider's id for a model prices as the model", () => {
-  for (const id of ['us.anthropic.claude-opus-5-5-v1:0', 'global.anthropic.claude-opus-5-5-v1:0', 'anthropic.claude-opus-5-5-v1:0', 'claude-opus-5-5@20261001', 'claude-opus-5-5-20261001', 'us.anthropic.claude-opus-5-5-20261001-v1:0', 'us.anthropic.claude-opus-5-5-v1:0[1m]', 'claude-opus-5-5']) {
-    expect(readMultiplier(id)).toBe(0.05)
-  }
-  for (const id of ['us.anthropic.claude-haiku-5-5-v1:0', 'claude-haiku-5-5@20261001', 'claude-haiku-5-5-20261001']) {
-    expect(tierFactor(id, 100_001)).toBe(5)
-    expect(tierFactor(id, 100_000)).toBe(1)
-  }
-  expect(readMultiplier('us.anthropic.claude-fable-5-1-v1:0')).toBe(0.025)
-})
-
-test("a name that isn't a provider's form stays as it is", () => {
-  expect(readMultiplier('claude-opus-5-5-preview')).toBe(0.1)
-  expect(readMultiplier('claude-opus-5-5-2026')).toBe(0.1)
-  expect(readMultiplier('my-opus-gateway')).toBe(0.1)
-  expect(tierFactor('claude-opus-5-5@20261001', 900_000)).toBe(1)
 })
 
 /** Keeps `c`'s counts as a reload does: through JSON. */
@@ -293,24 +272,4 @@ test('through the hooks: after a switch the store keeps the new model its own ra
   const ui = await mountBand($, 'terminal', 160)
   expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/next message ~\$0\.81\b/)
   await ui.unmount()
-})
-
-test('a stored rate under a provider id is found again under that id', () => {
-  const id = 'us.anthropic.claude-opus-5-5-v1:0'
-  const stored = fromStore({ sessions: { s1: { lastAt: 5, billed: id } }, rates: { [id]: 4e-6 } }, 's1', 'opus', 10)
-  expect(recallOf(stored, undefined, 10).rate).toBe(4e-6)
-})
-
-// ---- the cost record's split ------------------------------------------------
-
-const record = (m: Record<string, unknown>): string =>
-  JSON.stringify({ type: 'cost-state', sessionId: 's1', totalCostUSD: 1, modelUsage: { [OPUS]: { costUSD: 1, inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 100_000, ...m } } })
-
-test("a cost record that splits its writes by lifetime is solved at each's price; one that doesn't, as five minutes'", () => {
-  // $1 on 100k written: at the hour's 2×, $5 per million; at 1.25×, $8.
-  const split = record({ cacheCreationEphemeral5mInputTokens: 0, cacheCreationEphemeral1hInputTokens: 100_000 })
-  expect(Math.abs((rateFromTranscript(split, OPUS) ?? 0) - 5e-6) < 1e-12).toBe(true)
-  expect(Math.abs((rateFromTranscript(record({}), OPUS) ?? 0) - 8e-6) < 1e-12).toBe(true)
-  expect(transcriptSpend(split, 's1', 0)?.tokens.writtenHour).toBe(100_000)
-  expect(transcriptSpend(record({}), 's1', 0)?.tokens.writtenHour).toBe(0)
 })

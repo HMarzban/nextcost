@@ -176,6 +176,19 @@ test('an unreadable last cost line falls back to the record before it', () => {
   expect(rateNear(rateFromTranscript(transcript, 'claude-opus-5-5'), 20 / 3_000_000)).toBe(true)
 })
 
+/** A cost record of 100k written and $1, `m` laid over its Opus 5.5 usage. */
+const writesRecord = (m: Record<string, unknown>): string =>
+  JSON.stringify({ type: 'cost-state', sessionId: 's1', totalCostUSD: 1, modelUsage: { 'claude-opus-5-5': { costUSD: 1, inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 100_000, ...m } } })
+
+test("a cost record that splits its writes by lifetime is solved at each's price; one that doesn't, as five minutes'", () => {
+  // $1 on 100k written: at the hour's 2×, $5 per million; at 1.25×, $8.
+  const split = writesRecord({ cacheCreationEphemeral5mInputTokens: 0, cacheCreationEphemeral1hInputTokens: 100_000 })
+  expect(Math.abs((rateFromTranscript(split, 'claude-opus-5-5') ?? 0) - 5e-6) < 1e-12).toBe(true)
+  expect(Math.abs((rateFromTranscript(writesRecord({}), 'claude-opus-5-5') ?? 0) - 8e-6) < 1e-12).toBe(true)
+  expect(transcriptSpend(split, 's1', 0)?.tokens.writtenHour).toBe(100_000)
+  expect(transcriptSpend(writesRecord({}), 's1', 0)?.tokens.writtenHour).toBe(0)
+})
+
 // ── the cache's last write ─────────────────────────────────────────────
 
 /** A main-loop reply that wrote `oneHour` tokens to the hour's cache and
