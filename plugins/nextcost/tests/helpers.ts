@@ -119,7 +119,7 @@ type EngineFake = {
    *  its line's. */
   grepMatchOffsets: boolean
   /** The command whose output runs past what one read holds, if any. */
-  truncates: 'grep' | 'tail' | undefined
+  truncates: 'grep' | 'tail' | 'git' | undefined
   /** Every path the plugin asked the file system about. */
   statted: string[]
   /** The plugin's own store, JSON in and out as the engine keeps it. */
@@ -261,7 +261,7 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
     }
     if (git === 'fail') throw new Error('git: command not found')
     if (git === 'none') return { value: { ...quiet, exitCode: 128, stdout: '', stderr: 'fatal: not a git repository' } }
-    return { value: { ...quiet, exitCode: 0, stdout: e.argv.includes('status') ? git.status : git.dirs } }
+    return { value: { ...quiet, exitCode: 0, stdout: e.argv.includes('status') ? git.status : git.dirs, isStdoutTruncated: truncates === 'git' } }
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))

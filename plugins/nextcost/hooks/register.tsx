@@ -340,17 +340,22 @@ const rememberTurn = async ($: EngineInterface, cache: Remembered): Promise<void
   }
 }
 
-/** Reads the project and git into `band.workspace`, then redraws. It never throws:
- *  outside a repository, or with git missing or slow, the band shows the
- *  path alone. Callers don't wait on it. */
-const readWorkspace = async ($: EngineInterface): Promise<void> => {
+/** A workspace read is out, and another was asked for while it was. */
+let reading = false
+let rereads = false
+
+/** Reads the project and git once into `band.workspace`, then redraws. It
+ *  never throws: outside a repository, or with git missing or slow, the band
+ *  shows the path alone. */
+const readWorkspaceOnce = async ($: EngineInterface): Promise<void> => {
   const mine = ++band.reads
   try {
     const root = await $.session.root()
     const home = await $.env.get('HOME')
     const stdoutOf = async (run: Promise<ProcessRunResult>): Promise<string | undefined> => {
       const r = await settled(run)
-      return r?.exitCode === 0 ? r.stdout : undefined
+      // Output cut short is unknown, not a count: a status cut off would undercount.
+      return r?.exitCode === 0 && !r.isStdoutTruncated ? r.stdout : undefined
     }
     const [status, dirs, repo] = await Promise.all([
       // Status without the index lock, so the band never blocks a commit,
@@ -376,6 +381,26 @@ const readWorkspace = async ($: EngineInterface): Promise<void> => {
     $.ui.invalidate('ui.render')
   } catch {
     // keep the last reading
+  }
+}
+
+/** Reads the workspace, never two at once: each read is two git processes,
+ *  so one asked for while another is out waits for it, and the one out, now
+ *  stale, lands nothing. Callers don't wait on it. */
+const readWorkspace = async ($: EngineInterface): Promise<void> => {
+  if (reading) {
+    rereads = true
+    band.reads++ // the read out began before this request
+    return
+  }
+  reading = true
+  try {
+    do {
+      rereads = false
+      await readWorkspaceOnce($)
+    } while (rereads)
+  } finally {
+    reading = false
   }
 }
 
