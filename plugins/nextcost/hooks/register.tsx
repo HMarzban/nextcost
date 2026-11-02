@@ -37,7 +37,7 @@ import { DEFAULT_LAYOUT, FIVE_HOUR, asLayoutName, limitOf, removedLayoutOf, rese
 import type { Glyphs, LayoutName } from './snapshot'
 import { NO_WARNINGS, contextToasts, forgetConversation, limitToasts } from './toast'
 import type { Warned } from './toast'
-import { READ_LIMIT, lastWriteTtl, sessionCostRecord, transcriptPath, transcriptSpend } from './transcript'
+import { READ_LIMIT, lastWrite, lastWriteTtl, sessionCostRecord, transcriptPath, transcriptSpend } from './transcript'
 import { homeRelative, parseGitState, splitPath } from './workspace'
 import type { Workspace } from './workspace'
 
@@ -100,6 +100,8 @@ type Band = {
    *  engine may say so before session.start, or while it runs, and its reset
    *  forgets it, so it outlives that reset and session.start notes it again. */
   resume: Resume | undefined
+  /** Where the engine last said this conversation's transcript is. */
+  transcript: string | undefined
   /** What the band last drew, so the timer repaints only when it would change. */
   lastPaintKey: string
   /** The limits' resets the band last drew, epoch ms, so the timer repaints
@@ -141,6 +143,7 @@ const band: Band = {
   samples: [],
   reads: 0,
   resume: undefined,
+  transcript: undefined,
   nextWaker: undefined,
   tick: undefined,
 }
@@ -237,22 +240,35 @@ const recallLastReply = async (
   }
 }
 
-/** Reads the lifetime the conversation's last cache write was made for, off
- *  its transcript, and redraws. Callers don't wait on it, and it never throws:
- *  failing, the lifetime stands as the cache's reads infer it. */
-const readLifetime = async ($: EngineInterface): Promise<void> => {
-  try {
-    const sessionId = band.resume?.sessionId ?? (await $.session.id())
-    const file = await transcriptFile($, sessionId, band.resume?.path)
-    const end = file === undefined ? undefined : await transcriptEnd($, file)
-    const ttl = end === undefined ? undefined : lastWriteTtl(end)
-    if (ttl === undefined) return
-    band.cache.wroteFor(ttl)
-    await keepCounts($)
-    $.ui.invalidate('ui.render')
-  } catch {
-    // the lifetime stands
-  }
+/** How long after a turn to look for its reply in the transcript. Claude Code
+ *  writes a line about 100ms after its turn completes, on a timer, so a read
+ *  at the turn's end finds the turn before's; each further wait is for a
+ *  machine under load. Waiting in the hook would hold up the next turn. */
+const LIFETIME_READS_MS = [500, 2000, 8000]
+
+/** Reads, off its transcript, the lifetime the cache write of the request sent
+ *  at `since` was made for, and redraws, waiting for its line to be logged.
+ *  Callers don't wait on it, and it never throws: failing, the lifetime stands
+ *  as the cache's reads infer it. */
+const readLifetime = ($: EngineInterface, since: number, waits: readonly number[] = LIFETIME_READS_MS): void => {
+  const [wait, ...later] = waits
+  if (wait === undefined) return
+  $.clock.after(wait, () => {
+    void (async () => {
+      try {
+        const sessionId = band.resume?.sessionId ?? (await $.session.id())
+        const file = await transcriptFile($, sessionId, band.resume?.path ?? band.transcript)
+        const end = file === undefined ? undefined : await transcriptEnd($, file)
+        const write = end === undefined ? undefined : lastWrite(end)
+        if (write === undefined || write.at === undefined || write.at < since) return readLifetime($, since, later)
+        band.cache.wroteFor(write.ttl)
+        await keepCounts($)
+        $.ui.invalidate('ui.render')
+      } catch {
+        // the lifetime stands
+      }
+    })()
+  })
 }
 
 /** Reads what a resumed conversation's transcript shows, keeps it with the
@@ -571,6 +587,9 @@ export const register: Register = on => {
   // A conversation resumed at launch (`claude --resume`, the desktop opening
   // a past session) or by /resume: the ledger may read $0, but it is no new one.
   on('classic.SessionStart', async ($, e, next) => {
+    // Where Claude Code keeps this conversation, whatever started it: '' when
+    // it keeps no local transcript. A config directory moves it from its default.
+    if (e.agent_id === undefined) band.transcript = e.transcript_path === '' ? undefined : e.transcript_path
     if (e.agent_id === undefined && (e.source === 'resume' || e.source === 'fork')) await resumeConversation($, e)
     return next(e)
   }).catch(($, e, next) => next(e)) // a failure here must never stop a session starting
@@ -616,7 +635,7 @@ export const register: Register = on => {
       if (used !== undefined) band.insights.pushContext(used)
       await keepCounts($)
       if (ended.remember !== undefined) void rememberTurn($, ended.remember)
-      if (ended.readLifetime) void readLifetime($)
+      if (ended.lifetimeSince !== undefined) readLifetime($, ended.lifetimeSince)
       const now = await $.clock.now()
       const sample = usage === undefined ? undefined : sampleOf(now, usage.rateLimits.map(limitOf))
       if (sample !== undefined) await noteSample($, sample)

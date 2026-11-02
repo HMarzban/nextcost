@@ -12,16 +12,20 @@ const wroteFor = (ms: number, ttl: '5m' | '1h') => {
   return { ...line, message: { ...line.message, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 80_000, cache_creation: written } } }
 }
 
+/** Past the band's first look for a turn's line. */
+const LOOK = 600
 const HOME = { HOME: '/Users/me' }
 const OPUS = { model: 'claude-opus-5-5' }
 
 test('on an API key, the first turn counts down five minutes, not an assumed hour', LONG, async ($, on) => {
   const clock = setup(on, { env: HOME })
   await $.session.start(START)
-  engine.transcript = jsonl(wroteFor(0, '5m'))
   await respond($, BUILD_80K)
   await $.turn.complete(TURN_DONE)
-  await clock.settle()
+  // Its line lands about 100ms on, as the real engine's write queue flushes.
+  await clock.advance(100)
+  engine.transcript = jsonl(wroteFor(clock.now(), '5m'))
+  await clock.advance(LOOK)
   const ui = await mountBand($, 'terminal', 110)
   expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/cache [45]:\d\d/)
   await ui.press({ key: 'more' })
@@ -32,10 +36,10 @@ test('on an API key, the first turn counts down five minutes, not an assumed hou
 test('on a subscription, a read hour stops saying it is assumed', LONG, async ($, on) => {
   const clock = setup(on, { env: HOME })
   await $.session.start(START)
-  engine.transcript = jsonl(wroteFor(0, '1h'))
   await respond($, BUILD_80K)
+  engine.transcript = jsonl(wroteFor(clock.now(), '1h'))
   await $.turn.complete(TURN_DONE)
-  await clock.settle()
+  await clock.advance(LOOK)
   const ui = await mountBand($, 'terminal', 110)
   await ui.press({ key: 'more' })
   expect(fact(await ui.drawn(), 'expires')).toBe('1h idle')
@@ -45,18 +49,38 @@ test('on a subscription, a read hour stops saying it is assumed', LONG, async ($
 test('a subscription moving onto usage credits mid-session counts down five minutes after that turn', LONG, async ($, on) => {
   const clock = setup(on, { env: HOME })
   await $.session.start(START)
-  engine.transcript = jsonl(wroteFor(0, '1h'))
   await respond($, BUILD_80K)
+  const first = wroteFor(clock.now(), '1h')
+  engine.transcript = jsonl(first)
   await $.turn.complete(TURN_DONE)
-  await clock.settle()
+  await clock.advance(LOOK)
   await clock.advance(2 * MIN)
-  engine.transcript = jsonl(wroteFor(0, '1h'), wroteFor(2 * MIN, '5m'))
   await respond($, resp(1, 80_000, 2_000, 10))
+  engine.transcript = jsonl(first, wroteFor(clock.now(), '5m'))
   await $.turn.complete(TURN_DONE)
-  await clock.settle()
+  await clock.advance(LOOK)
   const ui = await mountBand($, 'terminal', 110)
   expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/cache [45]:\d\d/)
   await ui.unmount()
+})
+
+test("a line not yet written isn't taken for this turn's: the band looks again", LONG, async ($, on) => {
+  const clock = setup(on, { env: HOME })
+  await $.session.start(START)
+  const before = wroteFor(clock.now() - 10 * MIN, '1h')
+  engine.transcript = jsonl(before)
+  await respond($, BUILD_80K)
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(LOOK)
+  const ui = await mountBand($, 'terminal', 110)
+  await ui.press({ key: 'more' })
+  expect(fact(await ui.drawn(), 'expires')).toBe('1h idle · assumed')
+  await ui.unmount()
+  engine.transcript = jsonl(before, wroteFor(clock.now(), '5m'))
+  await clock.advance(2_000)
+  const later = await mountBand($, 'terminal', 110)
+  expect(shown(pillOf(await later.drawn(), 'cache'))).toMatch(/cache [45]:\d\d/)
+  await later.unmount()
 })
 
 test('a turn that reached no API reads nothing', LONG, async ($, on) => {
@@ -72,12 +96,12 @@ test('a turn that reached no API reads nothing', LONG, async ($, on) => {
 test('a pinned lifetime reads nothing, and wins', LONG, async ($, on) => {
   const clock = setup(on, { env: { ...HOME, CLAUDE_CODE_PROMPT_CACHE_TTL: '1h' } })
   await $.session.start(START)
-  engine.transcript = jsonl(wroteFor(0, '5m'))
   await clock.settle()
   engine.ran.length = 0
   await respond($, BUILD_80K)
+  engine.transcript = jsonl(wroteFor(clock.now(), '5m'))
   await $.turn.complete(TURN_DONE)
-  await clock.settle()
+  await clock.advance(LOOK)
   expect(engine.ran.filter(argv => argv[0] === 'tail')).toEqual([])
   const ui = await mountBand($, 'terminal', 110)
   await ui.press({ key: 'more' })
@@ -91,7 +115,7 @@ test('a transcript that cannot be read leaves the lifetime assumed, and the band
   engine.tailFails = true
   await respond($, BUILD_80K)
   await $.turn.complete(TURN_DONE)
-  await clock.settle()
+  await clock.advance(LOOK)
   const ui = await mountBand($, 'terminal', 110)
   await ui.press({ key: 'more' })
   expect(fact(await ui.drawn(), 'expires')).toBe('1h idle · assumed')

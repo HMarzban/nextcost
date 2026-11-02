@@ -150,19 +150,23 @@ export const rateFromTranscript = (transcript: string, model: string): number | 
 /** What marks a line whose usage splits its cache writes by lifetime. */
 const CACHE_WRITE_MARKER = '"cache_creation"'
 
-/** The TTL the transcript's last main-loop cache write was made at: an hour
- *  if it wrote any for an hour, else five minutes if it wrote any. */
-export const lastWriteTtl = (transcript: string): Ttl | undefined => {
+/** The transcript's last main-loop cache write: the TTL it was made at, an
+ *  hour if it wrote any for an hour, else five minutes if it wrote any, and
+ *  when its line was logged. */
+export const lastWrite = (transcript: string): Readonly<{ ttl: Ttl; at: number | undefined }> | undefined => {
   for (const entry of fromEnd(transcript, CACHE_WRITE_MARKER)) {
     if (!isMainReply(entry) || !isRecord(entry.message)) continue
     const usage = entry.message.usage
     const written = isRecord(usage) ? usage.cache_creation : undefined
     if (!isRecord(written)) continue
-    if (countOf(written, 'ephemeral_1h_input_tokens') > 0) return '1h'
-    if (countOf(written, 'ephemeral_5m_input_tokens') > 0) return '5m'
+    if (countOf(written, 'ephemeral_1h_input_tokens') > 0) return { ttl: '1h', at: loggedAt(entry) }
+    if (countOf(written, 'ephemeral_5m_input_tokens') > 0) return { ttl: '5m', at: loggedAt(entry) }
   }
   return undefined
 }
+
+/** The TTL the transcript's last main-loop cache write was made at. */
+export const lastWriteTtl = (transcript: string): Ttl | undefined => lastWrite(transcript)?.ttl
 
 /** A line's cost record, parsed; undefined for any other line, or one cut short. */
 const costRecordOf = (line: string): Record<string, unknown> | undefined => {

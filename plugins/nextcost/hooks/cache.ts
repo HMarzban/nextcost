@@ -588,10 +588,10 @@ export type CacheModel = Readonly<{
   /** turn.complete of a main-loop turn: whether a request in it rebuilt the
    *  cache (TTL run out, a miss, a compaction, a model switch), taken once
    *  per turn, though the rebuild is usually its first request; and, once a
-   *  reply has been seen, what to remember at `ledger`; and whether to read
-   *  the lifetime its writes were made for off the transcript: it reached
-   *  the API, and no setting pins the lifetime. */
-  turnEnded: (ledger: number | undefined) => Readonly<{ rebuilt: boolean; readLifetime: boolean; remember: Remembered | undefined }>
+   *  reply has been seen, what to remember at `ledger`; and, where it reached
+   *  the API and no setting pins the lifetime, when its last request was
+   *  sent, to read off the transcript the lifetime it was written for. */
+  turnEnded: (ledger: number | undefined) => Readonly<{ rebuilt: boolean; lifetimeSince: number | undefined; remember: Remembered | undefined }>
   /** The lifetime the transcript's last main-loop cache write was made for. */
   wroteFor: (ttl: Ttl) => void
   /** session.end: another conversation in the same process, at `ledger`. A
@@ -678,14 +678,14 @@ export const newCache = (kept?: CacheState): CacheModel => {
     turnEnded: ledger => {
       s.turnOpen = false
       const rebuilt = s.lastRebuilt
-      const readLifetime = s.turnMeasured && !s.ttlPinned
+      const lifetimeSince = s.turnMeasured && !s.ttlPinned ? s.lastAt : undefined
       s.lastRebuilt = false
       // A turn that made no request (a limit hit, a lost connection) left the
       // countdown where it was, so what it says stays too.
       if (s.turnMeasured) s.lastWake = s.turnWaker === undefined ? undefined : { by: s.turnWaker, reWarm: rebuilt }
       s.turnWaker = undefined
       s.turnMeasured = false
-      return { rebuilt, readLifetime, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: ratePerToken(s, ledger), billed: s.billedModel, priceModel: s.priceModel } }
+      return { rebuilt, lifetimeSince, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: ratePerToken(s, ledger), billed: s.billedModel, priceModel: s.priceModel } }
     },
     conversationEnded: (ledger, resumed) => {
       // The billing mode, its TTL and the session's settings carry over;
