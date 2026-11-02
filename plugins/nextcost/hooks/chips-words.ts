@@ -21,13 +21,16 @@ type ChipsFacts = Readonly<{
  *  hover and the battery's name. */
 type CacheCopy = Readonly<{
   pill: (short: boolean) => string
+  /** Whether the pill's own words name the cache: where they don't, `◷` is
+   *  all that does, and the ascii tier, which drops it, says the word. */
+  named: (short: boolean) => boolean
   hover: string
   alt: string
 }>
 
 /** The cache's pill and hover by mood. Where a pill reads as the other
  *  layouts' figure it is theirs; a countdown and cold's long form are its own. */
-const moodCopy = (c: ChipsFacts['cache']): Omit<CacheCopy, 'alt'> => {
+const moodCopy = (c: ChipsFacts['cache']): Pick<CacheCopy, 'pill' | 'hover'> => {
   // What a warm read costs against input on the model in force.
   const readPct = `${+(c.readShare * 100).toFixed(1)}%`
   const left = fmtCountdown(c.leftMs)
@@ -99,6 +102,10 @@ const batteried = (mood: CacheFacts['mood']): boolean => mood === 'warm' || mood
 
 const cacheCopy = (c: ChipsFacts['cache']): CacheCopy => ({
   ...moodCopy(c),
+  named: short =>
+    c.mood === 'uncached' ? short
+    : c.mood === 'cold' || c.mood === 'compacted' ? !short
+    : c.mood === 'unmeasured' || c.mood === 'warming' || c.mood === 'warm',
   alt: !batteried(c.mood) ? MOOD_ALT[c.mood] : c.charge <= 0 ? 'cache battery empty' : `cache battery ${Math.round(clamp01(c.charge) * 100)}% left`,
 })
 

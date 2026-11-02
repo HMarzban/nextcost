@@ -136,7 +136,7 @@ export const cachePill = (kit: Kit, read: Readings, short: boolean): PillSpec =>
   const text = copy.pill(short)
   const fg = onTone(tone, palette.value)
   // `◷` is the short forms' only mark of the cache (`0:47 ~$0.52`, `cold ~$1.66`): the ascii tier drops it, so says the word.
-  const lead = kit.glyphs === 'ascii' && !text.includes('cache') ? 'cache' : '◷'
+  const lead = kit.glyphs === 'ascii' && !copy.named(short) ? 'cache' : '◷'
   if (Svg) {
     // A normal rounded pill led by a draining battery icon; the text-surface
     // battery would paint a square-cornered block here.

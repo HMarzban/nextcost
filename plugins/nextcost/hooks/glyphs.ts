@@ -26,23 +26,25 @@ export const resolveGlyphs = (env: Readonly<{ NEXTCOST_GLYPHS?: string; LC_ALL?:
  *  ambiguous-width glyphs can draw wide; its own glyphs on every other surface. */
 export const drawnTier = (snap: Pick<BandSnapshot, 'surface' | 'glyphs'>): Glyphs => (snap.surface === 'terminal' ? snap.glyphs : 'unicode')
 
-/** Each glyph the band draws, in ASCII; an empty mapping drops the glyph. */
+/** Each glyph the band draws in this tier, and a name's punctuation it may
+ *  meet in a path or a branch, in ASCII; an empty mapping drops the glyph. Any
+ *  other non-ASCII character goes alone: see asciiText. */
 export const ASCII_MAP: Readonly<Record<string, string>> = {
-  '█': '#', '░': '-', '▒': ':', '│': '|', '·': '-', '…': '.', '±': '+',
-  '●': '*', '■': '#', '–': '-', '↑': '+', '↓': '-', '▿': 'v', '▵': '^', '›': '>',
-  // A projection's dash and a battery's cap: Neutral, but not ASCII.
+  '█': '#', '░': '-', '│': '|', '·': '-', '…': '.', '±': '+',
+  '●': '*', '■': '#', '–': '-', '▿': 'v', '▵': '^', '›': '>',
+  // Neutral, but not ASCII: no view draws these here now; glyphs.test.ts holds them.
   '╌': '~', '╸': '>',
-  '↻': '', 'Σ': '', '◷': '', '◔': '',
+  '↻': '', '◷': '',
   // A hover card's caps: a space each keeps its width. ▐ is Neutral, but
   // goes with ▌ so a card's two ends match.
   '▐': ' ', '▌': ' ',
 }
 
-/** What an icon's glyph is said as in the ascii tier, where its mapping above
- *  would drop it and leave a bare figure: `tok 225k`, `ctx 38%`, and after a
+/** What an icon's glyph is said as in the ascii tier, where dropping it would
+ *  leave a bare figure: `tok 225k`, `ctx 38%`, and after a
  *  limit's bar `| resets 3h 00m`, which a bare time beside a fill would not
  *  read as. A view draws the word itself rather than the glyph, so the squeeze
- *  measures the width it has; the mappings stay as the fallback. */
+ *  measures the width it has. */
 export const ASCII_WORDS: Readonly<Partial<Record<Icon, string>>> = { tokens: 'tok', context: 'ctx', reset: 'resets' }
 
 /** `s` in ASCII and wide characters: a spaced separator a comma, since ` - `
