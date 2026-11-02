@@ -26,7 +26,13 @@ test('samples are written once per new 15-minute bucket, the percentages rising'
   const kept = asLimitSamples(engine.store.limitSamples).map(x => x.sevenPct)
   // Each write holds one bucket more, the last one the newest.
   expect(kept).toHaveLength(writes)
-  expect(kept.every((pct, i) => i === 0 || pct > (kept[i - 1] ?? Infinity))).toBe(true)
+  expect(kept.every((pct, i) => i === 0 || (pct ?? 0) > (kept[i - 1] ?? Infinity))).toBe(true)
+})
+test('a plan with no 5-hour limit records the week all the same', async ($, on) => {
+  setup(on, { usage: { ...USAGE, rateLimits: [{ kind: 'seven_day', percentUsed: 30, resetsAt: new Date(67 * 3600_000).toISOString() }] } })
+  await $.session.start(START)
+  await turn($, 't1', 2.41, 2.5)
+  expect(asLimitSamples(engine.store.limitSamples)).toEqual([{ at: 0, sevenPct: 30, sevenResetAt: 67 * HOUR }])
 })
 test('a session reads the stored samples at start and at each new bucket, never within one', async ($, on) => {
   setup(on, { store: { limitSamples: [] } })

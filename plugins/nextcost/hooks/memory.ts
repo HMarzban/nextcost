@@ -69,8 +69,10 @@ export const rememberReply = (sessions: Sessions, id: string, lastAt: number, bi
       .slice(0, MAX_SESSIONS),
   )
 
-/** Both limits at one moment, with the resets that name their windows (epoch ms). */
-export type Sample = Readonly<{ at: number; fivePct: number; sevenPct: number; fiveResetAt: number; sevenResetAt: number }>
+/** The limits at one moment, each with the reset that names its window
+ *  (epoch ms). A plan without a window leaves its pair out; released
+ *  versions wrote both, always. */
+export type Sample = Readonly<{ at: number; fivePct?: number; fiveResetAt?: number; sevenPct?: number; sevenResetAt?: number }>
 
 const BUCKET_MS = 15 * MINUTE_MS
 /** A week of buckets. */
@@ -100,20 +102,31 @@ export const addSample = (samples: readonly Sample[], s: Sample): Sample[] => me
  *  would stay last and open a new bucket every turn. */
 export const samplesUpTo = (samples: readonly Sample[], now: number): Sample[] => samples.filter(s => s.at <= now)
 
-const SAMPLE_FIELDS = ['at', 'fivePct', 'sevenPct', 'fiveResetAt', 'sevenResetAt'] as const
+const finite = (v: unknown): boolean => Number.isFinite(v)
+/** Whether a window's pair is whole or wholly absent, and which. */
+const pairOf = (v: Readonly<Record<string, unknown>>, pct: string, reset: string): 'whole' | 'absent' | 'torn' =>
+  finite(v[pct]) && finite(v[reset]) ? 'whole' : v[pct] === undefined && v[reset] === undefined ? 'absent' : 'torn'
 
-const isSample = (v: unknown): v is Sample => isRecord(v) && SAMPLE_FIELDS.every(k => Number.isFinite(v[k]))
+/** A well-formed sample: its time, and at least one window whole, the
+ *  other whole or absent, never half a pair. */
+const isSample = (v: unknown): v is Sample => {
+  if (!isRecord(v) || !finite(v.at)) return false
+  const pairs = [pairOf(v, 'fivePct', 'fiveResetAt'), pairOf(v, 'sevenPct', 'sevenResetAt')]
+  return !pairs.includes('torn') && pairs.includes('whole')
+}
 
 /** The store's samples, keeping only well-formed ones, one per bucket, sorted. */
 export const asLimitSamples = (v: unknown): Sample[] => (Array.isArray(v) ? mergeSamples([], v.filter(isSample)) : [])
 
-/** Both limits now, as one sample; undefined unless each is reported with a reset. */
+/** The limits now, as one sample: each window reported with a reset;
+ *  undefined with none. */
 export const sampleOf = (now: number, limits: readonly ReportedLimit[]): Sample | undefined => {
   const { five, seven } = splitLimits(limits)
-  const fiveResetAt = five?.resetsAt
-  const sevenResetAt = seven?.resetsAt
-  if (five === undefined || seven === undefined || fiveResetAt === undefined || sevenResetAt === undefined) return undefined
-  return { at: now, fivePct: five.percentUsed, sevenPct: seven.percentUsed, fiveResetAt, sevenResetAt }
+  const fiveAt = five?.resetsAt
+  const sevenAt = seven?.resetsAt
+  const fiveWindow = five === undefined || fiveAt === undefined ? {} : { fivePct: five.percentUsed, fiveResetAt: fiveAt }
+  const sevenWindow = seven === undefined || sevenAt === undefined ? {} : { sevenPct: seven.percentUsed, sevenResetAt: sevenAt }
+  return Object.keys(fiveWindow).length + Object.keys(sevenWindow).length === 0 ? undefined : { at: now, ...fiveWindow, ...sevenWindow }
 }
 
 /** What the band's own store recalls of a session's last reply: when it

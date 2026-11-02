@@ -130,13 +130,22 @@ test('a stored list past the cap is read as its newest week, malformed entries d
   expect([read[0]?.at, read.at(-1)?.at]).toEqual([T0 + 128 * 0.25 * HOUR, T0 + 799 * 0.25 * HOUR])
 })
 
-test('a sample needs both windows and their resets', () => {
-  const both = [
-    { kind: 'five_hour', percentUsed: 4, resetsAt: T0 + 3 * HOUR },
-    { kind: 'seven_day', percentUsed: 30, resetsAt: T0 + 67 * HOUR },
-  ]
-  expect(sampleOf(T0, both)).toEqual({ at: T0, fivePct: 4, sevenPct: 30, fiveResetAt: T0 + 3 * HOUR, sevenResetAt: T0 + 67 * HOUR })
-  expect(sampleOf(T0, both.slice(0, 1))).toBeUndefined()
+test('a sample holds whichever windows are reported with a reset', () => {
+  const five = { kind: 'five_hour', percentUsed: 4, resetsAt: T0 + 3 * HOUR }
+  const seven = { kind: 'seven_day', percentUsed: 30, resetsAt: T0 + 67 * HOUR }
+  expect(sampleOf(T0, [five, seven])).toEqual({ at: T0, fivePct: 4, sevenPct: 30, fiveResetAt: T0 + 3 * HOUR, sevenResetAt: T0 + 67 * HOUR })
+  // A plan with no 5h limit records the week alone, and the reverse.
+  expect(sampleOf(T0, [seven])).toEqual({ at: T0, sevenPct: 30, sevenResetAt: T0 + 67 * HOUR })
+  expect(sampleOf(T0, [five])).toEqual({ at: T0, fivePct: 4, fiveResetAt: T0 + 3 * HOUR })
+  // A window with no reset has no name, so it is left out; with none left, no sample.
+  expect(sampleOf(T0, [{ ...five, resetsAt: undefined }, seven])).toEqual({ at: T0, sevenPct: 30, sevenResetAt: T0 + 67 * HOUR })
+  expect(sampleOf(T0, [{ ...five, resetsAt: undefined }])).toBeUndefined()
+  expect(sampleOf(T0, [])).toBeUndefined()
+})
+
+test('a stored sample of one window is read, and an old one with both still is; half a window is not', () => {
+  const weekOnly = { at: T0, sevenPct: 30, sevenResetAt: T0 + 67 * HOUR }
+  expect(asLimitSamples([weekOnly, s(1, 2), { at: T0 + HOUR }, { ...weekOnly, at: T0 + 2 * HOUR, sevenResetAt: undefined }])).toEqual([weekOnly, s(1, 2)])
 })
 
 // ── the recall ─────────────────────────────────────────────────────────
