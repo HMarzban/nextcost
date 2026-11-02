@@ -94,9 +94,10 @@ export type CacheView = Readonly<{
   /** When the cache goes or went cold, epoch ms; null when not known. */
   coldAt: number | null
   ttl: Ttl
-  /** The TTL is known, not assumed: pinned by the environment, or seen on
-   *  the transcript's last cache write before this band's first reply. */
-  ttlPinned: boolean
+  /** The TTL is known, not assumed: pinned by the environment, read off the
+   *  transcript at a turn's end, or seen on its last cache write before this
+   *  band's first reply. */
+  ttlKnown: boolean
   window: number
   hitRatio: number | null
   misses: number
@@ -138,17 +139,16 @@ export type CacheView = Readonly<{
 /** A cache model's facts, plain data, for a reload to carry on from. */
 export type CacheState = {
   ttl: Ttl
-  /** Set by the environment, so never inferred. */
-  ttlPinned: boolean
+  /** What `ttl` rests on. Pinned: the environment set it, so it is never
+   *  inferred. Read: off the transcript's last cache write, at a turn's end.
+   *  Assumed: the default, or inferred from the cache's reads. */
+  ttlBasis: 'assumed' | 'read' | 'pinned'
   /** A subagent's TTL: five minutes, unless the environment pins an hour. */
   subagentTtl: Ttl
   /** The TTL the transcript's last cache write was made at, until this
    *  band's first reply: it speaks for the recalled cache, never for the next
    *  request, and the environment's pin still wins. */
   ttlSeen: Ttl | undefined
-  /** `ttl` was read off the transcript's last cache write, at a turn's end,
-   *  so it isn't assumed. */
-  ttlRead: boolean
   /** When the request behind the main loop's last write unread went: a turn
    *  whose last step only read still wrote earlier, and one that wrote nothing
    *  has nothing new to read. */
@@ -225,10 +225,9 @@ export type CacheState = {
 
 const INITIAL: Readonly<CacheState> = {
   ttl: '1h',
-  ttlPinned: false,
+  ttlBasis: 'assumed',
   subagentTtl: '5m',
   ttlSeen: undefined,
-  ttlRead: false,
   writeUnreadSince: undefined,
   idleCompactFrom: undefined,
   turnOpen: false,
@@ -274,7 +273,7 @@ const isRecalled = (s: CacheState, now: number): boolean => s.requests === 0 && 
 
 /** The TTL the cache stands at: the pin, else one seen on the transcript,
  *  else the one assumed or inferred. */
-const effectiveTtl = (s: CacheState): Ttl => (s.ttlPinned ? s.ttl : (s.ttlSeen ?? s.ttl))
+const effectiveTtl = (s: CacheState): Ttl => (s.ttlBasis === 'pinned' ? s.ttl : (s.ttlSeen ?? s.ttl))
 
 /** The model the tokens are priced at: the one replies are billed under, else
  *  what /model names, which may be an alias such as `opus[1m]`. */
@@ -360,8 +359,7 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
     leftMs: leftMsOf(s, now),
     coldAt: coldAtOf(s, now),
     ttl: effectiveTtl(s),
-    // Known, not assumed: pinned, or seen on the transcript's last cache write.
-    ttlPinned: s.ttlPinned || s.ttlSeen !== undefined || s.ttlRead,
+    ttlKnown: s.ttlBasis !== 'assumed' || s.ttlSeen !== undefined,
     window,
     hitRatio: input > 0 ? tokens.read / input : null,
     misses: s.misses,
@@ -409,9 +407,9 @@ const noteTranscript = (s: CacheState, facts: TranscriptFacts): void => {
  *  what was really billed. A pin wins, and a read that ends after the next
  *  turn began waits for that turn's. */
 const noteWrittenFor = (s: CacheState, ttl: Ttl): void => {
-  if (s.ttlPinned || s.turnOpen) return
+  if (s.ttlBasis === 'pinned' || s.turnOpen) return
   s.ttl = ttl
-  s.ttlRead = true
+  s.ttlBasis = 'read'
   const { bill, hourTokens } = writesReadAs(s.bill, ttl)
   s.bill = bill
   s.tokens = { ...s.tokens, writtenHour: s.tokens.writtenHour + hourTokens }
@@ -459,7 +457,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   // warm, the system prompt, five minutes. A read of more is a change to part
   // of the prefix (tool results cleared, the tools changed), which says
   // nothing of the lifetime.
-  if (!s.ttlPinned && !s.ttlRead && short !== undefined && gap > TTL_MS['5m'] && gap <= TTL_MS['1h']) {
+  if (s.ttlBasis === 'assumed' && short !== undefined && gap > TTL_MS['5m'] && gap <= TTL_MS['1h']) {
     if (!short) s.ttl = '1h'
     else if (hit <= COLD_READ_MAX_TOKENS) s.ttl = '5m'
   }
@@ -578,12 +576,11 @@ export const newCache = (kept?: CacheState): CacheModel => {
     configured: ({ ttl, idleCompactFrom, subagentTtl }) => {
       if (ttl !== undefined) {
         s.ttl = ttl
-        s.ttlPinned = true
-      } else if (s.ttlPinned) {
+        s.ttlBasis = 'pinned'
+      } else if (s.ttlBasis === 'pinned') {
         // Pinned before a reload and no longer: assumed again, as a new session's is.
         s.ttl = INITIAL.ttl
-        s.ttlPinned = false
-        s.ttlRead = false
+        s.ttlBasis = 'assumed'
       }
       s.subagentTtl = subagentTtl ?? '5m'
       s.idleCompactFrom = idleCompactFrom
@@ -631,7 +628,7 @@ export const newCache = (kept?: CacheState): CacheModel => {
     turnEnded: ledger => {
       s.turnOpen = false
       const rebuilt = s.lastRebuilt
-      const lifetimeSince = s.ttlPinned ? undefined : s.writeUnreadSince
+      const lifetimeSince = s.ttlBasis === 'pinned' ? undefined : s.writeUnreadSince
       s.writeUnreadSince = undefined
       s.lastRebuilt = false
       // A turn that made no request (a limit hit, a lost connection) left the
@@ -645,8 +642,8 @@ export const newCache = (kept?: CacheState): CacheModel => {
       // The billing mode, its TTL and the session's settings carry over;
       // everything measured starts again. The baseline is provisional until
       // the next turn starts and takes the ledger then.
-      const { ttl, ttlPinned, ttlRead, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen } = s
-      Object.assign(s, INITIAL, { ttl, ttlPinned, ttlRead, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen, bill: billOfNewConversation(ledger), knownFresh: !resumed })
+      const { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen } = s
+      Object.assign(s, INITIAL, { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen, bill: billOfNewConversation(ledger), knownFresh: !resumed })
     },
     view: ({ now, ledger, contextTokens, autoCompactOff, modelNow, surface }) => {
       s.bill = billAtRedraw(s.bill, ledger)

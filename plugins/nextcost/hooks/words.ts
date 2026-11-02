@@ -39,7 +39,7 @@ export type Say = ReadonlyArray<readonly [string, Role]>
 export type Amber = Readonly<{ long: string; short: string }>
 /** Whether the cache's lifetime is a guess: the hour, or five minutes as
  *  inferred, until a pin or a read of the transcript says it. */
-export const lifetimeAssumed = (f: Pick<CacheFacts, 'ttlPinned'>): boolean => !f.ttlPinned
+export const lifetimeAssumed = (f: Pick<CacheFacts, 'ttlKnown'>): boolean => !f.ttlKnown
 
 /** The next message's price with what it covers, longest first, for a row to
  *  take the longest that fits: the price is the cache rewrite, never the

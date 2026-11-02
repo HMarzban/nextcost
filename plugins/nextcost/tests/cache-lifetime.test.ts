@@ -113,7 +113,7 @@ test('a pin taken away after a read leaves the lifetime assumed again', () => {
   c.wroteFor('5m')
   c.configured({ ttl: '1h', idleCompactFrom: undefined })
   c.configured({ ttl: undefined, idleCompactFrom: undefined })
-  expect(c.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false }).cache.ttlPinned).toBe(false)
+  expect(c.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false }).cache.ttlKnown).toBe(false)
 })
 
 test("a line not yet written isn't taken for this turn's: the band looks again", LONG, async ($, on) => {
@@ -215,7 +215,7 @@ test('a read carries through a reload', () => {
   const after = newCache(c.kept())
   const { cache } = after.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false })
   expect(cache.ttl).toBe('5m')
-  expect(cache.ttlPinned).toBe(true)
+  expect(cache.ttlKnown).toBe(true)
 })
 
 

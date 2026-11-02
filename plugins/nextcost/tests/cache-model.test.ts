@@ -466,7 +466,7 @@ test('a lifetime pinned before a reload and no longer set stands unpinned, assum
   const reloaded = newCache(before.kept())
   reloaded.configured({ ttl: undefined, idleCompactFrom: undefined })
   const { cache } = reloaded.view({ now: 0, ledger: undefined, contextTokens: 0, autoCompactOff: false })
-  expect(cache.ttlPinned).toBe(false)
+  expect(cache.ttlKnown).toBe(false)
   expect(cache.ttl).toBe('1h')
 })
 

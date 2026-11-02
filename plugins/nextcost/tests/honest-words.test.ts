@@ -57,7 +57,7 @@ test("a peer's message is `a message`, never `another session`: the band cannot 
 // ---- a guessed lifetime is never cut --------------------------------------------
 
 /** A cache whose lifetime is the hour assumed, neither pinned nor read. */
-const GUESSED = cacheWith({ ttlPinned: false })
+const GUESSED = cacheWith({ ttlKnown: false })
 const WOKEN = { misses: 1, wake: { by: 'task', reWarm: false } } as const
 
 /** The keys of a card's fact rows, in the order drawn. */
@@ -77,7 +77,7 @@ test('a guessed hour is marked in the warm hover, in both of its branches and wh
   expect(readingsOf(snapOf({ cache: { ...GUESSED, leftMs: 30_000 } })).chips.cache.hover).toMatch(/^0:30 left \(assumed\); /)
   // A pin or a read says nothing of a guess; an inferred 5m is one.
   expect(readingsOf(snapOf()).chips.cache.hover).not.toMatch(/assumed/)
-  expect(readingsOf(snapOf({ cache: cacheWith({ ttlPinned: false, ttl: '5m' }) })).chips.cache.hover).toMatch(/assumed 5m/)
+  expect(readingsOf(snapOf({ cache: cacheWith({ ttlKnown: false, ttl: '5m' }) })).chips.cache.hover).toMatch(/assumed 5m/)
 })
 
 test('a guessed hour is the second fact of the Cache card, above everything droppable; a known one stays last', () => {
