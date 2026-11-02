@@ -125,8 +125,12 @@ export const resetIn = (at: number | undefined, now: number): ResetIn | undefine
   return left <= 0 ? { kind: 'passed' } : { kind: 'in', text: fmtResetSpan(left) }
 }
 
-/** The words for escalation: colour is never the only signal. */
-export const severityMark = (frac: number): string => (frac >= SEVERE_AT ? '!!' : frac >= WARN_AT ? '!' : '')
+/** The words for escalation: colour is never the only signal. By the percent
+ *  shown, as the amber is. */
+export const severityMark = (frac: number): string => {
+  const shown = shownFrac(frac)
+  return shown >= SEVERE_AT ? '!!' : shown >= WARN_AT ? '!' : ''
+}
 
 /** A projection's whole minutes: 5-minute steps under an hour, 15 from one. */
 export const etaMinutes = (ms: number): number => {

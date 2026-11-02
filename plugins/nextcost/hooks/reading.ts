@@ -62,7 +62,7 @@ const paceOf = (base: LimitBase, windowMs: number | undefined, etaMs: number | n
     ...base,
     passed: false,
     etaMs,
-    tone: base.frac >= WARN_AT || etaMs !== null ? 'amber' : 'calm',
+    tone: shownFrac(base.frac) >= WARN_AT || etaMs !== null ? 'amber' : 'calm',
     projectedPct,
     resetInMs: base.reset?.kind === 'in' && at !== undefined ? at - now : undefined,
     fillInMs,
@@ -128,8 +128,9 @@ const contextFacts = (snap: BandSnapshot): ContextFacts => {
   const ctx = snap.context
   const used = contextUsed(ctx) ?? 0
   const pressure = contextPressure(used, ctx.window, ctx.compactAt)
-  const frac = shownFrac(clamp01(pressure.frac))
-  const amber = frac >= (pressure.levels[0] ?? 1)
+  const frac = clamp01(pressure.frac)
+  // Classed by the percent shown, so a figure at `80%` is amber whatever its decimals.
+  const amber = shownFrac(frac) >= (pressure.levels[0] ?? 1)
   const fill: ContextFill = {
     known: ctx.percent !== undefined || ctx.tokens !== undefined,
     used,
@@ -156,8 +157,7 @@ const limitFacts = (snap: BandSnapshot): LimitFacts[] => {
   const one = (name: string, key: LimitKey, use: LimitUse, windowMs: number | undefined, etaMs: number | null): LimitFacts => {
     const at = use.resetsAt
     const reset = resetIn(at, snap.now)
-    // The share as shown, so a figure at `80%` is amber whatever its decimals.
-    const frac = shownFrac(clamp01(use.percentUsed / 100))
+    const frac = clamp01(use.percentUsed / 100)
     const gone = windowGone(at, windowMs, snap.now)
     const base: LimitBase = { name, key, reset, resetsAt: at, gone, percentUsed: use.percentUsed, frac, value: fmtPercent(use.percentUsed) }
     // Passed, the window that reset has no pace, reset or fill to say.
