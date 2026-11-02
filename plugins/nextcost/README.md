@@ -23,7 +23,7 @@ claude plugin install nextcost --marketplace HMarzban/nextcost
 It loads in your next session, or run `/reload-plugins` in an open one.
 
 The band needs Claude Code with mods (function-hooks plugins). CI tests
-every change on 2.1.299 and the latest release (2.1.316 at 0.20.0). The
+every change on 2.1.299 and the latest release (2.1.316 at 0.21.0). The
 one-line form needs Claude Code 2.1.292 or later; on an older one, add the
 marketplace first (`claude plugin marketplace add HMarzban/nextcost`),
 then `claude plugin install nextcost@hossein-mods`.

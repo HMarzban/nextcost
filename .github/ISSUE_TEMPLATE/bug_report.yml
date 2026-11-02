@@ -46,7 +46,7 @@ body:
     attributes:
       label: Plugin version
       description: From `claude plugin list`.
-      placeholder: "0.20.0"
+      placeholder: "0.21.0"
     validations:
       required: true
   - type: input
