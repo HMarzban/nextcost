@@ -370,7 +370,7 @@ const rememberTurn = async ($: EngineInterface, cache: Remembered): Promise<void
     // Entries dated after now are dropped here, so one never stays in the store.
     await $.store.set(SESSIONS_KEY, rememberReply(asSessions(await $.store.get(SESSIONS_KEY), await $.clock.now()), id, cache.lastAt, cache.billed))
     const rate = cache.rate
-    if (rate !== null) await $.store.set(RATES_KEY, rememberRate(await $.store.get(RATES_KEY), cache.billed ?? cache.priceModel ?? (await $.session.model()), rate))
+    if (rate !== null) await $.store.set(RATES_KEY, rememberRate(await $.store.get(RATES_KEY), cache.billed ?? cache.namedModel ?? (await $.session.model()), rate))
   } catch {
     // memory is a convenience; the band works without it
   }
@@ -650,11 +650,11 @@ export const register: Register = on => {
     // so a session.start that runs long has its palette, glyphs and TTL.
     await readAppearance($)
     await readCacheSettings($)
-    const priceModel = await $.session.model().catch(() => undefined)
+    const namedModel = await $.session.model().catch(() => undefined)
     // A resume of this session, said before this load or while it runs, is
     // noted again after the reset.
     if (band.resume !== undefined) band.cache.resumed(band.resume)
-    band.cache.loaded({ priceModel, ledger: await ledgerUsd($) })
+    band.cache.loaded({ namedModel, ledger: await ledgerUsd($) })
     void readWorkspace($)
     // Loaded mid-conversation, the band has seen no reply: recall the last,
     // unless the engine said when it was.
@@ -697,10 +697,10 @@ export const register: Register = on => {
     // part of the main turn that spawned it, which keeps the start cost.
     if ('agentId' in e && e.agentId !== undefined) return next(e)
     // /model may have switched what the session's tokens are priced at.
-    const priceModel = await $.session.model().catch(() => undefined)
+    const namedModel = await $.session.model().catch(() => undefined)
     const cost = await ledgerUsd($)
     band.insights.noteTurnStart(e.turnId, cost)
-    band.cache.turnStarted({ priceModel, ledger: cost, wokenBy: band.nextWaker })
+    band.cache.turnStarted({ namedModel, ledger: cost, wokenBy: band.nextWaker })
     band.nextWaker = undefined
     await keepCounts($)
     return next(e)

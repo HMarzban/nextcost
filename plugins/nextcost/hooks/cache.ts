@@ -218,10 +218,10 @@ export type CacheState = {
    *  records it. */
   prior: Spend | undefined
   /** The model /model has in force, as it names it: perhaps an alias. */
-  priceModel: string | undefined
+  namedModel: string | undefined
   /** What /model named when the main loop's last request went: the model the
    *  cache was written for, as /model names it. */
-  requestModel: string | undefined
+  namedAtRequest: string | undefined
   /** The last request's rounds were a guess, so `window` is too. */
   windowGuessed: boolean
   /** The model the main loop's last reply was billed under, as the API names
@@ -252,8 +252,8 @@ const INITIAL: Readonly<CacheState> = {
   resumedCache: undefined,
   recall: undefined,
   prior: undefined,
-  priceModel: undefined,
-  requestModel: undefined,
+  namedModel: undefined,
+  namedAtRequest: undefined,
   windowGuessed: false,
   billedModel: undefined,
 }
@@ -281,7 +281,7 @@ const lifetimeOf = (s: CacheState): number => TTL_MS[effectiveTtl(s)]
 
 /** The model the tokens are priced at: the one replies are billed under, else
  *  what /model names, which may be an alias such as `opus[1m]`. */
-const pricedModel = (s: CacheState): string | undefined => s.billedModel ?? (s.priceModel === undefined ? undefined : modelName(s.priceModel))
+const pricedModel = (s: CacheState): string | undefined => s.billedModel ?? (s.namedModel === undefined ? undefined : modelName(s.namedModel))
 
 /** What the bill needs of the model priced and its reads. */
 const pricingOf = (s: CacheState): Pricing => ({ model: pricedModel(s), reads: s.tokens.read })
@@ -328,8 +328,10 @@ const idleMsOf = (s: CacheState, now: number): number | null => {
 /** Whether /model names another model than the last turn took, while there
  *  is a cache to lose. Name against name, as /model gives them, since a name
  *  may be an alias that the API's own name for it would never match. */
-const modelChangedTo = (s: CacheState, modelNow: string | undefined, now: number): boolean =>
-  (s.requests > 0 || isRecalled(s, now)) && modelNow !== undefined && (s.requestModel ?? s.priceModel) !== undefined && modelName(modelNow) !== modelName(s.requestModel ?? s.priceModel ?? '')
+const modelChangedTo = (s: CacheState, modelNow: string | undefined, now: number): boolean => {
+  const named = s.namedAtRequest ?? s.namedModel
+  return (s.requests > 0 || isRecalled(s, now)) && modelNow !== undefined && named !== undefined && modelName(modelNow) !== modelName(named)
+}
 
 /** What ui.render hands the model to show. */
 type Look = Readonly<{ now: number; ledger: number | undefined; contextTokens: number; autoCompactOff: boolean; modelNow?: string | undefined; surface?: RenderSurface }>
@@ -482,7 +484,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   s.compaction = undefined
   s.notCaching = uncached
   s.messageCount = messages ?? s.messageCount
-  s.requestModel = s.priceModel
+  s.namedAtRequest = s.namedModel
   s.windowGuessed = rounds !== 1
   s.model = model ?? s.model
   if (model) s.billedModel = model
@@ -499,7 +501,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
 /** What a session remembers of a turn, for when it is reopened or the band
  *  reloads: when its last reply was sent, the rate its bill solves to, the
  *  model that reply was billed under, and the model /model names. */
-export type Remembered = Readonly<{ lastAt: number; rate: number | null; billed: string | undefined; priceModel: string | undefined }>
+export type Remembered = Readonly<{ lastAt: number; rate: number | null; billed: string | undefined; namedModel: string | undefined }>
 
 /** One session's cache model. Each entry is a hook's facts, in its shape. */
 export type CacheModel = Readonly<{
@@ -509,7 +511,7 @@ export type CacheModel = Readonly<{
    *  /model names, and the ledger. A ledger that has spent nothing is a new
    *  conversation, unless the engine said it resumed one; one that can't be
    *  read says neither, so the band recalls the last reply. */
-  loaded: (o: Readonly<{ priceModel: string | undefined; ledger: number | undefined }>) => void
+  loaded: (o: Readonly<{ namedModel: string | undefined; ledger: number | undefined }>) => void
   /** Whether to recall the last reply: none seen, and the engine said neither
    *  that the conversation starts here nor when its last reply was. */
   wantsRecall: () => boolean
@@ -526,7 +528,7 @@ export type CacheModel = Readonly<{
   /** turn.start of a main-loop turn: the model /model names now, the
    *  ledger, which the conversation's first turn takes as its baseline, and
    *  what started the turn, when the user didn't type it. */
-  turnStarted: (o: Readonly<{ priceModel: string | undefined; ledger: number | undefined; wokenBy?: Waker }>) => void
+  turnStarted: (o: Readonly<{ namedModel: string | undefined; ledger: number | undefined; wokenBy?: Waker }>) => void
   /** turn.step: a response's tokens, sent at `sentAt`; how many tool calls
    *  the API ran itself in it (the advisor), each starting a round whose
    *  tokens the usage sums; the ledger as the hook read it, as the step was
@@ -567,8 +569,8 @@ export const newCache = (kept?: CacheState): CacheModel => {
   const s: CacheState = { ...INITIAL, ...kept }
   return {
     kept: () => ({ ...s }),
-    loaded: ({ priceModel, ledger }) => {
-      s.priceModel = priceModel
+    loaded: ({ namedModel, ledger }) => {
+      s.namedModel = namedModel
       if (s.origin !== 'resumed' && kept === undefined) s.origin = ledger === 0 ? 'fresh' : 'unknown'
     },
     wantsRecall: () => s.requests === 0 && s.origin !== 'fresh' && s.resumedCache === undefined,
@@ -595,9 +597,9 @@ export const newCache = (kept?: CacheState): CacheModel => {
       noteResume(s, cache)
       if (transcript !== undefined) noteTranscript(s, transcript)
     },
-    turnStarted: ({ priceModel, ledger, wokenBy }) => {
+    turnStarted: ({ namedModel, ledger, wokenBy }) => {
       s.turn = { ...s.turn, open: true, waker: wokenBy, measured: false }
-      s.priceModel = priceModel
+      s.namedModel = namedModel
       s.bill = billAtTurnStart(s.bill, ledger)
     },
     responded: (usage, sentAt, isMain, after = {}) => {
@@ -633,14 +635,14 @@ export const newCache = (kept?: CacheState): CacheModel => {
       // A turn that made no request (a limit hit, a lost connection) left the
       // countdown where it was, so what it says stays too.
       if (measured) s.lastWake = waker === undefined ? undefined : { by: waker, reWarm: rebuilt }
-      return { rebuilt, lifetimeSince, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: rememberedRate(s.bill, pricingOf(s), ledger), billed: s.billedModel, priceModel: s.priceModel } }
+      return { rebuilt, lifetimeSince, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: rememberedRate(s.bill, pricingOf(s), ledger), billed: s.billedModel, namedModel: s.namedModel } }
     },
     conversationEnded: (ledger, resumed) => {
       // The billing mode, its TTL and the session's settings carry over;
       // everything measured starts again. The baseline is provisional until
       // the next turn starts and takes the ledger then.
-      const { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turn } = s
-      Object.assign(s, INITIAL, { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turn: { ...NO_TURN, open: turn.open }, bill: billOfNewConversation(ledger), origin: resumed ? 'unknown' : 'fresh' })
+      const { ttl, ttlBasis, subagentTtl, namedModel, billedModel, idleCompactFrom, turn } = s
+      Object.assign(s, INITIAL, { ttl, ttlBasis, subagentTtl, namedModel, billedModel, idleCompactFrom, turn: { ...NO_TURN, open: turn.open }, bill: billOfNewConversation(ledger), origin: resumed ? 'unknown' : 'fresh' })
     },
     view: look => {
       s.bill = billAtRedraw(s.bill, look.ledger)

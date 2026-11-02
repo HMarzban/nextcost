@@ -176,7 +176,7 @@ test('a transcript that cannot be read leaves the lifetime assumed, and the band
 
 const respondedOnce = (ledger: number) => {
   const c = newCache()
-  c.turnStarted({ priceModel: undefined, ledger: 0 })
+  c.turnStarted({ namedModel: undefined, ledger: 0 })
   c.responded({ ...resp(0, 0, 400_000, 0), ...OPUS }, MIN, true, { ledger })
   return c
 }
@@ -203,7 +203,7 @@ test('a read of an hour leaves the rate as billed at 2x', () => {
 test('a read made while the next turn is under way waits for that turn\'s', () => {
   const c = respondedOnce(2)
   c.turnEnded(2)
-  c.turnStarted({ priceModel: undefined, ledger: 2 })
+  c.turnStarted({ namedModel: undefined, ledger: 2 })
   c.wroteFor('5m')
   expect(c.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false }).cache.ttl).toBe('1h')
 })
