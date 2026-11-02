@@ -263,21 +263,24 @@ const INITIAL: Readonly<CacheState> = {
 
 // ---- what the state says ----------------------------------------------------
 
-/** When the conversation's last reply was, before this band's own: as the
- *  engine said on a resume, else as recalled. A time after `now` is a clock
- *  that ran ahead, or data that isn't a time: unknown. */
+/** When the conversation's last reply was, where the cache stands as recalled:
+ *  no reply seen yet, a conversation that didn't start here, and no compaction
+ *  since. As the engine said on a resume, else as recalled. A time after `now`
+ *  is a clock that ran ahead, or data that isn't a time: unknown. */
 const recalledAt = (s: CacheState, now: number): number | undefined => {
+  if (s.requests > 0 || s.knownFresh || s.compaction !== undefined) return undefined
   const at = s.resumedCache?.lastAt ?? s.recall?.lastAt
   return at !== undefined && at <= now ? at : undefined
 }
 
-/** Whether the cache stands as recalled: no reply seen yet, a conversation
- *  that didn't start here, something to recall, and no compaction since. */
-const isRecalled = (s: CacheState, now: number): boolean => s.requests === 0 && !s.knownFresh && s.compaction === undefined && recalledAt(s, now) !== undefined
+const isRecalled = (s: CacheState, now: number): boolean => recalledAt(s, now) !== undefined
 
 /** The TTL the cache stands at: the pin, else one seen on the transcript,
  *  else the one assumed or inferred. */
 const effectiveTtl = (s: CacheState): Ttl => (s.ttlBasis === 'pinned' ? s.ttl : (s.ttlSeen ?? s.ttl))
+
+/** How long the cache lasts, in ms, at the TTL it stands at. */
+const lifetimeOf = (s: CacheState): number => TTL_MS[effectiveTtl(s)]
 
 /** The model the tokens are priced at: the one replies are billed under, else
  *  what /model names, which may be an alias such as `opus[1m]`. */
@@ -296,21 +299,16 @@ const allTokens = (s: CacheState): TokenCounts => (s.prior === undefined ? s.tok
 const reWarmAt = (s: CacheState, rate: number, tokens: number): number =>
   rate * WRITE_MULT[effectiveTtl(s)] * tokens * tierFactor(pricedModel(s), tokens)
 
-/** When a measured cache goes or went cold: a lifetime after the last reply
- *  this band saw; none before one. */
-const measuredColdAt = (s: CacheState): number | null => (s.requests > 0 ? s.lastAt + TTL_MS[effectiveTtl(s)] : null)
-
 /** When the cache goes or went cold: measured from the last reply, else
  *  recalled; null with nothing to go by, or a resume the engine called expired. */
 const coldAtOf = (s: CacheState, now: number): number | null => {
   if (s.compaction !== undefined) return s.compaction.at
   if (s.notCaching) return null
-  const measured = measuredColdAt(s)
   // A reply dated after now cools a lifetime from now at the latest.
-  if (measured !== null) return Math.min(measured, now + TTL_MS[effectiveTtl(s)])
+  if (s.requests > 0) return Math.min(s.lastAt + lifetimeOf(s), now + lifetimeOf(s))
   if (s.resumedCache?.expired === true) return null
-  const recalled = isRecalled(s, now) ? recalledAt(s, now) : undefined
-  return recalled === undefined ? null : recalled + TTL_MS[effectiveTtl(s)]
+  const recalled = recalledAt(s, now)
+  return recalled === undefined ? null : recalled + lifetimeOf(s)
 }
 
 /** The cache's time left: from the last reply this band saw, else the one
@@ -320,15 +318,14 @@ const leftMsOf = (s: CacheState, now: number): number => {
   if (s.compaction !== undefined || s.notCaching) return 0
   if (s.requests === 0 && s.resumedCache?.expired === true) return 0
   const at = coldAtOf(s, now)
-  const lifetime = TTL_MS[effectiveTtl(s)]
-  return at === null ? lifetime : Math.min(lifetime, Math.max(0, at - now))
+  return at === null ? lifetimeOf(s) : Math.max(0, at - now)
 }
 
 /** How long the recalled reply has sat idle at `now`; null unless the
  *  cache stands as recalled. */
 const idleMsOf = (s: CacheState, now: number): number | null => {
   const lastAt = recalledAt(s, now)
-  return isRecalled(s, now) && lastAt !== undefined ? now - lastAt : null
+  return lastAt === undefined ? null : now - lastAt
 }
 
 /** Where Claude Code compacts an idle conversation, of where the band draws:
