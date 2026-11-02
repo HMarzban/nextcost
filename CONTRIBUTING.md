@@ -52,8 +52,8 @@ and lints the tools once.
 It also runs nightly, so a new release that breaks the band shows within a
 day. Red on latest alone means a Claude Code release changed something:
 fix the band or its tests for it, then bump the pin to that release, in
-`ci.yml` and in both READMEs' Install sections, which name the pinned
-version. Red on both means the change itself.
+`ci.yml`, in both READMEs' Install sections and in the site's FAQ
+(`tools/demos/site/template.html`), which name the pinned version. Red on both means the change itself.
 
 To see a change live, add your clone as the marketplace and install from
 it. From the clone's parent folder:

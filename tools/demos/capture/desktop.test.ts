@@ -13,13 +13,20 @@ const LIMITS = [
   { kind: 'seven_day' as const, percentUsed: 70, resetsAt: new Date(3 * 24 * 60 * MIN).toISOString() },
 ]
 
-/** A session that has spent $162 before its last reply, which cost $1.70. */
+/** What a reply costs as Claude Code's ledger prices it on Opus 5.5: $4 per
+ *  million input tokens, a write on the hour's cache at 2× (these captures pin
+ *  CLAUDE_CODE_PROMPT_CACHE_TTL to 1h), a read at 0.05×, output at 5×. The band
+ *  solves its rate from the bill, so a bill priced any other way makes every
+ *  re-warm it draws wrong by the same ratio. */
+const priced = (input: number, read: number, write: number, output: number) => (4 / 1e6) * (input + 2 * write + 0.05 * read + 5 * output)
+
+/** A session that has spent $162 before its last reply, which cost $2.76. */
 async function session($: Engine, on: On) {
   const clock = setup(on, { usage: { ...FRESH, cost: { usd: 162.0 }, rateLimits: LIMITS }, env: { ...HOUR_1, CLAUDE_CODE_PROMPT_CACHE_TTL: '1h' } })
   await $.session.start({ ...START, surface: 'desktop' })
   await $.turn.start({ text: 'hi', turnId: 't1' })
   await respond($, resp(2_000, 0, 336_000, 3_000))
-  usage.current = { ...usage.current, cost: { usd: 163.7 }, context: { tokens: 341_000, window: 1_000_000, percent: 35 }, rateLimits: LIMITS }
+  usage.current = { ...usage.current, cost: { usd: 162.0 + priced(2_000, 0, 336_000, 3_000) }, context: { tokens: 341_000, window: 1_000_000, percent: 35 }, rateLimits: LIMITS }
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
   return { clock, ui: await mountBand($, 'desktop', 94, { maxRows: 13 }) }
 }
@@ -70,11 +77,12 @@ async function state($: Engine, on: On, name: string, shape: Shape) {
     await measure(40); await clock.advance(12 * MIN); await measure(50)
   }
   await $.turn.start({ text: 'hi', turnId: 't1' })
-  await respond($, resp(2_000, 0, Math.max(10_000, tokens - 5_000), 3_000))
+  const write = Math.max(10_000, tokens - 5_000)
+  await respond($, resp(2_000, 0, write, 3_000))
   const ctx = shape.threshold
     ? { ...context, breakdown: breakdown({ autoCompactThreshold: shape.threshold, isAutoCompactEnabled: true }) }
     : context
-  usage.current = { ...usage.current, cost: { usd: 163.7 }, context: ctx, rateLimits: limits(shape.pace ? 50 : shape.five ?? 30) }
+  usage.current = { ...usage.current, cost: { usd: 162.0 + priced(2_000, 0, write, 3_000) }, context: ctx, rateLimits: limits(shape.pace ? 50 : shape.five ?? 30) }
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
   await $.session.measure({ context: ctx, rateLimits: usage.current.rateLimits, cost: usage.current.cost, changed: [] })
   await clock.settle()
@@ -107,8 +115,9 @@ const LIVED: Lived = { firstWrite: 90_000, fiveBefore: [5, 9, 13, 15], five: [16
 /** A session some way in: four days of the weekly limit and the 5-hour
  *  window's first hour in the store, as earlier sessions left them, then
  *  sixteen replies, each priced as Claude Code's ledger prices them: Opus
- *  5.5's $4 input, writes at 1.25×, reads at 0.05×, output at 5×. Settled
- *  just after the last reply; returns the clock. */
+ *  5.5's $4 input, writes at 2× (the hour's cache, which the env below pins),
+ *  reads at 0.05×, output at 5×. Settled just after the last reply; returns
+ *  the clock. */
 async function lived($: Engine, on: On, layout: LayoutName, shape: Lived = LIVED) {
   // Sixteen replies five minutes apart, from 10:00 UTC, with these outputs.
   const OUTS = [4_000, 9_000, 2_500, 14_000, 6_000, 3_000, 22_000, 5_000, 8_000, 2_000, 11_000, 4_500, 16_000, 3_500, 7_000, 9_500]
@@ -134,7 +143,6 @@ async function lived($: Engine, on: On, layout: LayoutName, shape: Lived = LIVED
     now: T0,
   })
   await $.session.start({ ...START, surface: 'desktop' })
-  const RATE = 4 / 1e6
   const [f0, f1] = shape.five
   let usd = 0, context = 0
   for (const [i, out] of OUTS.entries()) {
@@ -143,7 +151,7 @@ async function lived($: Engine, on: On, layout: LayoutName, shape: Lived = LIVED
     usage.current = { ...usage.current, cost: { usd } }
     await $.turn.start({ text: 'hi', turnId: `t${i}` })
     await respond($, resp(2_000, read, write, out))
-    usd += RATE * (2_000 + 1.25 * write + 0.05 * read + 5 * out)
+    usd += priced(2_000, read, write, out)
     context = read + write
     const five = Math.round(f0 + ((f1 - f0) * i) / (N - 1)), seven = 38 + lift + Math.floor((3 * i) / (N - 1))
     const win = { tokens: context, window: 1_000_000, percent: Math.round(context / 10_000) }

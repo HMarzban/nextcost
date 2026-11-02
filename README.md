@@ -44,9 +44,21 @@ the summary.
 
 **Needs** Claude Code with mods (function-hooks plugins), outside WSL, which
 doesn't load plugins. CI tests every change, in the terminal's engine, on
-Claude Code 2.1.299 and the latest release (2.1.316 at 0.21.0). The one-line
-install below needs 2.1.292 or later
+Claude Code 2.1.299 and the latest release (2.1.316 at 0.21.0), so 2.1.299 is
+the oldest version tested. The one-line install below needs 2.1.292 or later
 (`claude --version`); on an older one, use the two steps underneath.
+
+Older than 2.1.299 isn't tested. Known differences there: before 2.1.292, no
+one-line install; before 2.1.290, Claude Code doesn't tell a mod how many tool
+calls Anthropic ran, so for a session that uses the advisor the band's re-warm
+quotes run about 58% high (replayed on real transcripts), which makes 2.1.290
+the floor for an accurate price (idle compaction is also a 2.1.290 feature, so
+older versions never compact an idle session); before 2.1.275,
+`/plugin install` inside a session isn't there.
+
+The desktop app bundles its own Claude Code, so a surface's version can differ
+from the terminal's (2.1.309 against 2.1.316 on one machine here). What counts
+is the version the surface you use runs.
 
 One command, in any terminal:
 
@@ -219,7 +231,8 @@ no build step and over 1,200 tests.
   cells. A reopened session reads what it
   spent from its transcript.
 - **It spends nothing and sends nothing.** It never calls a model, never
-  writes files and never sends anything anywhere. Besides two read-only git commands for
+  writes a file of its own (it keeps its small store through Claude Code) and
+  never sends anything anywhere. Besides two read-only git commands for
   the workspace line, it runs only `grep` and `tail`, to read a
   session's own transcript. The plugin README's
   [What it runs, reads and sends](plugins/nextcost/README.md#what-it-runs-reads-and-sends)
@@ -235,15 +248,23 @@ avoid burning tokens.
 **Is the re-warm price exact?** It's an estimate, always shown with `~`. The
 band solves the per-token rate from the session's own bill, weighing each
 cache write as Claude Code's ledger bills it: 2× base input on the hour's
-cache, 1.25× on five minutes. Until the cache shows its lifetime, the band
-assumes the hour.
+cache, 1.25× on five minutes. Until it has read the cache's lifetime off the
+session's transcript, the band assumes the hour.
 
-**How does it know if my cache lasts 5 minutes or an hour?** It can't read
-your billing, so it assumes an hour and corrects itself to 5 minutes if it
-sees the cache rebuild sooner. On a resumed session, the transcript's last
-cache write says which until the band's first reply. Set
-`CLAUDE_CODE_PROMPT_CACHE_TTL=5m` or `1h`, or `"promptCacheTtl"` in
-settings.json, to remove the guess.
+**Is that what I'll be charged?** No. Every dollar figure is a list-price
+estimate, marked `~` where the band solved it, not an invoice. On a
+subscription it shows how much of your 5-hour and weekly limits a message will
+use compared with a warm one; on an API key it estimates your API bill, and
+your Console's usage page is the real one. The plugin README's
+[What the dollars mean](plugins/nextcost/README.md#what-the-dollars-mean) has
+the table.
+
+**How does it know if my cache lasts 5 minutes or an hour?** Claude Code
+doesn't hand a mod the lifetime of a reply's cache write, so at the end of
+each turn that reached the API the band reads it off the session's own
+transcript, and the countdown runs on it. Until a read succeeds it assumes an
+hour. Set `CLAUDE_CODE_PROMPT_CACHE_TTL=5m` or `1h`, or `"promptCacheTtl"` in
+settings.json, to pin it instead.
 
 **What if Claude Code compacts while I'm away?** In a terminal session on
 the hour's cache, Claude Code compacts a long conversation left idle about
