@@ -5,13 +5,6 @@ import { test, expect } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
 import { BUILD_80K, LONG, MIN, START, TURN_DONE, engine, fact, jsonl, mountBand, pillOf, replyLine, requestLines, resp, respond, setup, shown } from './helpers'
 
-/** A main-loop reply's line that wrote to the cache for `ttl`. */
-const wroteFor = (ms: number, ttl: '5m' | '1h') => {
-  const line = replyLine(ms)
-  const written = { ephemeral_5m_input_tokens: ttl === '5m' ? 80_000 : 0, ephemeral_1h_input_tokens: ttl === '1h' ? 80_000 : 0 }
-  return { ...line, message: { ...line.message, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 80_000, cache_creation: written } } }
-}
-
 /** Past the band's first look for a turn's line. */
 const LOOK = 600
 const HOME = { HOME: '/Users/me' }
@@ -24,7 +17,7 @@ test('on an API key, the first turn counts down five minutes, not an assumed hou
   await $.turn.complete(TURN_DONE)
   // Its line lands about 100ms on, as the real engine's write queue flushes.
   await clock.advance(100)
-  engine.transcript = jsonl(wroteFor(clock.now(), '5m'))
+  engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '5m': 80_000 } }))
   await clock.advance(LOOK)
   const ui = await mountBand($, 'terminal', 110)
   expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/cache [45]:\d\d/)
@@ -39,7 +32,7 @@ test("a turn whose request logged 2 MB of blobs before its reply is still read: 
   await respond($, BUILD_80K)
   await $.turn.complete(TURN_DONE)
   await clock.advance(100)
-  engine.transcript = jsonl(...requestLines(clock.now() - 3_000, 2 * 1024 * 1024), wroteFor(clock.now(), '5m'), ...requestLines(clock.now() + 1, 0))
+  engine.transcript = jsonl(...requestLines(clock.now() - 3_000, 2 * 1024 * 1024), replyLine(clock.now(), { wrote: { '5m': 80_000 } }), ...requestLines(clock.now() + 1, 0))
   await clock.advance(LOOK)
   const ui = await mountBand($, 'terminal', 110)
   expect(shown(pillOf(await ui.drawn(), 'cache'))).toMatch(/cache [45]:\d\d/)
@@ -50,7 +43,7 @@ test('on a subscription, a read hour stops saying it is assumed', LONG, async ($
   const clock = setup(on, { env: HOME })
   await $.session.start(START)
   await respond($, BUILD_80K)
-  engine.transcript = jsonl(wroteFor(clock.now(), '1h'))
+  engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '1h': 80_000 } }))
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
   const ui = await mountBand($, 'terminal', 110)
@@ -63,13 +56,13 @@ test('a subscription moving onto usage credits mid-session counts down five minu
   const clock = setup(on, { env: HOME })
   await $.session.start(START)
   await respond($, BUILD_80K)
-  const first = wroteFor(clock.now(), '1h')
+  const first = replyLine(clock.now(), { wrote: { '1h': 80_000 } })
   engine.transcript = jsonl(first)
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
   await clock.advance(2 * MIN)
   await respond($, resp(1, 80_000, 2_000, 10))
-  engine.transcript = jsonl(first, wroteFor(clock.now(), '5m'))
+  engine.transcript = jsonl(first, replyLine(clock.now(), { wrote: { '5m': 80_000 } }))
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
   const ui = await mountBand($, 'terminal', 110)
@@ -81,7 +74,7 @@ test('a turn whose last step only read still reads the lifetime of its earlier w
   const clock = setup(on, { env: HOME })
   await $.session.start(START)
   await respond($, BUILD_80K)
-  const written = wroteFor(clock.now(), '5m')
+  const written = replyLine(clock.now(), { wrote: { '5m': 80_000 } })
   await clock.advance(MIN)
   await respond($, resp(1, 80_000, 0, 10))
   engine.transcript = jsonl(written)
@@ -97,7 +90,7 @@ test('a turn that wrote nothing runs no read', LONG, async ($, on) => {
   const clock = setup(on, { env: HOME })
   await $.session.start(START)
   await respond($, BUILD_80K)
-  engine.transcript = jsonl(wroteFor(clock.now(), '1h'))
+  engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '1h': 80_000 } }))
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
   await respond($, resp(1, 80_000, 0, 10))
@@ -119,7 +112,7 @@ test('a pin taken away after a read leaves the lifetime assumed again', () => {
 test("a line not yet written isn't taken for this turn's: the band looks again", LONG, async ($, on) => {
   const clock = setup(on, { env: HOME })
   await $.session.start(START)
-  const before = wroteFor(clock.now() - 10 * MIN, '1h')
+  const before = replyLine(clock.now() - 10 * MIN, { wrote: { '1h': 80_000 } })
   engine.transcript = jsonl(before)
   await respond($, BUILD_80K)
   await $.turn.complete(TURN_DONE)
@@ -128,7 +121,7 @@ test("a line not yet written isn't taken for this turn's: the band looks again",
   await ui.press({ key: 'more' })
   expect(fact(await ui.drawn(), 'expires')).toBe('1h idle · assumed')
   await ui.unmount()
-  engine.transcript = jsonl(before, wroteFor(clock.now(), '5m'))
+  engine.transcript = jsonl(before, replyLine(clock.now(), { wrote: { '5m': 80_000 } }))
   await clock.advance(2_000)
   const later = await mountBand($, 'terminal', 110)
   expect(shown(pillOf(await later.drawn(), 'cache'))).toMatch(/cache [45]:\d\d/)
@@ -139,7 +132,7 @@ test('a turn that reached no API reads nothing', LONG, async ($, on) => {
   const clock = setup(on, { env: HOME })
   await $.session.start(START)
   // A line to find, so a read that wrongly ran would tail it.
-  engine.transcript = jsonl(wroteFor(clock.now(), '1h'))
+  engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '1h': 80_000 } }))
   await clock.settle()
   engine.ran.length = 0
   await $.turn.complete(TURN_DONE)
@@ -154,7 +147,7 @@ test('a pinned lifetime reads nothing, and wins', LONG, async ($, on) => {
   await clock.settle()
   engine.ran.length = 0
   await respond($, BUILD_80K)
-  engine.transcript = jsonl(wroteFor(clock.now(), '5m'))
+  engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '5m': 80_000 } }))
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
   expect(engine.ran.filter(argv => argv[0] === 'tail')).toEqual([])
@@ -228,7 +221,7 @@ test('a read carries through a reload', () => {
 const readAnHour = async ($: Parameters<typeof respond>[0], clock: { now: () => number; advance: (ms: number) => Promise<unknown> }) => {
   await $.session.start(START)
   await respond($, resp(2_000, 0, 157_000, 500), { messageCount: 40 })
-  engine.transcript = jsonl(wroteFor(clock.now(), '1h'))
+  engine.transcript = jsonl(replyLine(clock.now(), { wrote: { '1h': 80_000 } }))
   await $.turn.complete(TURN_DONE)
   await clock.advance(LOOK)
 }

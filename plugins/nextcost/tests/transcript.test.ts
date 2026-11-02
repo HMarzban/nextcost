@@ -191,25 +191,17 @@ test("a cost record that splits its writes by lifetime is solved at each's price
 
 // ── the cache's last write ─────────────────────────────────────────────
 
-/** A main-loop reply that wrote `oneHour` tokens to the hour's cache and
- *  `fiveMinutes` to the five minutes'. */
-const wrote = (oneHour: number, fiveMinutes: number, sidechain = false) => ({
-  ...replyLine(1_000),
-  ...(sidechain ? { isSidechain: true } : {}),
-  message: { role: 'assistant', model: 'claude-opus-5-5', content: [], usage: { cache_creation: { ephemeral_1h_input_tokens: oneHour, ephemeral_5m_input_tokens: fiveMinutes } } },
-})
-
 test("the cache's last write says its TTL: an hour if it wrote any for an hour, else five minutes", () => {
-  expect(lastWriteTtl(jsonl(wrote(100, 0)))).toBe('1h')
-  expect(lastWriteTtl(jsonl(wrote(100, 50)))).toBe('1h')
-  expect(lastWriteTtl(jsonl(wrote(0, 50)))).toBe('5m')
+  expect(lastWriteTtl(jsonl(replyLine(1_000, { wrote: { '1h': 100 } })))).toBe('1h')
+  expect(lastWriteTtl(jsonl(replyLine(1_000, { wrote: { '1h': 100, '5m': 50 } })))).toBe('1h')
+  expect(lastWriteTtl(jsonl(replyLine(1_000, { wrote: { '5m': 50 } })))).toBe('5m')
   // The last write that wrote anything is the one read.
-  expect(lastWriteTtl(jsonl(wrote(100, 0), wrote(0, 50)))).toBe('5m')
-  expect(lastWriteTtl(jsonl(wrote(0, 50), wrote(0, 0)))).toBe('5m')
+  expect(lastWriteTtl(jsonl(replyLine(1_000, { wrote: { '1h': 100 } }), replyLine(1_000, { wrote: { '5m': 50 } })))).toBe('5m')
+  expect(lastWriteTtl(jsonl(replyLine(1_000, { wrote: { '5m': 50 } }), replyLine(1_000, { wrote: { '5m': 0, '1h': 0 } })))).toBe('5m')
 })
 
 test("a subagent's write says nothing of the main loop's cache, and no write is no TTL", () => {
-  expect(lastWriteTtl(jsonl(wrote(0, 50), wrote(100, 0, true)))).toBe('5m')
+  expect(lastWriteTtl(jsonl(replyLine(1_000, { wrote: { '5m': 50 } }), { ...replyLine(1_000, { wrote: { '1h': 100 } }), isSidechain: true }))).toBe('5m')
   expect(lastWriteTtl(jsonl(replyLine(1_000), promptLine(2_000)))).toBeUndefined()
   expect(lastWriteTtl('')).toBeUndefined()
 })
@@ -217,7 +209,7 @@ test("a subagent's write says nothing of the main loop's cache, and no write is 
 // ── a transcript with the request's blobs in it ─────────────────────────
 
 test("a request's megabyte blobs, an assistant's among them, are not replies: the reply, its model, its write and the rate read past them", () => {
-  const reply = { ...replyLine(2_000), message: { ...replyLine(2_000).message, usage: { cache_creation: { ephemeral_1h_input_tokens: 100, ephemeral_5m_input_tokens: 0 } } } }
+  const reply = replyLine(2_000, { wrote: { '1h': 100 } })
   const transcript = jsonl(promptLine(1_000), ...requestLines(1_500, 2 * 1024 * 1024), reply, { type: 'last-prompt', lastPrompt: 'hi' }, ...requestLines(9_000, 2 * 1024 * 1024), costRecord('claude-opus-5-5'))
   expect(transcript.length).toBeGreaterThan(4 * 1024 * 1024)
   expect(lastRequestAt(transcript)).toBe(1_000)
@@ -279,7 +271,7 @@ test('each reply logged after the record and before the cut adds its tokens, pri
 test("a reply's hour-long cache write is priced at 2×, by the split its usage logs", () => {
   // The record solves to $20 over 3M weighted tokens (its writes unsplit, at
   // 1.25×); 4,000 tokens written for an hour weigh 8,000: $0.0533.
-  const hour = { ...billed(1_000, 'm1', 0), message: { ...billed(1_000, 'm1', 0).message, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 4_000, cache_creation: { ephemeral_1h_input_tokens: 4_000, ephemeral_5m_input_tokens: 0 } } } }
+  const hour = replyLine(1_000, { wrote: { '1h': 4_000 } })
   const spend = transcriptSpend(jsonl({ ...costRecord('claude-opus-5-5'), sessionId: 's1' }, hour), 's1', Infinity)
   expect(spend?.tokens).toEqual({ ...RECORD_TOKENS, written: 404_000, writtenHour: 4_000 })
   expect(Math.abs((spend?.usd ?? 0) - (20 + 8_000 / 150_000))).toBeLessThan(1e-9)

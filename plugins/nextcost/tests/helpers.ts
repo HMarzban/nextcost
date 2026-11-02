@@ -723,13 +723,21 @@ const NO_USAGE = {
 let replies = 0
 /** A main-loop reply's line, logged at `ms`, billed under Opus 5.5, as the
  *  engine writes one (2.1.316): its message has an `id`, one to a reply, and
- *  a `usage`, here billing nothing. Each call is a reply of its own. */
-export const replyLine = (ms: number) => ({
-  type: 'assistant',
-  isSidechain: false,
-  timestamp: new Date(ms).toISOString(),
-  message: { id: `msg_${++replies}`, role: 'assistant', model: 'claude-opus-5-5', content: [], usage: NO_USAGE },
-})
+ *  a `usage`, billing nothing unless `usage` names counts. `wrote` is what the
+ *  reply wrote to the cache for each lifetime, with its split as engines since
+ *  2.1.310 log it; it sets the usage's cache writes, over `usage`'s. Each call
+ *  is a reply of its own. */
+export const replyLine = (ms: number, over: { wrote?: { '5m'?: number; '1h'?: number }; usage?: Partial<typeof NO_USAGE> } = {}) => {
+  const five = over.wrote?.['5m'] ?? 0
+  const hour = over.wrote?.['1h'] ?? 0
+  const written = over.wrote === undefined ? {} : { cache_creation_input_tokens: five + hour, cache_creation: { ephemeral_5m_input_tokens: five, ephemeral_1h_input_tokens: hour } }
+  return {
+    type: 'assistant',
+    isSidechain: false,
+    timestamp: new Date(ms).toISOString(),
+    message: { id: `msg_${++replies}`, role: 'assistant', model: 'claude-opus-5-5', content: [], usage: { ...NO_USAGE, ...over.usage, ...written } },
+  }
+}
 /** The lines the engine logs as it sends a request, before the reply's: its
  *  shape, its messages as blobs (one of `blobBytes`, an assistant's, as the
  *  engine logs a long history in whole: up to 2 MB), then the request. */
