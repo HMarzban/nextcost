@@ -4,10 +4,10 @@
 // words with the phrasebook's primitives, so the board says what every
 // layout says, in its own voice.
 
-import type { CacheFacts } from './cache'
+import type { CacheFacts } from './cache-facts'
 import type { ContextFacts, Frame, LimitFacts, LimitKey, SpendFacts, Tone } from './facts'
 import { boardSpan, etaMinutes, fillTime, fmtClock, fmtDayClock, fmtEta } from './format'
-import { AMBER_LEAD, EMPTY, compactsIn, saidJoined } from './words'
+import { AMBER_LEAD, EMPTY, PRICE_COVERS, UNKNOWN, compactsIn, saidJoined } from './words'
 import type { CacheWords, ContextWords, LimitWords, SpendWords } from './words'
 
 export type BoardKey = 'cache' | 'spend' | 'context' | '5h' | '7d' | 'other'
@@ -34,8 +34,6 @@ export type BoardRow = Readonly<{
   /** The reading's own alt, in words, never capitals or ↻. */
   alt: string
 }>
-/** After the price in REMARKS: what the price covers. Clipped first as the column narrows. */
-const PRICE_COVERS = ' · CACHE REWRITE, NOT YOUR REPLY'
 /** What the board says for a reset: the flap face has no ↻. */
 const BOARD_RESET = 'RESET'
 export type Board = Readonly<{
@@ -58,19 +56,22 @@ const boardEta = (ms: number): string => (etaMinutes(ms) < 60 ? `~${etaMinutes(m
 /** REMARKS after a turn the user didn't type, widest first: what it did and
  *  every remark; who and the `price` alone; what it did; who. */
 const wokenForms = (c: CacheWords, remarks: string, price: string): Pick<BoardRow, 'woken'> => {
-  if (c.wakeRow === undefined || c.wakeShort === undefined) return {}
-  const long = `${c.wakeRow.label} ${c.wakeRow.value}`
-  return { woken: [saidJoined([long, remarks], ' · '), saidJoined([c.wakeShort, price], ' · '), long, c.wakeShort] }
+  if (c.woken === undefined) return {}
+  const { row, short } = c.woken
+  const long = `${row.label} ${row.value}`
+  return { woken: [saidJoined([long, remarks], ' · '), saidJoined([short, price], ' · '), long, short] }
 }
 
 const cacheBoard = (r: BoardFacts): BoardRow => {
   const c = r.cache
   const zone = r.frame.zone
   /** The cache's line; `price`, the part of its remarks a waker keeps beside
-   *  it. A price says what it covers in REMARKS alone, never in what a waker
-   *  leads, so the waker's own words are what a narrow column drops last. */
-  const at = (cell: Omit<BoardRow, 'key' | 'item' | 'alt' | 'woken'>, price = cell.remarks, covers = ''): BoardRow =>
-    ({ key: 'cache', item: 'CACHE', alt: c.alt, ...cell, remarks: `${cell.remarks}${covers}`, ...wokenForms(c, cell.remarks, price) })
+   *  it, its remarks all where none is named. A named price says what it
+   *  covers in REMARKS alone, last, so a narrowing column clips that first;
+   *  never in what a waker leads, so the waker's own words are what it drops
+   *  last. */
+  const at = (cell: Omit<BoardRow, 'key' | 'item' | 'alt' | 'woken'>, price?: string): BoardRow =>
+    ({ key: 'cache', item: 'CACHE', alt: c.alt, ...cell, remarks: price === undefined ? cell.remarks : `${cell.remarks} · ${PRICE_COVERS}`, ...wokenForms(c, cell.remarks, price ?? cell.remarks) })
   /** A row with no time to show: its status alone, in every column. */
   const statusOnly = (status: string): BoardRow => at({ status, time: undefined, remarks: '', cell: status, cellShort: status, tone: 'calm' })
   const reWarm = `RE-WARM ${c.estimate}`
@@ -79,7 +80,7 @@ const cacheBoard = (r: BoardFacts): BoardRow => {
   const clock = c.coldAt === null || zone === undefined ? undefined : `${c.measured ? '' : '~'}${fmtClock(c.coldAt, zone)}`
   /** A cache gone: when it went, where the clock is known, and what the next message costs. */
   const gone = (status: string, remarks: string): BoardRow =>
-    at({ status, time: clock, remarks, cell: clock === undefined ? `${status} · ${remarks}` : `${status} ${clock} · ${remarks}`, cellShort: remarks, tone: 'calm' }, remarks, PRICE_COVERS)
+    at({ status, time: clock, remarks, cell: clock === undefined ? `${status} · ${remarks}` : `${status} ${clock} · ${remarks}`, cellShort: remarks, tone: 'calm' }, remarks)
   if (c.mood === 'compacted') return gone('COMPACTED', `NEXT ${c.estimate}`)
   if (c.mood === 'cold') return gone('DEPARTED', reWarm)
   if (c.mood === 'switched') return at({ status: 'MODEL CHANGED', time: undefined, remarks: `NEXT ${c.estimate}`, cell: `MODEL CHANGED · NEXT ${c.estimate}`, cellShort: `NEXT ${c.estimate}`, tone: 'calm' })
@@ -88,12 +89,12 @@ const cacheBoard = (r: BoardFacts): BoardRow => {
   if (c.tone === 'amber') {
     const secs = boardSpan(left)
     // The mark leads the status and the cell, so plain, which has no hue, still tells it from the calm last call.
-    return at({ status: `${AMBER_LEAD}LAST CALL`, time: secs, remarks: reWarm, cell: `${AMBER_LEAD}LAST CALL ${secs}`, cellShort: `${AMBER_LEAD}${secs}`, tone: 'amber' }, reWarm, PRICE_COVERS)
+    return at({ status: `${AMBER_LEAD}LAST CALL`, time: secs, remarks: reWarm, cell: `${AMBER_LEAD}LAST CALL ${secs}`, cellShort: `${AMBER_LEAD}${secs}`, tone: 'amber' }, reWarm)
   }
   const status = c.lastCall ? 'LAST CALL' : 'DEPARTS'
   const countdown = `IN ${boardSpan(left)}`
   const time = clock ?? countdown
-  return at({ status, time, remarks: `${clock === undefined ? '' : `${countdown} · `}${reWarm} IF MISSED`, cell: `${status} ${time}`, cellShort: time, tone: 'calm' }, reWarm, PRICE_COVERS)
+  return at({ status, time, remarks: `${clock === undefined ? '' : `${countdown} · `}${reWarm} IF MISSED`, cell: `${status} ${time}`, cellShort: time, tone: 'calm' }, reWarm)
 }
 
 const spendBoard = (r: BoardFacts): BoardRow => ({
@@ -125,14 +126,13 @@ const limitBoard = (r: BoardFacts, l: LimitFacts & LimitWords): BoardRow => {
   const time = l.resetInMs === undefined ? undefined : zone === undefined ? `IN ${boardSpan(l.resetInMs)}` : fmtDayClock(now + l.resetInMs, zone, now)
   // A measured fill says when it fills, past the warning line too, as every
   // layout's amber words do; amber without one, that it is near.
-  const byPace = l.key === '5h' && l.tone === 'amber' && l.etaMs !== null
-  const amber = l.tone !== 'amber' ? undefined : byPace && l.etaMs !== null ? `${AMBER_LEAD}${zone === undefined ? `FULL IN ${boardEta(l.etaMs)}` : `FULL ~${fmtClock(fillTime(now + l.etaMs, l.etaMs, zone), zone)}`}` : `${AMBER_LEAD}NEAR LIMIT`
+  const amber = l.tone !== 'amber' ? undefined : l.etaMs !== null ? `${AMBER_LEAD}${zone === undefined ? `FULL IN ${boardEta(l.etaMs)}` : `FULL ~${fmtClock(fillTime(now + l.etaMs, l.etaMs, zone), zone)}`}` : `${AMBER_LEAD}NEAR LIMIT`
   const calm = l.fillText ?? l.pace
   const tail = (amber ?? calm) === '' ? '' : ` ${amber ?? calm}`
   return {
     key: l.key, item, status: amber ?? l.valueText, time,
     // Amber from the pace, STATUS says the fill, so REMARKS doesn't again.
-    remarks: amber === undefined ? calm : saidJoined([l.valueText, byPace ? undefined : calm], ' · '),
+    remarks: amber === undefined ? calm : saidJoined([l.valueText, l.etaMs !== null ? undefined : calm], ' · '),
     cell: `${l.valueText}${time === undefined ? '' : ` ${BOARD_RESET} ${time}`}${tail}`, cellShort: amber === undefined ? l.valueText : `${AMBER_LEAD}${l.valueText}`, cellNoReset: `${l.valueText}${tail}`,
     tone: l.tone, alt: l.alt,
   }
@@ -165,6 +165,6 @@ export const BOARD_TITLE = 'DEPARTURES'
 /** What leads the time now, at the header's right: `NOW 20:36`. */
 export const BOARD_NOW = 'NOW'
 /** What TIME says, in plain text, on a line that has none. */
-export const BOARD_NO_TIME = '–'
+export const BOARD_NO_TIME = UNKNOWN
 /** The alt of a rule between the board's lines. */
 export const BOARD_RULE_ALT = 'a rule between the board\'s lines'

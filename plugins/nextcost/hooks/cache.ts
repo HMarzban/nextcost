@@ -10,7 +10,6 @@ import { MINUTE_MS } from './format'
 import { NO_TOKENS, WRITE_MULT, addTokens, modelName, readMultiplier, tierFactor } from './prices'
 import type { TokenCounts, Ttl } from './prices'
 
-export type { CacheFacts } from './cache-facts'
 export const TTL_MS: Readonly<Record<Ttl, number>> = { '5m': 5 * MINUTE_MS, '1h': 60 * MINUTE_MS }
 
 // A response that read this much less than the cache held, both in tokens and

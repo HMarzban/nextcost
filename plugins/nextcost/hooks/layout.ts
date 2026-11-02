@@ -104,7 +104,7 @@ export const clipToTiles = (text: string, tiles: number): string => {
   return `${headIn([...text], tiles - 1).join('')}…`
 }
 
-export const isList = (n: RenderChildren): n is readonly RenderChildren[] => Array.isArray(n)
+const isList = (n: RenderChildren): n is readonly RenderChildren[] => Array.isArray(n)
 
 /** Whether a child draws anything: null, undefined and false draw nothing. */
 export const isDrawn = (child: unknown): boolean => child !== null && child !== undefined && child !== false
@@ -146,6 +146,10 @@ export const cellsOf = (n: RenderChildren, m: Measure): number => {
       return 0
   }
 }
+
+/** The first of `forms`, longest first, that `fits`, else the last: a row's
+ *  value or remark says all it has room for, and never leaves itself out. */
+export const longestThatFits = (forms: readonly string[], fits: (form: string) => boolean): string => forms.find(fits) ?? forms.at(-1) ?? ''
 
 /** The columns a piece takes in its row: from its first, up to its end. */
 export type Span = readonly [start: number, end: number]

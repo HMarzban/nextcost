@@ -204,7 +204,7 @@ const STATES: ReadonlyArray<readonly [string, Partial<BandSnapshot>]> = [
   ['all amber', { ...EXPIRING, ...NEAR, fiveHour: { ...limitAt(88, 3), etaMs: null }, sevenDay: limitAt(85, 67) }],
   ['all amber, filling', { ...EXPIRING, ...NEAR, fiveHour: { ...limitAt(88, 3), etaMs: 20 * 60_000 }, sevenDay: limitAt(85, 67) }],
   ['all amber, no zone', { ...EXPIRING, ...NEAR, fiveHour: { ...limitAt(88, 3), etaMs: null }, sevenDay: limitAt(85, 67), zone: undefined }],
-  ['all amber, compaction off', { ...EXPIRING, context: { tokens: 180_000, window: 200_000, percent: 90, compactAt: undefined, autoCompactOff: true }, fiveHour: { ...limitAt(88, 3), etaMs: null }, sevenDay: limitAt(85, 67) }],
+  ['all amber, compaction off', { ...EXPIRING, context: { tokens: 180_000, window: 200_000, percent: 90, compactAt: undefined }, fiveHour: { ...limitAt(88, 3), etaMs: null }, sevenDay: limitAt(85, 67) }],
   ['calm, a large spend', { costUsd: 1234.56 }],
   ['all amber, other limits', { ...EXPIRING, ...NEAR, fiveHour: { ...limitAt(88, 3), etaMs: null }, sevenDay: limitAt(85, 67), otherLimits: [{ kind: 'spend_limit', percentUsed: 92, resetsAt: undefined }] }],
 ]

@@ -37,7 +37,7 @@ export const SNAP_PARTS: SnapshotParts = {
   now: 0,
   mount: { surface: 'terminal', columns: 120, maxRows: 13, isWorking: false },
   expanded: false,
-  band: { palette: DARK, layout: 'chips', glyphs: 'unicode', samples: [], workspace: undefined, compactAt: 190_000, autoCompactOff: false },
+  band: { palette: DARK, layout: 'chips', glyphs: 'unicode', samples: [], workspace: undefined, compactAt: 190_000 },
   cache: {
     requests: 1, leftMs: 52 * MIN, coldAt: null, ttl: '1h', ttlKnown: true, window: 155_000, hitRatio: 0.96, misses: 0, reWarmUsd: 1.66,
     savedUsd: 11.4, readShare: 0.05, fresh: true, idleCompacts: false, recalled: false, idleMs: null, recovered: false, tokens: { sent: 18_000, back: 9_000, cached: 198_000 },
@@ -78,7 +78,7 @@ export const COLD_CACHE = cacheWith({ leftMs: 0 })
 export const LAST_MINUTE_CACHE = cacheWith({ leftMs: 30_000, ttl: '5m' })
 
 /** 180k of a 200k window with compaction at 190k: 95% of the way, ~10k left, amber. */
-export const NEAR_COMPACTION: BandSnapshot['context'] = { tokens: 180_000, window: 200_000, percent: 90, compactAt: 190_000, autoCompactOff: false }
+export const NEAR_COMPACTION: BandSnapshot['context'] = { tokens: 180_000, window: 200_000, percent: 90, compactAt: 190_000 }
 
 /** A window `pct` used, resetting `h` hours after `now`. */
 export const limitAt = (pct: number, h: number, now = 0): LimitUse => ({ percentUsed: pct, resetsAt: now + h * HOUR })

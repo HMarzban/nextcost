@@ -34,6 +34,7 @@ An audit of what the band shows, against the real engine and 1,383 real transcri
 - Idle compaction is expected on the desktop and in VS Code too, as Claude Code's docs say. A recalled countdown runs from the request, not the end of its reply. A fork reads its spend after its first turn, since its file is empty before.
 - A week's or an hour's cell no longer holds a rise from several slices as if measured. A plan with no 5-hour limit records its history. A 5-hour forecast hides once its time has passed or its reading is stale, and a clock time rounds as its forecast does. A limit's amber and its shown percent agree: `80%` is amber.
 - A fresh session reads where compaction runs at its start, so its percent doesn't jump, and past that point the toast says `Auto-compaction is due.`
+- With a config directory, the band finds a session's transcript at the path Claude Code names, not the default folder.
 - A time after now, a VM's or a stored one, no longer counts down `277286786h`. Missing or negative figures no longer draw `NaN` or `$-3.00`. A control character in a folder's name no longer blanks the band, and bidi characters are shown as `?`.
 - Git no longer runs when Claude Code exits (only on `/clear` and a resume), runs one read at a time, and a truncated status counts as unknown.
 

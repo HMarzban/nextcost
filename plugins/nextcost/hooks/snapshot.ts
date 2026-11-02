@@ -80,8 +80,6 @@ export type BandSnapshot = Readonly<{
     percent: number | undefined
     /** Where auto-compaction runs, when it is on. */
     compactAt: number | undefined
-    /** Auto-compaction is off, as the engine said; false while unknown. */
-    autoCompactOff: boolean
   }>
   fiveHour: (LimitUse & { etaMs: number | null }) | undefined
   sevenDay: LimitUse | undefined
@@ -117,7 +115,7 @@ export type SnapshotParts = Readonly<{
   now: number
   mount: Pick<BandSnapshot, 'surface' | 'columns' | 'maxRows' | 'isWorking'>
   expanded: boolean
-  band: Pick<BandSnapshot, 'palette' | 'layout' | 'glyphs' | 'samples' | 'workspace'> & Pick<BandSnapshot['context'], 'compactAt' | 'autoCompactOff'>
+  band: Pick<BandSnapshot, 'palette' | 'layout' | 'glyphs' | 'samples' | 'workspace'> & Pick<BandSnapshot['context'], 'compactAt'>
   cache: CacheView
   costUsd: number
   history: Trails
@@ -148,7 +146,6 @@ export const snapshotOf = (p: SnapshotParts): BandSnapshot => {
       window: usage.context.window,
       percent: usage.context.percent,
       compactAt: band.compactAt,
-      autoCompactOff: band.autoCompactOff,
     },
     fiveHour: five ? { percentUsed: five.percentUsed, resetsAt: five.resetsAt, etaMs: p.etaMs } : undefined,
     sevenDay: seven ? { percentUsed: seven.percentUsed, resetsAt: seven.resetsAt } : undefined,

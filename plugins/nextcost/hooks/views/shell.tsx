@@ -8,21 +8,12 @@ import type { RenderChildren, RenderElement } from 'claude-code'
 import type { SplitPart } from '../charts'
 import type { Icon } from '../icons'
 import type { Kit } from '../kit'
-import { CARD_TEXT, DESKTOP, cellsOf } from '../layout'
+import { CARD_TEXT, DESKTOP, cellsOf, longestThatFits } from '../layout'
 import type { LimitKey, Tone } from '../facts'
 import type { Readings } from '../reading'
 import type { Palette } from '../palette'
 import { CARD_TITLES } from '../words'
-import type { Role, Say } from '../words'
-
-/** Each role's ink: text on the card ground. */
-export const ROLE_INK: Readonly<Record<Role, Exclude<keyof Palette, 'filled'>>> = {
-  label: 'label',
-  value: 'value',
-  amber: 'amberFg',
-  accent5: 'fiveText',
-  accent7: 'weekText',
-}
+import type { Say } from '../words'
 
 /** The cards, in the order they are drawn. */
 export const CARD_NAMES = ['cache', 'spend', 'context', 'limits'] as const
@@ -128,9 +119,8 @@ export const cardLine = (kit: Kit, count: number): CardLine => {
 }
 
 /** A label and its value at either end of a line; `swatch` keys a legend
- *  in its part's colour and fill. A phrase's figures are in the card's
- *  value ink, its other words in their roles'. */
-export const factRow = (kit: Kit, label: string, value: string | Say, swatch?: SplitPart): RenderElement => {
+ *  in its part's colour and fill. */
+export const factRow = (kit: Kit, label: string, value: string, swatch?: SplitPart): RenderElement => {
   const { Box, Text, palette } = kit
   return (
     <Box key={`fact:${label}`} flexDirection="row" justifyContent="space-between" columnGap={2}>
@@ -138,24 +128,29 @@ export const factRow = (kit: Kit, label: string, value: string | Say, swatch?: S
         {swatch === undefined ? null : <Text key="sw" color={swatch.color}>{`${swatch.mark} `}</Text>}
         {label}
       </Text>
-      <Text color={palette.cardValue}>
-        {typeof value === 'string'
-          ? value
-          : value.map(([text, role], i) => (
-              <Text key={String(i)} color={role === 'value' ? palette.cardValue : palette[ROLE_INK[role]]}>
-                {text}
-              </Text>
-            ))}
-      </Text>
+      <Text color={palette.cardValue}>{value}</Text>
     </Box>
   )
+}
+
+/** A line of words in a label's ink, cut to its row. */
+export const clippedNote = (kit: Kit, key: string, text: string): RenderElement => {
+  const { Box, palette, oneLine } = kit
+  return <Box key={key}>{oneLine({ color: palette.label }, text)}</Box>
 }
 
 /** The longest of `forms` that fits `room` columns, else the shortest: a
  *  value that says what it covers where its row has room, so a row never
  *  wraps for it. */
 export const fitForm = (kit: Kit, forms: readonly string[], room: number): string =>
-  forms.find(form => cellsOf(form, kit.measure) <= room) ?? forms.at(-1) ?? ''
+  longestThatFits(forms, form => cellsOf(form, kit.measure) <= room)
+
+/** The room a fact's value has in `inner` columns beside its label, two columns apart. */
+export const factRoom = (kit: Kit, label: string, inner: number): number => inner - cellsOf(label, kit.measure) - 2
+
+/** The cache's re-warm estimate as a fact, saying as much of what it covers as `inner` columns hold. */
+export const estimateRow = (kit: Kit, cache: Readings['cache'], inner: number): RenderElement =>
+  factRow(kit, cache.estimateLabel, fitForm(kit, cache.estimateForms, factRoom(kit, cache.estimateLabel, inner)))
 
 /** A headline: bold on its figure alone, its words in label ink, or
  *  amber's; amber words make the figure amber too. */
@@ -179,7 +174,7 @@ export const headline = (kit: Kit, say: Say, tone: Tone): RenderElement => {
 }
 
 /** A card's title: on the desktop its mark, then its name. */
-export const cardTitle = (kit: Kit, name: CardName): RenderElement => {
+const cardTitle = (kit: Kit, name: CardName): RenderElement => {
   const { Box, Text, Svg, palette, icon } = kit
   const [mark, ink] = CARD_ICONS[name]
   return (
@@ -195,6 +190,14 @@ export const cardTitle = (kit: Kit, name: CardName): RenderElement => {
  *  phrase that may not fit is measured first, since the line would cut it. */
 export const headHolds = (kit: Kit, name: CardName, say: Say, tone: Tone, inner: number): boolean =>
   cellsOf(cardTitle(kit, name), kit.measure) + 1 + cellsOf(headline(kit, say, tone), kit.measure) <= inner
+
+/** A card's headline with each of `tails` after it that its card of `inner`
+ *  columns still holds whole, in their order. */
+export const headWithTails = (kit: Kit, name: CardName, head: Say, tails: ReadonlyArray<Say | undefined>, tone: Tone, inner: number): Say =>
+  tails.reduce<Say>((say, tail) => {
+    const longer = tail === undefined ? undefined : [...say, ...tail]
+    return longer !== undefined && headHolds(kit, name, longer, tone, inner) ? longer : say
+  }, head)
 
 type CardSpec = Readonly<{
   /** The card's key, `card:cache`. */

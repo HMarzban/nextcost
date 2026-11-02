@@ -25,7 +25,6 @@ export type ContextFill = Readonly<{
   tone: Tone
   /** The tokens in context, as the engine reported them; undefined when it didn't. */
   tokens: number | undefined
-  autoCompactOff: boolean
   window: number
 }>
 

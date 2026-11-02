@@ -6,13 +6,13 @@ import { meter, splitBar } from '../charts'
 import type { SplitPart } from '../charts'
 import type { Tone } from '../facts'
 import type { Kit } from '../kit'
-import { cellsOf, textCells } from '../layout'
+import { textCells } from '../layout'
 import type { BarSize } from '../layout'
 import type { LimitReading, Readings } from '../reading'
 import type { BandActions } from '../snapshot'
 import { SINCE_LOADED, SPLIT_LABELS, type Say } from '../words'
 import { bodyRowsFor, footer, topStrip } from './frame'
-import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, factRow, fitForm, headHolds, headline, limitAccent, linesOf } from './shell'
+import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, clippedNote, estimateRow, factRow, headWithTails, headline, limitAccent, linesOf } from './shell'
 import type { CardName } from './shell'
 
 const SPLIT_ALT = `token split: ${SPLIT_LABELS.join(', ')}`
@@ -107,13 +107,10 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
   const ahead = (cache.cardNote === undefined ? 0 : 1) + (cache.known ? 1 : 0)
   const assumed = cache.lifetimeAssumed
   const tails = [
-    assumed && fit.bodyRows <= ahead ? cache.assumedHead : undefined,
-    cache.wakeHead !== undefined && fit.bodyRows <= ahead + (assumed ? 1 : 0) ? cache.wakeHead : undefined,
+    fit.bodyRows <= ahead ? cache.assumedHead : undefined,
+    fit.bodyRows <= ahead + (assumed ? 1 : 0) ? cache.woken?.head : undefined,
   ]
-  const head = tails.reduce<Say>((say, tail) => {
-    const longer = tail === undefined ? undefined : [...say, ...tail]
-    return longer !== undefined && headHolds(kit, 'cache', longer, cache.tone, fit.inner) ? longer : say
-  }, cache.cardHead)
+  const head = headWithTails(kit, 'cache', cache.cardHead, tails, cache.tone, fit.inner)
   // A guessed lifetime outranks every row that may be cut: it sits right
   // after the price. A known one is the card's last row.
   const expires = factRow(kit, 'expires', cache.lastsText)
@@ -125,9 +122,9 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
     cache.known ? meter(kit, { label: 'cache', frac: cache.charge, tone: cache.tone, accent: kit.palette.warm, size: fit.bar, stretch: true, reads: 'left' }) : null,
     [
       cache.cardNote === undefined ? null : wrappedNote(kit, cache.cardNote),
-      cache.known ? factRow(kit, cache.estimateLabel, fitForm(kit, cache.estimateForms, fit.inner - cellsOf(cache.estimateLabel, kit.measure) - 2)) : null,
+      cache.known ? estimateRow(kit, cache, fit.inner) : null,
       assumed ? expires : null,
-      cache.wakeRow === undefined ? null : factRow(kit, cache.wakeRow.label, cache.wakeRow.value),
+      cache.woken === undefined ? null : factRow(kit, cache.woken.row.label, cache.woken.row.value),
       knownRow(kit, 'idle for', cache.idleText),
       // The counts below start where the band loaded: said above the first of them, never below.
       cache.sinceLoaded && (cache.rebuildsText ?? cache.savedText ?? cache.hitText) !== undefined ? sinceNote(kit) : null,
@@ -179,7 +176,7 @@ const leadRow = (kit: Kit, worst: LimitReading | undefined): RenderChildren => {
   const { Box, Text, palette, oneLine } = kit
   const { pace, resetWhen: when } = worst
   // Its pace alone needs no label: the phrase says it is one.
-  if (when === undefined) return pace === '' ? null : <Box key="fact:pace">{oneLine({ color: palette.label }, pace)}</Box>
+  if (when === undefined) return pace === '' ? null : clippedNote(kit, 'fact:pace', pace)
   return (
     <Box key="fact:resets" flexDirection="row" justifyContent="space-between" columnGap={2}>
       <Text color={palette.label}>resets</Text>
@@ -197,7 +194,7 @@ const leadRow = (kit: Kit, worst: LimitReading | undefined): RenderChildren => {
  *  its reset and pace in words, `5h resets 4h 55m`, which the lead row says
  *  for the worst. */
 const limitRows = (kit: Kit, fit: Fit, worst: LimitReading | undefined, w: LimitReading): readonly [RenderChildren, RenderChildren] => {
-  const { Box, Text, palette, measure, onTone, oneLine } = kit
+  const { Box, Text, palette, measure, onTone } = kit
   const { name, frac, tone } = w
   if (w.passed) return [factRow(kit, name, 'reset'), null]
   const value = w.valueMarked
@@ -213,15 +210,8 @@ const limitRows = (kit: Kit, fit: Fit, worst: LimitReading | undefined, w: Limit
       <Text color={onTone(tone, palette.cardValue)}>{value}</Text>
     </Box>,
     // Named, so beneath another window's headline it reads as its own.
-    w === worst || reset === undefined ? null : <Box key={`fact:${name} pace`}>{oneLine({ color: palette.label }, `${name} ${reset}`)}</Box>,
+    w === worst || reset === undefined ? null : clippedNote(kit, `fact:${name} pace`, `${name} ${reset}`),
   ]
-}
-
-/** Limits' last row: that the windows are as of the last reply, and how long
- *  ago. Null while none is still to reset. */
-const asOfRow = (kit: Kit, read: Readings): RenderChildren => {
-  const { Box, palette, oneLine } = kit
-  return read.asOf === undefined ? null : <Box key="fact:as of">{oneLine({ color: palette.label }, read.asOf)}</Box>
 }
 
 /** The lead row, then every window's rows; short of rows, each window's bar
@@ -234,7 +224,7 @@ const limitLines = (kit: Kit, read: Readings, fit: Fit): RenderChildren[] => {
   const rows = read.limits.map(w => limitRows(kit, fit, worst, w))
   const lines = rows.flat().filter(part => part !== null)
   const room = fit.bodyRows - (lead === null ? 0 : 1)
-  const asOf = asOfRow(kit, read)
+  const asOf = read.asOf === undefined ? null : clippedNote(kit, 'fact:as of', read.asOf)
   if (lines.length <= room) return [lead, ...lines, asOf]
   const bars = rows.map(([bar]) => bar)
   const worstAt = lead === null ? read.limits.findIndex(w => w === worst) : -1

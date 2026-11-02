@@ -144,7 +144,7 @@ test("a subagent's request is no turn of the main loop's: it sets no wake", () =
 
 test("chips' hover says who re-warmed the cache, and its words are the card's", () => {
   const r = readingsOf(snapOf({ cache: cacheWith({ wake: { by: 'task', reWarm: true } }) }))
-  expect(r.cache.wakeRow).toEqual({ label: 're-warmed by', value: 'background task' })
+  expect(r.cache.woken?.row).toEqual({ label: 're-warmed by', value: 'background task' })
   expect(r.chips.cache.hover).toMatch(/; a background task re-warmed it$/)
   const kept = readingsOf(snapOf({ cache: cacheWith({ wake: { by: 'session', reWarm: false } }) }))
   expect(kept.chips.cache.hover).toMatch(/; a message kept it warm$/)
@@ -153,7 +153,7 @@ test("chips' hover says who re-warmed the cache, and its words are the card's", 
 test('once the cache has gone cold again, the card and hover say only whose turn was last', () => {
   const r = readingsOf(snapOf({ cache: cacheWith({ leftMs: 0, wake: { by: 'session', reWarm: false } }) }))
   expect(r.cache.mood).toBe('cold')
-  expect(r.cache.wakeRow).toEqual({ label: 'last turn by', value: 'message' })
+  expect(r.cache.woken?.row).toEqual({ label: 'last turn by', value: 'message' })
   expect(r.chips.cache.hover).toMatch(/; last turn by a message$/)
 })
 

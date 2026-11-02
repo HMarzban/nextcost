@@ -317,14 +317,14 @@ test('a desktop whose element table holds no Svg still lifts its cards', () => {
   const { Box, Text, Button } = fakeEl
   const kit = makeKit({ Box, Text, Button } as unknown as ElementTable, snapOf({ surface: 'desktop' }))
   // The fake element table keeps `hover` among the props.
-  expect((kit.liftedCard('what it cost') as Node).props).toMatchObject({ position: 'absolute', display: 'none', hover: { display: 'flex' } })
+  expect((kit.explains('cost', 'what it cost').card as Node).props).toMatchObject({ position: 'absolute', display: 'none', hover: { display: 'flex' } })
 })
 
 test('the desktop draws no card after its row, and a text surface lifts none', () => {
   const desktop = kitOf({ surface: 'desktop' })
   const terminal = kitOf({ surface: 'terminal' })
   expect(desktop.hoverCard('cost', 'what it cost', { left: 0, room: 40, pieces: [] })).toBeNull()
-  expect(terminal.liftedCard('what it cost')).toBeNull()
+  expect(terminal.explains('cost', 'what it cost').card).toBeNull()
 })
 
 // The desktop lifts a card into a popover above its piece only where the card
