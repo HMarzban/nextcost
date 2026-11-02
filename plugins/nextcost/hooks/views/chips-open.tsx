@@ -117,7 +117,7 @@ const cacheCard = (kit: Kit, read: Readings, fit: Fit): RenderElement => {
       cache.wakeRow === undefined ? null : factRow(kit, cache.wakeRow.label, cache.wakeRow.value),
       knownRow(kit, 'idle for', cache.idleText),
       knownRow(kit, 'unexpected rebuilds', cache.rebuildsText),
-      knownRow(kit, 'saved by cache', cache.savedText),
+      knownRow(kit, 'saved on cache reads', cache.savedText),
       knownRow(kit, 'hit rate', cache.hitText),
       factRow(kit, 'expires', cache.lastsText),
     ],

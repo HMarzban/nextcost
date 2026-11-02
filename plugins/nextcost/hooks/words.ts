@@ -135,7 +135,7 @@ export type CacheWords = Readonly<{
   /** How long a recalled cache sat idle, `2h 05m`; undefined unless recalled. */
   idleText: string | undefined
   /** Who started the last turn, when the user didn't: `re-warmed by
-   *  background task`, or within the TTL `kept warm by another session`;
+   *  background task`, or within the TTL `kept warm by message`;
    *  once the cache has gone again, `last turn by background task`. */
   wakeRow: Fact | undefined
   /** Who alone, in the fewest words that stay true: `by background task`;
@@ -330,7 +330,8 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
 const WAKER_WORDS: Readonly<Record<Waker, Readonly<{ noun: string; subject: string }>>> = {
   task: { noun: 'background task', subject: 'a background task' },
   schedule: { noun: 'schedule', subject: 'a schedule' },
-  session: { noun: 'another session', subject: 'another session' },
+  // A peer's message, which may come from a subagent as well as another session: the band can't always tell.
+  session: { noun: 'message', subject: 'a message' },
   channel: { noun: 'channel message', subject: 'a channel message' },
   plugin: { noun: 'plugin', subject: 'a plugin' },
   claude: { noun: 'Claude Code', subject: 'Claude Code' },
@@ -340,7 +341,7 @@ const WAKER_WORDS: Readonly<Record<Waker, Readonly<{ noun: string; subject: stri
 const goneMoods: ReadonlySet<CacheFacts['mood']> = new Set(['cold', 'compacted'])
 
 /** A turn the user didn't type, as a hover says it: `a background task
- *  re-warmed it`, `another session kept it warm`; the cache gone since,
+ *  re-warmed it`, `a message kept it warm`; the cache gone since,
  *  `last turn by a background task`. */
 export const wakeSaid = (wake: Wake, mood: CacheFacts['mood']): string => {
   const { subject } = WAKER_WORDS[wake.by]

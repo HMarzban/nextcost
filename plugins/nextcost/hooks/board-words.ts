@@ -81,7 +81,8 @@ const cacheBoard = (r: BoardFacts): BoardRow => {
   const left = c.coldInMs ?? 0
   if (c.tone === 'amber') {
     const secs = boardSpan(left)
-    return at({ status: 'LAST CALL', time: secs, remarks: reWarm, cell: `LAST CALL ${secs}`, cellShort: `${AMBER_LEAD}${secs}`, tone: 'amber' })
+    // The mark leads the status and the cell, so plain, which has no hue, still tells it from the calm last call.
+    return at({ status: `${AMBER_LEAD}LAST CALL`, time: secs, remarks: reWarm, cell: `${AMBER_LEAD}LAST CALL ${secs}`, cellShort: `${AMBER_LEAD}${secs}`, tone: 'amber' })
   }
   const status = c.lastCall ? 'LAST CALL' : 'DEPARTS'
   const countdown = `IN ${boardSpan(left)}`

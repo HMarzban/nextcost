@@ -92,7 +92,7 @@ for (const surface of ['desktop', 'terminal'] as const)
   test(`${surface}: an amber reading's cell in amber, LAST CALL and its time, its ITEM still its own`, () => {
     const row = rowOf({ surface, ...EXPIRING })
     const r = boardRow({ surface, ...EXPIRING }, 'cache')
-    expect(r?.cell).toMatch(/^LAST CALL /)
+    expect(r?.cell).toMatch(/^! LAST CALL /)
     expect(inked(surface, moduleOf(row, 'cache'))).toEqual(want(surface, [['CACHE', DARK.flapItemCache], [r?.cell, DARK.flapAmber]]))
     // A calm reading beside it keeps the white.
     const spend = boardRow({ surface, ...EXPIRING }, 'spend')
@@ -143,7 +143,7 @@ test('plain: no ground and no padding anywhere on the row, and modules at least 
 test('the ascii tier: modules in ascii alone, a real space between them', () => {
   const row = rowOf({ surface: 'terminal', glyphs: 'ascii', ...EXPIRING })
   expect(shown(row)).toMatch(ASCII_TIER)
-  expect(drawnText(row)).toMatch(/CACHE\s*LAST CALL \S+ SPEND/)
+  expect(drawnText(row)).toMatch(/CACHE\s*! LAST CALL \S+ SPEND/)
 })
 
 // ---- give-way --------------------------------------------------------------

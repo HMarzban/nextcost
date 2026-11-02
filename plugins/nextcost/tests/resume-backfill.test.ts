@@ -624,7 +624,7 @@ const figures = async ($: Engine) => {
     output: fact(tree, 'output'),
     reads: fact(tree, 'cache reads'),
     hit: fact(tree, 'hit rate'),
-    saved: fact(tree, 'saved by cache'),
+    saved: fact(tree, 'saved on cache reads'),
     rebuilds: fact(tree, 'rebuilds'),
     spend: shown(cardOf(tree, 'spend')),
     cost: shown(pillOf(shut, 'cost')),
