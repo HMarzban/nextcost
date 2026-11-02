@@ -27,7 +27,6 @@ type UnreadWrites = Readonly<{ tokens: number; told: number; untold: number }>
  *  what its reads weigh in the step's own read share, off the books or on, and
  *  its writes not yet read. */
 type ModelBook = Readonly<{
-  model: string | undefined
   usd: number
   weight: number
   untold: number
@@ -112,7 +111,7 @@ export const weighResponse = (usage: Response, rounds: number, ttl: Ttl): Readon
   return { request, factor, weighted: factor * weightedTokens(request, usage.model) }
 }
 
-/** Which book a step on `model` goes in. */
+/** Which book a step on `model` goes in. A key reads as the model it names. */
 const bookKey = (model: string | undefined): string => (model === undefined ? '' : baseModel(model))
 
 /** A response on its model's book, every response's, a subagent's included,
@@ -128,7 +127,7 @@ export const bookResponse = (
   const offBookUsd = b.offBookUsd + (standing === 'offBook' ? step.usd : 0)
   if (weighted <= 0) return { ...b, offBookUsd }
   const key = bookKey(step.model ?? step.priced)
-  const was = b.books[key] ?? { model: step.model ?? step.priced, usd: 0, weight: 0, untold: 0, tieredReads: 0, ownReads: 0, unread: NO_UNREAD_WRITES }
+  const was = b.books[key] ?? { usd: 0, weight: 0, untold: 0, tieredReads: 0, ownReads: 0, unread: NO_UNREAD_WRITES }
   const tiered = factor * request.written
   const writes = was.unread[ttl]
   return {
@@ -267,7 +266,7 @@ export const savedUsdOf = (b: Bill, priced: Pricing, sessionCost: number | undef
   const priorSaved = rate === null ? 0 : rate * (1 - share) * priorReads
   if (sessionCost === undefined || wholeBillSpeaks(b, priced)) return rate === null ? null : rate * (1 - share) * Object.values(b.books).reduce((sum, book) => sum + book.tieredReads, 0) + priorSaved
   const leftOver = leftOverRate(b, sessionCost)
-  const books = Object.values(b.books).map(book => ({ rate: toldRate(book) ?? leftOver, saved: (1 - readMultiplier(book.model)) * book.tieredReads }))
+  const books = Object.entries(b.books).map(([key, book]) => ({ rate: toldRate(book) ?? leftOver, saved: (1 - readMultiplier(key)) * book.tieredReads }))
   if (rate === null && books.every(book => book.rate === null)) return null
   return books.reduce((sum, book) => sum + (book.rate ?? 0) * book.saved, priorSaved)
 }
