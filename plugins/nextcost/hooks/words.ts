@@ -31,10 +31,9 @@ import type { ContextFacts, Frame, LimitFacts, SpendFacts, Tone } from './facts'
 import { lastCostOf, warmAverageOf } from './insights'
 import type { CostEntry, Trails } from './insights'
 
-/** The colour a piece of a phrase is drawn in. */
-export type Role = 'label' | 'value' | 'amber' | 'accent5' | 'accent7'
-/** A phrase in pre-coloured segments, as `words()` draws it: a view places it, never slices it. */
-export type Say = ReadonlyArray<readonly [string, Role]>
+/** A card's headline in pre-coloured segments, as `headline` draws it: a view
+ *  places it, never slices it. */
+export type Say = ReadonlyArray<readonly [string, 'label' | 'value' | 'amber']>
 /** An amber reading's words: long while a calm piece remains to give way, then short. */
 export type Amber = Readonly<{ long: string; short: string }>
 /** Whether the cache's lifetime is a guess: the hour, or five minutes as
@@ -68,8 +67,6 @@ export const UNKNOWN = '–'
 /** What leads an amber reading: its mark, then its words. */
 export const AMBER_LEAD = '! '
 
-/** A phrase's segments as one plain string. */
-const joined = (say: Say): string => say.map(([text]) => text).join('')
 /** The phrases said, the missing and the empty left out. */
 const said = (parts: ReadonlyArray<string | undefined>): string[] => parts.filter((p): p is string => p !== undefined && p !== '')
 /** The phrases said, joined by `sep`. */
@@ -84,25 +81,17 @@ export const compactsIn = (toCompact: number): string => `compacts in ${roomOf(t
 /** When Claude Code may compact a conversation idle on the hour's cache. */
 export const IDLE_COMPACT_AT = `at ~${fmtAgo(IDLE_COMPACT_MS)} idle, before it goes cold`
 
-const amberOf = (say: Say, sayShort: Say): Amber => ({ long: joined(say), short: joined(sayShort) })
-/** The context's amber lead and fill, long and short: `! context 93%`, `! ctx 93%`. */
-const contextFill = (frac: number): Say => [[`${AMBER_LEAD}context `, 'amber'], [fmtPct(frac), 'value']]
-const contextFillShort = (frac: number): Say => [[`${AMBER_LEAD}ctx `, 'amber'], [fmtPct(frac), 'value']]
-
 /** What an amber reading says, long and short, always led by one
  *  `AMBER_LEAD`. */
 export const AMBER = {
-  cache: (leftShort: string, estimate: string): Amber =>
-    amberOf([[AMBER_LEAD, 'amber'], [leftShort, 'value'], [` left · re-warm ${estimate}`, 'amber']], [[AMBER_LEAD, 'amber'], [leftShort, 'value']]),
-  context: (frac: number, toCompact: number): Amber =>
-    amberOf([...contextFill(frac), [` · ${compactsIn(toCompact)}`, 'amber']], contextFillShort(frac)),
-  contextNoCompaction: (frac: number): Amber => amberOf(contextFill(frac), contextFillShort(frac)),
+  cache: (leftShort: string, estimate: string): Amber => ({ long: `${AMBER_LEAD}${leftShort} left · re-warm ${estimate}`, short: `${AMBER_LEAD}${leftShort}` }),
+  context: (frac: number, toCompact: number): Amber => ({ long: `${AMBER_LEAD}context ${fmtPct(frac)} · ${compactsIn(toCompact)}`, short: `${AMBER_LEAD}ctx ${fmtPct(frac)}` }),
+  contextNoCompaction: (frac: number): Amber => ({ long: `${AMBER_LEAD}context ${fmtPct(frac)}`, short: `${AMBER_LEAD}ctx ${fmtPct(frac)}` }),
   limit: (name: string, percentUsed: number): Amber => {
-    const both: Say = [[`${AMBER_LEAD}${name} `, 'amber'], [fmtPercent(percentUsed), 'value']]
-    return amberOf(both, both)
+    const both = `${AMBER_LEAD}${name} ${fmtPercent(percentUsed)}`
+    return { long: both, short: both }
   },
-  limitPace: (name: string, eta: string): Amber =>
-    amberOf([[`${AMBER_LEAD}${name} full in `, 'amber'], [eta, 'value']], [[`${AMBER_LEAD}${name} full `, 'amber'], [eta, 'value']]),
+  limitPace: (name: string, eta: string): Amber => ({ long: `${AMBER_LEAD}${name} full in ${eta}`, short: `${AMBER_LEAD}${name} full ${eta}` }),
 } as const
 
 export const EMPTY = {
@@ -265,7 +254,6 @@ export type LimitWords = Readonly<{
   resetWhen: string | undefined
   /** `5h 4%`, or once its window has passed, `5h reset`. */
   text: string
-  say: Say
   /** `~10% at avg pace`, `full in ~40m`, `full at avg pace`, or empty. */
   pace: string
   /** When it fills before its reset, measured or at the average's pace, as
@@ -275,7 +263,7 @@ export type LimitWords = Readonly<{
   /** Pulse's row tile's name: `5h`. */
   bandName: string
   /** Pulse's limits card's line for another window: its amber words, else
-   *  `say` as plain text, its name among them. */
+   *  `text`, its name among them. */
   line: string
   /** A measured fill, `~40m`. */
   fullIn: string | undefined
@@ -297,8 +285,7 @@ export type LimitWords = Readonly<{
 
 /** What one mood of the cache says: its figure after `cache ` long and
  *  short, its card's headline and note, a reader's words, and its amber. */
-type MoodWords = Pick<CacheWords, 'figureShort' | 'amber' | 'cardHead' | 'cardNote' | 'estimateLabel' | 'alt'> &
-  Readonly<{ figure: Say }>
+type MoodWords = Pick<CacheWords, 'figure' | 'figureShort' | 'amber' | 'cardHead' | 'cardNote' | 'estimateLabel' | 'alt'>
 
 /** Each mood's name for a reader, unchanged as the cache counts down: the
  *  heartbeat's alt, and where a mood says no more, a card's and chips'. */
@@ -323,7 +310,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
   switch (f.mood) {
     case 'unmeasured':
       return {
-        figure: [[UNKNOWN, 'value']],
+        figure: UNKNOWN,
         figureShort: UNKNOWN,
         amber: undefined,
         cardHead: [['not measured yet', 'value']],
@@ -333,7 +320,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
       }
     case 'warming':
       return {
-        figure: [['warming', 'value']],
+        figure: 'warming',
         figureShort: 'warming',
         amber: undefined,
         cardHead: [['warming', 'value']],
@@ -343,7 +330,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
       }
     case 'compacted':
       return {
-        figure: [['compacted', 'value'], [' · next ', 'label'], [f.estimate, 'value']],
+        figure: `compacted · next ${f.estimate}`,
         figureShort: goneShort('compacted', f.estimate),
         amber: undefined,
         cardHead: [['compacted', 'value']],
@@ -353,7 +340,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
       }
     case 'uncached':
       return {
-        figure: [['not caching', 'value']],
+        figure: 'not caching',
         figureShort: 'no cache',
         amber: undefined,
         cardHead: [['not caching', 'value']],
@@ -363,7 +350,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
       }
     case 'switched':
       return {
-        figure: [['model changed', 'value'], [' · next ', 'label'], [f.estimate, 'value']],
+        figure: `model changed · next ${f.estimate}`,
         figureShort: `new model ${f.estimate}`,
         amber: undefined,
         cardHead: [['model changed', 'value']],
@@ -373,7 +360,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
       }
     case 'cold':
       return {
-        figure: [['cold', 'value'], [' · re-warm ', 'label'], [f.estimate, 'value']],
+        figure: `cold · re-warm ${f.estimate}`,
         figureShort: goneShort('cold', f.estimate),
         amber: undefined,
         cardHead: [['cold', 'value']],
@@ -387,7 +374,7 @@ const moodWords = (f: CacheFacts, left: string, leftShort: string, price: string
       const expiring = f.mood === 'expiring'
       const value = f.coldInMs !== undefined ? left : f.mood
       return {
-        figure: [[value, 'value']],
+        figure: value,
         figureShort: f.coldInMs !== undefined ? leftShort : value,
         amber: expiring ? AMBER.cache(leftShort, f.estimate) : undefined,
         // The card counts down as chips' row always has: `1h 05m`, `0:47`.
@@ -470,7 +457,7 @@ export const cacheWords = (f: CacheFacts): CacheWords => {
     estimateForms: estimateForms(f.estimate),
     alt: m.alt,
     // The time marked ~ while it is recalled.
-    figure: recalledTime ? `~${left}` : joined(m.figure),
+    figure: recalledTime ? `~${left}` : m.figure,
     figureShort: recalledTime ? `~${leftShort}` : m.figureShort,
   }
 }
@@ -536,7 +523,7 @@ export const limitWords = (f: LimitFacts, frame: Frame): LimitWords => {
   const landing = lands ? `about ${Math.round(projected)} percent at its reset, ${AVERAGE_PACE_SPOKEN}` : undefined
   const fullIn = f.etaMs !== null ? fmtEta(f.etaMs) : undefined
   const valueText = f.passed ? 'reset' : f.value
-  const say: Say = [[`${f.name} `, 'label'], [valueText, 'value']]
+  const text = `${f.name} ${valueText}`
   const resetAt = f.resetInMs === undefined ? undefined : frame.now + f.resetInMs
   const resetClock = resetAt !== undefined && zone !== undefined ? fmtDayClock(resetAt, zone, frame.now) : undefined
   const pace = paceText(f)
@@ -557,13 +544,12 @@ export const limitWords = (f: LimitFacts, frame: Frame): LimitWords => {
     valueMarked: `${f.value}${severityMark(f.frac)}`,
     resetAndPace: span === undefined ? undefined : saidJoined([`resets ${span}`, pace], ' · '),
     resetWhen,
-    text: joined(say),
-    say,
+    text,
     pace,
     // The average's fill says whose it is; a measured one is the pace's own.
     fillText: fillAt === undefined ? undefined : `full ${fillAt}${f.etaMs === null ? ` ${AVERAGE_PACE}` : ''}`,
     bandName: f.name,
-    line: amber?.long ?? joined(say),
+    line: amber?.long ?? text,
     fullIn,
     fullShort: fullIn === undefined ? undefined : `full ${fullIn}`,
     amber,

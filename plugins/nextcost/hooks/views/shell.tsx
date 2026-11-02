@@ -13,16 +13,7 @@ import type { LimitKey, Tone } from '../facts'
 import type { Readings } from '../reading'
 import type { Palette } from '../palette'
 import { CARD_TITLES } from '../words'
-import type { Role, Say } from '../words'
-
-/** Each role's ink: text on the card ground. */
-export const ROLE_INK: Readonly<Record<Role, Exclude<keyof Palette, 'filled'>>> = {
-  label: 'label',
-  value: 'value',
-  amber: 'amberFg',
-  accent5: 'fiveText',
-  accent7: 'weekText',
-}
+import type { Say } from '../words'
 
 /** The cards, in the order they are drawn. */
 export const CARD_NAMES = ['cache', 'spend', 'context', 'limits'] as const
@@ -128,9 +119,8 @@ export const cardLine = (kit: Kit, count: number): CardLine => {
 }
 
 /** A label and its value at either end of a line; `swatch` keys a legend
- *  in its part's colour and fill. A phrase's figures are in the card's
- *  value ink, its other words in their roles'. */
-export const factRow = (kit: Kit, label: string, value: string | Say, swatch?: SplitPart): RenderElement => {
+ *  in its part's colour and fill. */
+export const factRow = (kit: Kit, label: string, value: string, swatch?: SplitPart): RenderElement => {
   const { Box, Text, palette } = kit
   return (
     <Box key={`fact:${label}`} flexDirection="row" justifyContent="space-between" columnGap={2}>
@@ -138,15 +128,7 @@ export const factRow = (kit: Kit, label: string, value: string | Say, swatch?: S
         {swatch === undefined ? null : <Text key="sw" color={swatch.color}>{`${swatch.mark} `}</Text>}
         {label}
       </Text>
-      <Text color={palette.cardValue}>
-        {typeof value === 'string'
-          ? value
-          : value.map(([text, role], i) => (
-              <Text key={String(i)} color={role === 'value' ? palette.cardValue : palette[ROLE_INK[role]]}>
-                {text}
-              </Text>
-            ))}
-      </Text>
+      <Text color={palette.cardValue}>{value}</Text>
     </Box>
   )
 }
