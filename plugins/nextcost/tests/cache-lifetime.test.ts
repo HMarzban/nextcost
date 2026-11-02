@@ -138,10 +138,13 @@ test("a line not yet written isn't taken for this turn's: the band looks again",
 test('a turn that reached no API reads nothing', LONG, async ($, on) => {
   const clock = setup(on, { env: HOME })
   await $.session.start(START)
+  // A line to find, so a read that wrongly ran would tail it.
+  engine.transcript = jsonl(wroteFor(clock.now(), '1h'))
   await clock.settle()
   engine.ran.length = 0
   await $.turn.complete(TURN_DONE)
-  await clock.settle()
+  // Past the first wait: the read is scheduled on a timer, not run in the hook.
+  await clock.advance(LOOK)
   expect(engine.ran.filter(argv => argv[0] === 'tail')).toEqual([])
 })
 
