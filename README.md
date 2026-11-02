@@ -28,11 +28,12 @@ While Claude Code's prompt cache is warm, each message re-reads the
 conversation on Anthropic's side at a fraction of the input price: 0.05× on
 Opus 5.5 and Sonnet 5.5. Step away longer than the cache lasts (5 minutes or
 an hour after the last request) and your next message writes the whole
-conversation to the cache again, at 1.25× as Claude Code's ledger counts it.
-That makes the context part ~25× the warm read on Opus 5.5 and Sonnet 5.5
-(~50× on Fable 5.1, ~12.5× on Haiku 5.5); output and new input cost the
-same either way. On Opus 5.5, 300k tokens of context is ~$1.50 to write
-against ~$0.06 to read.
+conversation to the cache again, at 2× base input on the hour's cache and
+1.25× on five minutes. On the hour, that makes the context part ~40× the warm
+read on Opus 5.5 and Sonnet 5.5 (~80× on Fable 5.1, ~20× on Haiku 5.5); on
+five minutes, ~25× (~50× on Fable 5.1, ~12.5× on Haiku 5.5). Output and new
+input cost the same either way. On Opus 5.5, on the hour, 300k tokens of
+context is ~$2.40 to write against ~$0.06 to read.
 
 **nextcost** shows the countdown and the price, and keeps your
 spend and limits in view while you work. When Claude Code compacts an idle
@@ -201,7 +202,7 @@ no build step and over 1,100 tests.
   counts. Each kind of token is a fixed multiple of input:
 
   ```
-  cost = rate × (uncached + 1.25 × written + read share × read + 5 × output)
+  cost = rate × (uncached + 1.25 × written for 5m + 2 × written for 1h + read share × read + 5 × output)
   ```
 
   where read share is the cache-read multiple: 0.1, or 0.05 on Opus 5.5 and
@@ -209,8 +210,9 @@ no build step and over 1,100 tests.
   5× every price on a prompt over 100k tokens, so the band weighs each
   request at its own tier.
 
-  A re-warm is then the whole context written to the cache again, or the
-  summary after a compaction.
+  A re-warm is then the whole context written to the cache again, at 2× on
+  the hour's cache and 1.25× on five minutes, or the summary after a
+  compaction.
 - **It remembers across sessions:** the layout you chose, when each session
   last had a reply and the model it was billed under, the rate it solved
   for each model, and a week of 5-hour and weekly readings for pulse's day
@@ -230,10 +232,11 @@ no build step and over 1,100 tests.
 sending a message to keep the cache warm. That would mean burning tokens to
 avoid burning tokens.
 
-**Is the re-warm price exact?** It's an estimate, always shown with `~`. It
-uses Claude Code's own ledger, which prices every cache write at 1.25×.
-Anthropic bills a 1-hour cache write at 2×, so per-token API users on a
-1-hour cache may pay up to 1.6× the estimate.
+**Is the re-warm price exact?** It's an estimate, always shown with `~`. The
+band solves the per-token rate from the session's own bill, weighing each
+cache write as Claude Code's ledger bills it: 2× base input on the hour's
+cache, 1.25× on five minutes. Until the cache shows its lifetime, the band
+assumes the hour.
 
 **How does it know if my cache lasts 5 minutes or an hour?** It can't read
 your billing, so it assumes an hour and corrects itself to 5 minutes if it
