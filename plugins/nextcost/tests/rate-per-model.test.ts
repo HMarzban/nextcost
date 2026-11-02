@@ -166,7 +166,7 @@ test('/clear starts the books again: the conversation after it solves from its o
   const end = turns(s, HAIKU, 2, { at: HOUR, prefix: 20_000 })
   const { reWarmUsd, window } = s.look(end.at)
   expect(near(reWarmUsd, trueReWarm(HAIKU, window), 0.0005)).toBe(true)
-  expect(Object.keys(s.c.kept().books)).toEqual([HAIKU])
+  expect(Object.keys(s.c.kept().bill.books)).toEqual([HAIKU])
 })
 
 test("a resumed conversation's earlier spend stays out of the books; its reads count in what was saved", () => {

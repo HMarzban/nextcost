@@ -2,7 +2,8 @@
 // reply has been seen, recalled before that, and one rule between the two.
 
 import { test, expect } from 'claude-code/testing'
-import { cacheFactsOf, newCache } from '../hooks/cache'
+import { newCache } from '../hooks/cache'
+import { cacheFactsOf } from '../hooks/cache-facts'
 import type { CacheModel } from '../hooks/cache'
 import { BUILD_155K, MIN } from './helpers'
 

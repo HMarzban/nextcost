@@ -1,14 +1,16 @@
-// The prompt cache, as the band models it from each response's token counts,
-// and what it means for the band: its mood, its charge, its last call. One
-// model per session, made at session.start and fed each hook's facts in that
-// hook's own shape; the order they must be applied in is kept here.
+// The prompt cache, as the band models it from each response's token counts.
+// One model per session, made at session.start and fed each hook's facts in
+// that hook's own shape; the order they must be applied in is kept here. What
+// it was billed is cache-bill.ts's, and what its view means, cache-facts.ts's.
 
-import type { ModelUsage, RenderSurface } from 'claude-code'
-import type { Tone } from './facts'
-import { LAST_CALL_MS, MINUTE_MS, SOON_MS, fmtEstimate, fmtTokens } from './format'
-import { NO_TOKENS, WRITE_MULT, addTokens, baseModel, modelName, readMultiplier, tierFactor, weightedTokens } from './prices'
+import type { RenderSurface } from 'claude-code'
+import { NO_BILL, billAtRedraw, billAtStep, billAtTurnStart, billOfNewConversation, bookResponse, ratePerToken, rememberedRate, savedUsdOf, spentUsd, weighResponse, writesReadAs } from './cache-bill'
+import type { Bill, Pricing, Response } from './cache-bill'
+import { MINUTE_MS } from './format'
+import { NO_TOKENS, WRITE_MULT, addTokens, modelName, readMultiplier, tierFactor } from './prices'
 import type { TokenCounts, Ttl } from './prices'
 
+export type { CacheFacts } from './cache-facts'
 export type { Ttl }
 export const TTL_MS: Readonly<Record<Ttl, number>> = { '5m': 5 * MINUTE_MS, '1h': 60 * MINUTE_MS }
 
@@ -135,31 +137,6 @@ export type CacheView = Readonly<{
   wake: Wake | undefined
 }>
 
-/** Where a step stands on the rate's books. Told: the ledger told its bill.
- *  Untold: no read of the ledger told it, so it takes what the bill leaves over.
- *  Off the books: a server-side tool loop's bill holds a tool round the usage
- *  never shows, so neither its dollars nor its weight go in. */
-type Standing = 'told' | 'untold' | 'offBook'
-
-/** A model's main-loop writes since the lifetime was last read, at one lifetime
- *  they were weighed at: their tokens, and what they weigh with their price
- *  tier, as they stand on the book. A read that says otherwise moves them. */
-type UnreadWrites = Readonly<{ tokens: number; told: number; untold: number }>
-
-/** One model's own bill: what its told steps cost by the ledger and what they
- *  weigh, what its untold steps weigh, its reads at the lower tier's prices,
- *  what its reads weigh in the step's own read share, off the books or on, and
- *  its writes not yet read. */
-type ModelBook = Readonly<{
-  model: string | undefined
-  usd: number
-  weight: number
-  untold: number
-  tieredReads: number
-  ownReads: number
-  unread: Readonly<Record<Ttl, UnreadWrites>>
-}>
-
 /** A cache model's facts, plain data, for a reload to carry on from. */
 export type CacheState = {
   ttl: Ttl
@@ -194,19 +171,8 @@ export type CacheState = {
   requests: number
   /** Every token since the conversation began, subagents included. */
   tokens: TokenCounts
-  /** What steps with a server-side tool loop (the advisor) were billed: the
-   *  tool's own round is billed but never in the usage, so the rate is solved
-   *  without them. It also holds what the ledger grew by outside any step: a
-   *  compaction's request raises no step, and has no tokens here. */
-  offBookUsd: number
-  /** The ledger as the last step or turn start read it, from which a step's
-   *  bill is told; undefined after a step it couldn't be read at, whose bill
-   *  no later step should take. A redraw's read leaves it, so it never hides
-   *  a step's. */
-  ledgerSeen: number | undefined
-  /** Each model's own bill, by its base name: the one ledger of what the
-   *  steps weigh. Only with two can the session's bill not speak for one. */
-  books: Readonly<Record<string, ModelBook>>
+  /** What the session has been billed, and by which model's steps. */
+  bill: Bill
   /** Requests that missed a cache that should have been warm. */
   misses: number
   /** When the last main-loop request was sent. */
@@ -234,11 +200,6 @@ export type CacheState = {
   /** Since the turn's end last read it, a main-loop request rebuilt a cache
    *  that existed. */
   lastRebuilt: boolean
-  /** The ledger when this conversation's first turn began, so spend from
-   *  before it (a /clear, a resume, a reload) can't inflate the rate the
-   *  re-warm price is solved from. */
-  costBase: number
-  baselined: boolean
   /** The conversation is known to start here (a new session, a /clear), so
    *  its cache is warming; after a reload mid-conversation it is unmeasured. */
   knownFresh: boolean
@@ -266,8 +227,6 @@ export type CacheState = {
   billedModel: string | undefined
 }
 
-const NO_UNREAD_WRITES: ModelBook['unread'] = { '5m': { tokens: 0, told: 0, untold: 0 }, '1h': { tokens: 0, told: 0, untold: 0 } }
-
 const INITIAL: Readonly<CacheState> = {
   ttl: '1h',
   ttlPinned: false,
@@ -282,9 +241,7 @@ const INITIAL: Readonly<CacheState> = {
   lastWake: undefined,
   requests: 0,
   tokens: NO_TOKENS,
-  offBookUsd: 0,
-  ledgerSeen: undefined,
-  books: {},
+  bill: NO_BILL,
   misses: 0,
   lastAt: 0,
   window: 0,
@@ -296,8 +253,6 @@ const INITIAL: Readonly<CacheState> = {
   messageCount: undefined,
   model: undefined,
   lastRebuilt: false,
-  costBase: 0,
-  baselined: false,
   knownFresh: false,
   resumed: false,
   resumedCache: undefined,
@@ -331,113 +286,12 @@ const effectiveTtl = (s: CacheState): Ttl => (s.ttlPinned ? s.ttl : (s.ttlSeen ?
  *  what /model names, which may be an alias such as `opus[1m]`. */
 const pricedModel = (s: CacheState): string | undefined => s.billedModel ?? (s.priceModel === undefined ? undefined : modelName(s.priceModel))
 
-/** What the session has cost, to show: the ledger, or for a resumed
- *  conversation the larger of the ledger and its transcript's total, with
- *  the ledger's growth since the conversation's first turn on top. Never
- *  both summed: a host may restore the ledger on a resume, or may not, and
- *  may restore it only after the transcript is read, so the growth counts
- *  from the baseline that turn takes, never from the ledger at the read. */
-const spentUsd = (s: CacheState, ledgerNow: number | undefined): number => {
-  const ledger = ledgerNow ?? 0
-  const prior = s.prior
-  if (prior === undefined) return ledger
-  const growth = s.baselined ? ledger - s.costBase : 0
-  return Math.max(ledger, prior.usd + growth)
-}
+/** What the bill needs of the model priced and its reads. */
+const pricingOf = (s: CacheState): Pricing => ({ model: pricedModel(s), reads: s.tokens.read })
 
 /** Every token since the conversation began: a resumed one's earlier tokens
  *  with this process's. */
 const allTokens = (s: CacheState): TokenCounts => (s.prior === undefined ? s.tokens : addTokens(s.tokens, s.prior.tokens))
-
-/** Which of `s.books` a step on `model` goes in. */
-const bookKey = (s: CacheState, model: string | undefined): string => {
-  const name = model ?? pricedModel(s)
-  return name === undefined ? '' : baseModel(name)
-}
-
-/** What the steps have cost since the baseline: the ledger, as far as the last
- *  step read it, with what grew outside a step left out. Growth since that read
- *  is a request yet to report, or none of a step's. */
-const billedInSteps = (s: CacheState, sessionCost: number): number =>
-  (s.baselined && s.ledgerSeen !== undefined ? Math.min(sessionCost, s.ledgerSeen) : sessionCost) - s.costBase - s.offBookUsd
-
-/** The least one token weighs. Below it the whole bill's sum is rounding left
- *  where all its steps went off the books, not a weight to divide by. */
-const LEAST_WEIGHT = 0.025
-
-/** The rate the session's whole bill solves to, every token at the priced
- *  model's read share: one model's, when it is the only one. Each book's weight
- *  holds its reads at its own share, so those are taken back out for every read
- *  at the priced model's, off the books or on. */
-const wholeBillRate = (s: CacheState, sessionCost: number): number | null => {
-  const weighted = Object.values(s.books).reduce((sum, book) => sum + book.weight + book.untold - book.ownReads, readMultiplier(pricedModel(s)) * s.tokens.read)
-  const billed = billedInSteps(s, sessionCost)
-  return weighted >= LEAST_WEIGHT && billed > 0 ? billed / weighted : null
-}
-
-/** Whether the session's whole bill speaks for the model priced: no other
- *  model has steps, or that model has none yet to go by (before a first reply,
- *  it may be named by an alias). */
-const wholeBillSpeaks = (s: CacheState): boolean => Object.keys(s.books).length <= 1 || s.books[bookKey(s, undefined)] === undefined
-
-/** The rate a book's own steps solve to; null with no bill told for them. */
-const toldRate = (book: ModelBook | undefined): number | null =>
-  book !== undefined && book.weight > 0 && book.usd > 0 ? book.usd / book.weight : null
-
-/** The rate of the steps with no bill told: what the bill leaves over them. */
-const leftOverRate = (s: CacheState, sessionCost: number): number | null => {
-  const books = Object.values(s.books)
-  const untold = books.reduce((sum, book) => sum + book.untold, 0)
-  const left = billedInSteps(s, sessionCost) - books.reduce((sum, book) => sum + book.usd, 0)
-  return untold > 0 && left > 0 ? left / untold : null
-}
-
-/** The base rate per token, in dollars, on the model priced.
- *
- *  No pricing table is available to a mod, so the rate is solved from the
- *  session's own bill since its baseline, which leaves one unknown:
- *
- *    cost - costBase = r * (what the books weigh)
- *
- *  where each upper-tier request weighs its tier's factor over, so r is the
- *  lower tier's rate on a model with two, and a step with a server-side tool
- *  loop is left out of both sides, its tool's round billed with no tokens shown,
- *  as is what the ledger grew by outside a step.
- *
- *  The ledger doesn't say which model each dollar is for, but what it grows by
- *  across a step is that step's: with two models in the bill, each solves from
- *  its own steps. Where a step's read failed, its model takes what the bill
- *  leaves over.
- *
- *  It self-calibrates to whatever model and plan are in force, and it is an
- *  estimate on top of an estimate (the session cost is itself computed at list
- *  price), so what it prices is always shown with a "~". */
-const ratePerToken = (s: CacheState, sessionCost: number | undefined): number | null => {
-  if (sessionCost === undefined) return null
-  if (wholeBillSpeaks(s)) return wholeBillRate(s, sessionCost)
-  return toldRate(s.books[bookKey(s, undefined)]) ?? leftOverRate(s, sessionCost)
-}
-
-/** The rate to remember under the model's name, for its other sessions: never
- *  a blend. */
-const rememberedRate = (s: CacheState, sessionCost: number | undefined): number | null => {
-  if (sessionCost === undefined) return null
-  return wholeBillSpeaks(s) ? wholeBillRate(s, sessionCost) : toldRate(s.books[bookKey(s, undefined)])
-}
-
-/** What reading from the cache saved against full input price, by the rate
- *  `rate` on the model priced: each model's reads at its own rate and read
- *  share where the bill has two. A resumed conversation's reads aren't split
- *  by model here, so they count at the rate in force. */
-const savedUsdOf = (s: CacheState, sessionCost: number | undefined, rate: number | null): number | null => {
-  const share = readMultiplier(pricedModel(s))
-  const priorSaved = rate === null ? 0 : rate * (1 - share) * (s.prior?.tokens.read ?? 0)
-  if (sessionCost === undefined || wholeBillSpeaks(s)) return rate === null ? null : rate * (1 - share) * Object.values(s.books).reduce((sum, book) => sum + book.tieredReads, 0) + priorSaved
-  const leftOver = leftOverRate(s, sessionCost)
-  const books = Object.values(s.books).map(book => ({ rate: toldRate(book) ?? leftOver, saved: (1 - readMultiplier(book.model)) * book.tieredReads }))
-  if (rate === null && books.every(book => book.rate === null)) return null
-  return books.reduce((sum, book) => sum + (book.rate ?? 0) * book.saved, priorSaved)
-}
 
 /** What writing `tokens` to the cache costs at a base `rate` per token, for
  *  the lifetime the cache stands at: the re-warm's prompt is the whole
@@ -502,7 +356,8 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
   // A step with a server tool sums rounds a mod isn't told, so Claude Code's
   // own count of the context speaks for it, where it has one.
   const window = recalled || (s.windowGuessed && contextTokens > 0) ? contextTokens : s.window
-  const rate = ratePerToken(s, sessionCost)
+  const pricing = pricingOf(s)
+  const rate = ratePerToken(s.bill, pricing, sessionCost)
   const tokens = allTokens(s)
   const input = tokens.read + tokens.written + tokens.uncached
   const share = readMultiplier(pricedModel(s))
@@ -521,7 +376,7 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
     recalled,
     idleMs: idleMsOf(s, now),
     // Every cache read saved the rest of the base rate against full input price.
-    savedUsd: tokens.read <= 0 ? null : savedUsdOf(s, sessionCost, rate),
+    savedUsd: tokens.read <= 0 ? null : savedUsdOf(s.bill, pricing, sessionCost, rate, s.prior?.tokens.read ?? 0),
     readShare: share,
     fresh: s.knownFresh,
     compacted: s.compactedAt !== undefined,
@@ -556,84 +411,12 @@ const noteTranscript = (s: CacheState, facts: TranscriptFacts): void => {
   if (facts.ttl !== undefined && s.requests === 0) s.ttlSeen = facts.ttl
 }
 
-/** The engine may reset the ledger on /clear: once it reads below the
- *  baseline, it counts this conversation alone, so the baseline is 0. */
-const noteLedger = (s: CacheState, costNow: number | undefined): void => {
-  if (costNow !== undefined && costNow < s.costBase) s.costBase = 0
-}
-
-/** The ledger as a turn starts: what it grew by since the last step is no
- *  step's, once the conversation has a baseline to grow from. */
-const noteTurnLedger = (s: CacheState, ledger: number | undefined): void => {
-  if (ledger === undefined) return
-  if (s.baselined && s.ledgerSeen !== undefined && ledger > s.ledgerSeen) s.offBookUsd += ledger - s.ledgerSeen
-  s.ledgerSeen = ledger
-}
-
-/** The ledger read as a step was sent and after its response: what the step
- *  was billed, undefined with nothing to tell it by. What it grew by from the
- *  last step to the sending is no step's, kept off the rate's books. Another
- *  step that came back meanwhile read its own bill off the ledger, so a step's
- *  own counts from the later of the two reads. */
-const noteStepLedger = (s: CacheState, sent: number | undefined, costNow: number | undefined): number | undefined => {
-  const seen = s.ledgerSeen
-  noteLedger(s, costNow)
-  if (costNow === undefined) {
-    s.ledgerSeen = undefined
-    return undefined
-  }
-  if (s.baselined && seen !== undefined && sent !== undefined && sent > seen) s.offBookUsd += sent - seen
-  s.ledgerSeen = costNow
-  const from = sent === undefined ? seen : Math.max(sent, seen ?? sent)
-  return from !== undefined && costNow > from ? costNow - from : undefined
-}
-
 /** A compaction replaces the conversation with a summary: the next request
  *  rebuilds the cache on purpose, at the summary's size, 0 where it wasn't told. */
 const noteCompaction = (s: CacheState, sizeAfter: number | undefined): void => {
   s.rebuilding = true
   s.window = sizeAfter ?? 0
   s.cached = 0
-}
-
-/** A response's tokens, what its price tier multiplies them by, and what they
- *  weigh. Its writes last `ttl`. Over `rounds` of a server-side tool loop, the
- *  usage sums every round's. */
-const weighResponse = (usage: Response, rounds: number, ttl: Ttl): Readonly<{ request: TokenCounts; factor: number; weighted: number }> => {
-  const hit = usage.cache_read_input_tokens
-  const written = usage.cache_creation_input_tokens
-  const uncached = usage.input_tokens
-  const request = { uncached, written, writtenHour: ttl === '1h' ? written : 0, read: hit, output: usage.output_tokens }
-  // A request is priced by its whole prompt, cache reads and writes included:
-  // each round's, where a tool loop sums them.
-  const factor = tierFactor(usage.model, (uncached + hit + written) / rounds)
-  return { request, factor, weighted: factor * weightedTokens(request, usage.model) }
-}
-
-/** A response on its model's book, every response's, a subagent's included,
- *  since the session's bill includes every subagent and the rate is solved from
- *  it: its bill and weight by where it stands, its reads either way, and for the
- *  main loop, its writes unread at `ttl`. A step with a tool loop stays as
- *  weighed, on the books or off, whatever a read of the lifetime says. */
-const bookResponse = (s: CacheState, usage: Response, weighed: Readonly<{ request: TokenCounts; factor: number; weighted: number }>, standing: Standing, bill: number, ttl: Ttl, unread: boolean): void => {
-  const { request, factor, weighted } = weighed
-  if (weighted <= 0) return
-  const key = bookKey(s, usage.model)
-  const was = s.books[key] ?? { model: usage.model ?? pricedModel(s), usd: 0, weight: 0, untold: 0, tieredReads: 0, ownReads: 0, unread: NO_UNREAD_WRITES }
-  const tiered = factor * request.written
-  const writes = was.unread[ttl]
-  s.books = {
-    ...s.books,
-    [key]: {
-      ...was,
-      usd: was.usd + (standing === 'told' ? bill : 0),
-      weight: was.weight + (standing === 'told' ? weighted : 0),
-      untold: was.untold + (standing === 'untold' ? weighted : 0),
-      tieredReads: was.tieredReads + factor * request.read,
-      ownReads: was.ownReads + readMultiplier(usage.model) * request.read,
-      unread: unread ? { ...was.unread, [ttl]: { tokens: writes.tokens + request.written, told: writes.told + (standing === 'told' ? tiered : 0), untold: writes.untold + (standing === 'untold' ? tiered : 0) } } : was.unread,
-    },
-  }
 }
 
 /** The lifetime the transcript's last cache write was made for, as read at a
@@ -645,17 +428,9 @@ const noteWrittenFor = (s: CacheState, ttl: Ttl): void => {
   if (s.ttlPinned || s.turnOpen) return
   s.ttl = ttl
   s.ttlRead = true
-  const other = ttl === '1h' ? '5m' : '1h'
-  const sign = ttl === '1h' ? 1 : -1
-  const weight = sign * (WRITE_MULT['1h'] - WRITE_MULT['5m'])
-  const tokens = Object.values(s.books).reduce((sum, book) => sum + book.unread[other].tokens, 0)
-  s.tokens = { ...s.tokens, writtenHour: s.tokens.writtenHour + sign * tokens }
-  s.books = Object.fromEntries(
-    Object.entries(s.books).map(([key, book]) => [
-      key,
-      { ...book, weight: book.weight + weight * book.unread[other].told, untold: book.untold + weight * book.unread[other].untold, unread: NO_UNREAD_WRITES },
-    ]),
-  )
+  const { bill, hourTokens } = writesReadAs(s.bill, ttl)
+  s.bill = bill
+  s.tokens = { ...s.tokens, writtenHour: s.tokens.writtenHour + hourTokens }
 }
 
 /** Whether a main-loop request that read `hit` tokens read short of what
@@ -733,10 +508,6 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
 }
 
 // ---- the model --------------------------------------------------------------
-
-/** A response, as turn.step has it. */
-type Response = Pick<ModelUsage, 'input_tokens' | 'output_tokens' | 'cache_read_input_tokens' | 'cache_creation_input_tokens'> &
-  Readonly<{ model?: string }>
 
 /** What a session remembers of a turn, for when it is reopened or the band
  *  reloads: when its last reply was sent, the rate its bill solves to, the
@@ -844,18 +615,14 @@ export const newCache = (kept?: CacheState): CacheModel => {
       s.turnWaker = wokenBy
       s.turnMeasured = false
       s.priceModel = priceModel
-      noteTurnLedger(s, ledger)
-      // The ledger as this conversation's first turn starts: its baseline.
-      if (ledger !== undefined && !s.baselined) {
-        s.costBase = ledger
-        s.baselined = true
-      }
+      s.bill = billAtTurnStart(s.bill, ledger)
     },
     responded: (usage, sentAt, isMain, after = {}) => {
       const rounds = (after.serverTools ?? 0) + 1
       // A reply that sent no tokens made no request: it read and kept no cache.
       const sent = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
-      const bill = noteStepLedger(s, after.ledgerBefore, after.ledger)
+      const { bill: ledgered, told } = billAtStep(s.bill, after.ledgerBefore, after.ledger)
+      s.bill = ledgered
       if (isMain && sent > 0) {
         // Claude Code hands a mod no list of a step's rounds, and a server
         // tool's block doesn't always start one, so a step with one is a guess.
@@ -866,11 +633,10 @@ export const newCache = (kept?: CacheState): CacheModel => {
       // measured, a subagent's its own.
       const ttl = isMain ? effectiveTtl(s) : s.subagentTtl
       const weighed = weighResponse(usage, rounds, ttl)
-      // Only a bill that grew is kept off: with nothing to tell it by, the step stays on.
-      const standing: Standing = bill === undefined ? 'untold' : rounds === 1 ? 'told' : 'offBook'
       s.tokens = addTokens(s.tokens, weighed.request)
-      if (standing === 'offBook') s.offBookUsd += bill ?? 0
-      bookResponse(s, usage, weighed, standing, bill ?? 0, ttl, isMain && rounds === 1)
+      // Only a bill that grew is kept off: with nothing to tell it by, the step stays on.
+      const standing = told === undefined ? 'untold' : rounds === 1 ? 'told' : 'offBook'
+      s.bill = bookResponse(s.bill, { ...weighed, model: usage.model, priced: pricedModel(s), standing, usd: told ?? 0, ttl, unread: isMain && rounds === 1 })
     },
     compacted: ({ now, sizeAfter, manual = false }) => {
       const idle = !s.turnOpen && !manual && s.requests > 0 && now - s.lastAt >= IDLE_GAP_MS
@@ -890,105 +656,20 @@ export const newCache = (kept?: CacheState): CacheModel => {
       if (s.turnMeasured) s.lastWake = s.turnWaker === undefined ? undefined : { by: s.turnWaker, reWarm: rebuilt }
       s.turnWaker = undefined
       s.turnMeasured = false
-      return { rebuilt, lifetimeSince, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: rememberedRate(s, ledger), billed: s.billedModel, priceModel: s.priceModel } }
+      return { rebuilt, lifetimeSince, remember: s.requests === 0 ? undefined : { lastAt: s.lastAt, rate: rememberedRate(s.bill, pricingOf(s), ledger), billed: s.billedModel, priceModel: s.priceModel } }
     },
     conversationEnded: (ledger, resumed) => {
       // The billing mode, its TTL and the session's settings carry over;
       // everything measured starts again. The baseline is provisional until
       // the next turn starts and takes the ledger then.
       const { ttl, ttlPinned, ttlRead, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen } = s
-      Object.assign(s, INITIAL, { ttl, ttlPinned, ttlRead, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen, costBase: ledger, ledgerSeen: ledger, knownFresh: !resumed })
+      Object.assign(s, INITIAL, { ttl, ttlPinned, ttlRead, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen, bill: billOfNewConversation(ledger), knownFresh: !resumed })
     },
     view: ({ now, ledger, contextTokens, autoCompactOff, modelNow, surface }) => {
-      noteLedger(s, ledger)
-      return { cache: viewOf(s, now, ledger, contextTokens, autoCompactOff, { modelNow, ...(surface === undefined ? {} : { surface }) }), costUsd: spentUsd(s, ledger) }
+      s.bill = billAtRedraw(s.bill, ledger)
+      return { cache: viewOf(s, now, ledger, contextTokens, autoCompactOff, { modelNow, ...(surface === undefined ? {} : { surface }) }), costUsd: spentUsd(s.bill, s.prior?.usd, ledger) }
     },
     leftMs: now => leftMsOf(s, now),
     idleMs: now => idleMsOf(s, now),
-  }
-}
-
-// ---- what it means ----------------------------------------------------------
-
-/** Unmeasured: loaded mid-conversation, before its next reply. Compacted:
- *  the conversation was compacted, so the next message writes the summary.
- *  Uncached: the last response read and wrote no cache, so none exists.
- *  Switched: /model named another model, so the next message rebuilds. */
-type CacheMood = 'unmeasured' | 'warming' | 'warm' | 'expiring' | 'cold' | 'compacted' | 'uncached' | 'switched'
-
-/** The cache as the band reads it: its view, and what that means. */
-export type CacheFacts = CacheView &
-  Readonly<{
-    mood: CacheMood
-    tone: Tone
-    /** The battery's charge: the share of the lifetime left, full while
-     *  Claude works, empty when there is nothing to count. */
-    charge: number
-    /** What the next message costs to rebuild the cache: dollars when a rate
-     *  is known, else the tokens it writes. */
-    estimate: string
-    /** A reply seen, or a resumed conversation's tokens read off its transcript. */
-    measured: boolean
-    /** Measured, or recalled from the session's last reply: time and price
-     *  known. Not caching, there is neither. */
-    known: boolean
-    /** No time to count, neither seen nor recalled: unmeasured, warming, or
-     *  not caching. */
-    untimed: boolean
-    /** The hit ratio, once measured. */
-    hitFrac: number | undefined
-    /** Time to cold while it counts down: expiring, or warm while Claude isn't working. */
-    coldInMs: number | undefined
-    /** Departures' calm last call, LAST CALL at its clock: under LAST_CALL_MS
-     *  to cold, or for the 5-minute cache its last minute. The board draws the
-     *  last minute by its amber tone first, as every layout does. */
-    lastCall: boolean
-    /** Counting down on the hour's cache before the ~54-minute mark, where
-     *  Claude Code may compact the conversation instead of letting it go cold. */
-    idleCompactSoon: boolean
-  }>
-
-const moodOf = (c: CacheView): CacheMood =>
-  c.compacted && c.leftMs <= 0
-    ? 'compacted'
-    : c.requests === 0 && !c.recalled
-      ? c.fresh
-        ? 'warming'
-        : 'unmeasured'
-      : c.notCaching
-        ? 'uncached'
-        : c.modelChanged
-          ? 'switched'
-          : c.leftMs <= 0
-            ? 'cold'
-            : c.leftMs <= SOON_MS
-              ? 'expiring'
-              : 'warm'
-
-/** What the cache's view means while Claude is working, or isn't. */
-export const cacheFactsOf = (c: CacheView, isWorking: boolean): CacheFacts => {
-  const mood = moodOf(c)
-  const measured = c.requests > 0 || c.recovered
-  // Mid-turn every step restarts the TTL, so a countdown would only bounce.
-  const counting = mood === 'expiring' || (mood === 'warm' && !isWorking)
-  const untimed = mood === 'unmeasured' || mood === 'warming' || mood === 'uncached'
-  const timeless = untimed || mood === 'cold' || mood === 'compacted' || mood === 'switched'
-  return {
-    ...c,
-    mood,
-    tone: mood === 'expiring' ? 'amber' : 'calm',
-    charge: timeless ? 0 : mood === 'warm' && isWorking ? 1 : c.leftMs / TTL_MS[c.ttl],
-    // After a switch the rate is the old model's, so the tokens alone. After a
-    // compaction of no size told, only that it writes the summary.
-    estimate: mood === 'compacted' && c.window === 0 ? 'summary' : c.window === 0 && c.reWarmUsd === null ? 'unknown' : c.reWarmUsd !== null && mood !== 'switched' ? fmtEstimate(c.reWarmUsd) : `${fmtTokens(c.window)} tokens`,
-    measured,
-    known: mood !== 'uncached' && (measured || c.recalled),
-    untimed,
-    hitFrac: measured && c.hitRatio !== null ? c.hitRatio : undefined,
-    coldInMs: counting ? c.leftMs : undefined,
-    // A 5-minute cache is always under ten minutes from cold, so its last
-    // call is its last minute, when chips turns amber too.
-    lastCall: counting && (c.ttl === '5m' ? mood === 'expiring' : c.leftMs < LAST_CALL_MS),
-    idleCompactSoon: counting && c.idleCompacts && c.ttl === '1h' && c.leftMs > TTL_MS['1h'] - IDLE_COMPACT_MS,
   }
 }
