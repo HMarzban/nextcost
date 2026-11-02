@@ -5,6 +5,7 @@ import {
   gitSummary,
   homeRelative,
   parseGitState,
+  printable,
   splitPath,
   type GitState,
 } from '../hooks/workspace'
@@ -173,3 +174,20 @@ test('the summary reads a detached HEAD without a commit', () => {
   expect(gitSummary(state({ branch: undefined, commit: undefined }))).toBe('detached, clean')
 })
 
+
+// ── what is drawn is printable ─────────────────────────────────────────
+
+test('a control character, a line break and a bidi control are each one question mark', () => {
+  expect(printable('a\nb\r\tc\u0000\u0007\u007F\u009B\u2028\u2029')).toBe('a?b??c??????')
+  expect(printable('main\u202Eevil\u202D\u2066x\u2069\u061C\u200E\u200F')).toBe('main?evil??x????')
+})
+
+test('what prints stays as it is: Persian and Japanese names, a joiner, a space, emoji', () => {
+  for (const name of ['پروژه‌ی من', 'my project', 'プロジェクト', 'a\u200Db', 'feat/🙂', 'ünï', '']) expect(printable(name)).toBe(name)
+})
+
+test('a branch with a bidi control or a worktree with a control character is printable in the state', () => {
+  expect(parseGitState(status(...head('feat\u202Eevil')), MAIN_DIRS)?.branch).toBe('feat?evil')
+  const linked = parseGitState(status(...head('main')), '/r/p/.git/worktrees/w\n/r/p/.git\n/r/wt/fix\u0007ui\n')
+  expect(linked?.worktree).toBe('fix?ui')
+})

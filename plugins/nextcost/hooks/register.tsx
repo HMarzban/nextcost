@@ -38,7 +38,7 @@ import type { Glyphs, LayoutName } from './snapshot'
 import { NO_WARNINGS, contextToasts, forgetConversation, limitToasts } from './toast'
 import type { Warned } from './toast'
 import { READ_LIMIT, countOf, lastWrite, lastWriteTtl, sessionCostRecord, transcriptPath, transcriptSpend } from './transcript'
-import { homeRelative, parseGitState, splitPath } from './workspace'
+import { homeRelative, parseGitState, printable, splitPath } from './workspace'
 import type { Workspace } from './workspace'
 
 const isHidden = atom({ plugin: 'nextcost', key: 'isHidden' } as const, false)
@@ -362,7 +362,8 @@ const readWorkspace = async ($: EngineInterface): Promise<void> => {
       $.session.repo().catch(() => null),
     ])
     if (mine !== band.reads) return
-    const path = homeRelative(root, home)
+    // Names off the file system and git are drawn on one row: printable.
+    const path = printable(homeRelative(root, home))
     const last = band.workspace
     band.workspace = {
       path,
@@ -370,7 +371,7 @@ const readWorkspace = async ($: EngineInterface): Promise<void> => {
       // same project, so a slow repository doesn't flicker to the path alone.
       git: status === undefined ? (last?.path === path ? last.git : undefined) : parseGitState(status, dirs ?? ''),
       // A linked worktree's main repository, by its folder's name.
-      repoName: repo === null ? undefined : splitPath(repo.root).name,
+      repoName: repo === null ? undefined : printable(splitPath(repo.root).name),
     }
     $.ui.invalidate('ui.render')
   } catch {

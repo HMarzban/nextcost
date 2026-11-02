@@ -20,6 +20,7 @@ import {
   cards,
   contrast,
   engine,
+  firstRow,
   cardText,
   hoverCardOf,
   isCard,
@@ -430,3 +431,33 @@ for (const glyphs of ['unicode', 'ascii'] as const) {
       }
   })
 }
+
+// ── names that would break a one-row strip ──────────────────────────────
+
+const UNSAFE = /[\p{Cc}\u2028\u2029\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u
+
+/** Every string a drawn tree holds, in its words and its props. */
+const strings = (tree: unknown): string[] =>
+  typeof tree === 'string' ? [tree] : Array.isArray(tree) ? tree.flatMap(strings) : typeof tree === 'object' && tree !== null ? Object.values(tree).flatMap(strings) : []
+
+test('a project, branch or repository named with control or bidi characters is drawn printable, on one row, the band intact', LONG, async ($, on) => {
+  const clock = setup(on, { env: HOME })
+  engine.root = '/Users/me/pro\u0007ject\nx'
+  engine.repoRoot = '/Users/me/re\u0001po'
+  engine.git = { status: GIT_CLEAN.replace('branch.head main', 'branch.head feat\u202Eevil'), dirs: '/Users/me/r/.git/worktrees/w\n/Users/me/r/.git\n/Users/me/wt\u2067x\n' }
+  await $.session.start(START)
+  await clock.settle()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const tree = await expanded($, clock, surface, 140)
+    const strip = shown(stripOf(tree))
+    expect(strip).toContain('pro?ject?x')
+    expect(strip).toContain('feat?evil')
+    expect(strip).toContain('re?po')
+    // Nowhere in the tree, the cards' words included, is one left.
+    const said = strings(tree)
+    expect(said.filter(text => UNSAFE.test(text))).toEqual([])
+    expect(said.join(' ')).toContain('worktree wt?x')
+    // The band around it still draws.
+    expect(shown(byKey(firstRow(tree), 'cache', 'Box'))).toMatch(/cache/)
+  }
+})
