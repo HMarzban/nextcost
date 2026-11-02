@@ -18,7 +18,7 @@ import type { BandActions } from '../snapshot'
 import { EMPTY, limitsHead, markedHead, type Say } from '../words'
 import { bodyRowsFor, footer } from './frame'
 import { beatsChart, chartsDraw, weekCells, windowTrail } from './pulse-charts'
-import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, factRow, fitForm, headHolds, headline, linesOf } from './shell'
+import { CARD_NAMES, alertLine, cardGrid, cardLine, cardShell, cardsPresent, clippedNote, factRow, fitForm, headHolds, headline, linesOf } from './shell'
 import type { CardLine, CardName } from './shell'
 
 const DOT = ' · '
@@ -215,12 +215,6 @@ const cardAt = (kit: Kit, f: Facts, p: Plan, count: number): CardAt => {
 const plot = (kit: Kit, chart: RenderChildren): RenderChildren => {
   const { Box, Svg } = kit
   return chart === null || Svg ? chart : <Box key="plot" overflow="hidden">{chart}</Box>
-}
-
-/** A line of words in a label's ink, cut to its row. */
-const clippedNote = (kit: Kit, key: string, text: string): RenderElement => {
-  const { Box, palette, oneLine } = kit
-  return <Box key={key}>{oneLine({ color: palette.label }, text)}</Box>
 }
 
 /** A fact, its value's phrases as many as fit beside its label. */

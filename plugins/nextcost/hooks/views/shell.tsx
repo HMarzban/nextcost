@@ -133,6 +133,12 @@ export const factRow = (kit: Kit, label: string, value: string, swatch?: SplitPa
   )
 }
 
+/** A line of words in a label's ink, cut to its row. */
+export const clippedNote = (kit: Kit, key: string, text: string): RenderElement => {
+  const { Box, palette, oneLine } = kit
+  return <Box key={key}>{oneLine({ color: palette.label }, text)}</Box>
+}
+
 /** The longest of `forms` that fits `room` columns, else the shortest: a
  *  value that says what it covers where its row has room, so a row never
  *  wraps for it. */
