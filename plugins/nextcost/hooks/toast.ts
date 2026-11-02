@@ -2,7 +2,7 @@
 // context's, each once per threshold crossed. Pure: register.tsx speaks the
 // texts and keeps the levels reached.
 
-import { SEVERE_AT, WARN_AT, contextPressure, fmtPct, toCompaction } from './format'
+import { SEVERE_AT, WARN_AT, contextPressure, fmtPct, shownFrac, toCompaction } from './format'
 import { FIVE_HOUR, SEVEN_DAY } from './snapshot'
 import { roomOf } from './words'
 
@@ -34,8 +34,10 @@ const escalate = (prev: number, frac: number, levels: readonly number[]): Readon
 /** One toast's figure `frac` against its `levels`, under `key`: the level
  *  it reaches, and its text, given the figure as a percent, when it speaks. */
 const note = (warned: Warned, key: string, frac: number, levels: readonly number[], text: (pct: string) => string): Toasts => {
-  const { level, speak } = escalate(warned.get(key) ?? 0, frac, levels)
-  return { warned: new Map(warned).set(key, level), say: speak ? [text(fmtPct(frac))] : [] }
+  // At the figure shown: 79.6% is `80%`, amber, and speaks.
+  const shown = shownFrac(frac)
+  const { level, speak } = escalate(warned.get(key) ?? 0, shown, levels)
+  return { warned: new Map(warned).set(key, level), say: speak ? [text(fmtPct(shown))] : [] }
 }
 
 /** What each window that speaks is called in its toast, by the kind the

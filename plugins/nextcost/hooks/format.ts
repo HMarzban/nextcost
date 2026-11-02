@@ -46,6 +46,11 @@ export const fmtPercent = (percent: number): string => `${Math.round(percent)}%`
 /** A share as a whole percent: 0.38 is `38%`. */
 export const fmtPct = (frac: number): string => fmtPercent(frac * 100)
 
+/** A share as the whole percent it shows, 0.796 as 0.8: what a pill or a toast
+ *  is classed by, so 79.6% shown as `80%` is not calm beside the warning line
+ *  at 80%. Rounds as `fmtPct` does. */
+export const shownFrac = (frac: number): number => Math.round(frac * 100) / 100
+
 export const fmtTokens = (n: number): string => {
   const v = Math.max(0, Math.round(n))
   // Each unit from where the one below would round up to it: 9,999 is 10k,

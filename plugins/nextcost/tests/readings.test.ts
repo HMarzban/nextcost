@@ -143,6 +143,14 @@ test('the countdown never looks like a clock', () => {
     expect(figure).not.toMatch(/\d:\d\d/)
   }
 })
+test('what a figure shows and how it is classed agree: 79.6% shows 80% and is amber, 79.4% shows 79% and is not', () => {
+  const five = (percentUsed: number) => readingsOf(snapOf({ fiveHour: { percentUsed, resetsAt: 3 * HOUR, etaMs: null } })).fiveHour
+  expect([five(79.6)?.value, five(79.6)?.tone, five(79.6)?.valueMarked]).toEqual(['80%', 'amber', '80%!'])
+  expect([five(79.4)?.value, five(79.4)?.tone, five(79.4)?.valueMarked]).toEqual(['79%', 'calm', '79%'])
+  expect([five(94.6)?.valueMarked, five(94.4)?.valueMarked]).toEqual(['95%!!', '94%!'])
+  const ctx = (percent: number) => readingsOf(snapOf({ context: { tokens: percent * 2000, window: 200_000, percent, compactAt: undefined, autoCompactOff: true } })).context
+  expect([ctx(79.6).pct, ctx(79.6).tone, ctx(79.4).pct, ctx(79.4).tone]).toEqual(['80%', 'amber', '79%', 'calm'])
+})
 test('clock times appear only when the offset is known', () => {
   const now = Date.UTC(2026, 9, 9, 13, 40)
   const five = { percentUsed: 4, resetsAt: now + 3 * HOUR, etaMs: null }

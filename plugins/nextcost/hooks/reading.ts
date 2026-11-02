@@ -19,6 +19,7 @@ import {
   fmtPct,
   fmtPercent,
   resetIn,
+  shownFrac,
   toCompaction,
 } from './format'
 import { lastCostOf, warmAverageOf } from './insights'
@@ -127,7 +128,7 @@ const contextFacts = (snap: BandSnapshot): ContextFacts => {
   const ctx = snap.context
   const used = contextUsed(ctx) ?? 0
   const pressure = contextPressure(used, ctx.window, ctx.compactAt)
-  const frac = clamp01(pressure.frac)
+  const frac = shownFrac(clamp01(pressure.frac))
   const amber = frac >= (pressure.levels[0] ?? 1)
   const fill: ContextFill = {
     known: ctx.percent !== undefined || ctx.tokens !== undefined,
@@ -155,7 +156,8 @@ const limitFacts = (snap: BandSnapshot): LimitFacts[] => {
   const one = (name: string, key: LimitKey, use: LimitUse, windowMs: number | undefined, etaMs: number | null): LimitFacts => {
     const at = use.resetsAt
     const reset = resetIn(at, snap.now)
-    const frac = clamp01(use.percentUsed / 100)
+    // The share as shown, so a figure at `80%` is amber whatever its decimals.
+    const frac = shownFrac(clamp01(use.percentUsed / 100))
     const gone = windowGone(at, windowMs, snap.now)
     const base: LimitBase = { name, key, reset, resetsAt: at, gone, percentUsed: use.percentUsed, frac, value: fmtPercent(use.percentUsed) }
     // Passed, the window that reset has no pace, reset or fill to say.

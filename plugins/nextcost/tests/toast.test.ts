@@ -29,6 +29,11 @@ test('crossing a threshold speaks once, at the level reached', () => {
   expect(fiveHourSays([50, 82, 85, 96])).toEqual([[], ["You've used 82% of your 5-hour limit."], [], ["You've used 96% of your 5-hour limit."]])
 })
 
+test('a toast speaks at the figure the chip shows: 79.6% is 80%', () => {
+  expect(fiveHourSays([79.4, 79.6])).toEqual([[], ["You've used 80% of your 5-hour limit."]])
+  expect(contextSays([{ used: 158_000 }, { used: 159_200 }])).toEqual([[], ['Context is 80% full.']])
+})
+
 test('jumping two thresholds at once speaks once, at the higher', () => {
   expect(fiveHourSays([97])).toEqual([["You've used 97% of your 5-hour limit."]])
 })
