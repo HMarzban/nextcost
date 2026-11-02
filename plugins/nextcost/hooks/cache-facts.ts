@@ -45,7 +45,7 @@ export type CacheFacts = CacheView &
   }>
 
 const moodOf = (c: CacheView): CacheMood =>
-  c.compacted && c.leftMs <= 0
+  c.compacted
     ? 'compacted'
     : c.requests === 0 && !c.recalled
       ? c.fresh

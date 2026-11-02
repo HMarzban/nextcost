@@ -182,13 +182,11 @@ export type CacheState = {
   /** What that request left in the cache; the response is only written on
    *  the next request, never read. */
   cached: number
-  /** The next request rebuilds the cache on purpose (a compaction). */
-  rebuilding: boolean
-  /** When the conversation was last compacted, until the next reply: the
-   *  cache it held is given up, and the next request writes the summary. */
-  compactedAt: number | undefined
-  /** That compaction was Claude Code's, while the conversation sat idle. */
-  compactedIdle: boolean
+  /** When the conversation was last compacted, until the next reply, which
+   *  rebuilds the cache on purpose: the cache it held is given up, and that
+   *  request writes the summary. `idle`: it was Claude Code's, while the
+   *  conversation sat idle. */
+  compaction: Readonly<{ at: number; idle: boolean }> | undefined
   /** The last main-loop response read and wrote no cache, on a prompt too
    *  large for that to be the minimum. */
   notCaching: boolean
@@ -246,9 +244,7 @@ const INITIAL: Readonly<CacheState> = {
   lastAt: 0,
   window: 0,
   cached: 0,
-  rebuilding: false,
-  compactedAt: undefined,
-  compactedIdle: false,
+  compaction: undefined,
   notCaching: false,
   messageCount: undefined,
   model: undefined,
@@ -276,7 +272,7 @@ const recalledAt = (s: CacheState, now: number): number | undefined => {
 
 /** Whether the cache stands as recalled: no reply seen yet, a conversation
  *  that didn't start here, something to recall, and no compaction since. */
-const isRecalled = (s: CacheState, now: number): boolean => s.requests === 0 && !s.knownFresh && s.compactedAt === undefined && recalledAt(s, now) !== undefined
+const isRecalled = (s: CacheState, now: number): boolean => s.requests === 0 && !s.knownFresh && s.compaction === undefined && recalledAt(s, now) !== undefined
 
 /** The TTL the cache stands at: the pin, else one seen on the transcript,
  *  else the one assumed or inferred. */
@@ -306,7 +302,7 @@ const measuredColdAt = (s: CacheState): number | null => (s.requests > 0 ? s.las
 /** When the cache goes or went cold: measured from the last reply, else
  *  recalled; null with nothing to go by, or a resume the engine called expired. */
 const coldAtOf = (s: CacheState, now: number): number | null => {
-  if (s.compactedAt !== undefined) return s.compactedAt
+  if (s.compaction !== undefined) return s.compaction.at
   if (s.notCaching) return null
   const measured = measuredColdAt(s)
   // A reply dated after now cools a lifetime from now at the latest.
@@ -320,7 +316,7 @@ const coldAtOf = (s: CacheState, now: number): number | null => {
  *  it recalls, none if the engine called it expired; a full lifetime before
  *  either. */
 const leftMsOf = (s: CacheState, now: number): number => {
-  if (s.compactedAt !== undefined || s.notCaching) return 0
+  if (s.compaction !== undefined || s.notCaching) return 0
   if (s.requests === 0 && s.resumedCache?.expired === true) return 0
   const at = coldAtOf(s, now)
   const lifetime = TTL_MS[effectiveTtl(s)]
@@ -379,8 +375,8 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
     savedUsd: tokens.read <= 0 ? null : savedUsdOf(s.bill, pricing, sessionCost, rate, s.prior?.tokens.read ?? 0),
     readShare: share,
     fresh: s.knownFresh,
-    compacted: s.compactedAt !== undefined,
-    compactedIdle: s.compactedIdle,
+    compacted: s.compaction !== undefined,
+    compactedIdle: s.compaction?.idle ?? false,
     notCaching: s.notCaching,
     modelChanged: modelChangedTo(s, at.modelNow, now),
     idleCompacts: idleCompactsOn(at.surface) && s.idleCompactFrom !== undefined && !autoCompactOff && contextTokens >= s.idleCompactFrom,
@@ -411,14 +407,6 @@ const noteTranscript = (s: CacheState, facts: TranscriptFacts): void => {
   if (facts.ttl !== undefined && s.requests === 0) s.ttlSeen = facts.ttl
 }
 
-/** A compaction replaces the conversation with a summary: the next request
- *  rebuilds the cache on purpose, at the summary's size, 0 where it wasn't told. */
-const noteCompaction = (s: CacheState, sizeAfter: number | undefined): void => {
-  s.rebuilding = true
-  s.window = sizeAfter ?? 0
-  s.cached = 0
-}
-
 /** The lifetime the transcript's last cache write was made for, as read at a
  *  turn's end: the countdown runs on it, and the writes weighed at the other
  *  lifetime since the last read move to this one, so the rate is solved from
@@ -435,10 +423,10 @@ const noteWrittenFor = (s: CacheState, ttl: Ttl): void => {
 
 /** Whether a main-loop request that read `hit` tokens read short of what
  *  the cache held, by enough tokens and enough of it; undefined with nothing
- *  to measure it by: no prefix, one rebuilt on purpose, or another model. */
+ *  to measure it by: no prefix, as after a compaction, or another model. */
 const shortOf = (s: CacheState, hit: number, switched: boolean): boolean | undefined => {
   const prefix = s.cached
-  if (prefix <= 0 || s.rebuilding || switched) return undefined
+  if (prefix <= 0 || switched) return undefined
   const shortfall = prefix - hit
   return shortfall >= MISS_MIN_TOKENS && shortfall > prefix * MISS_MIN_SHARE
 }
@@ -487,7 +475,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   // compaction rebuilt it, or the model changed. The first build
   // is warming, unless the cache it rebuilt was already read as cold. With
   // caching off on either side, nothing was rebuilt.
-  if (!uncached && !s.notCaching && (coldBefore || (s.requests > 0 && (gap > TTL_MS[s.ttl] || missed || s.rebuilding || switched)))) s.lastRebuilt = true
+  if (!uncached && !s.notCaching && (coldBefore || (s.requests > 0 && (gap > TTL_MS[s.ttl] || missed || s.compaction !== undefined || switched)))) s.lastRebuilt = true
 
   s.requests += 1
   // The next request's TTL follows the config in force, not the transcript's.
@@ -496,9 +484,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   s.window = perRound(usage.input_tokens) + hit + written + usage.output_tokens
   s.cached = hit + written
   s.lastAt = sentAt
-  s.rebuilding = false
-  s.compactedAt = undefined
-  s.compactedIdle = false
+  s.compaction = undefined
   s.notCaching = uncached
   s.messageCount = messages ?? s.messageCount
   s.requestModel = s.priceModel
@@ -640,9 +626,10 @@ export const newCache = (kept?: CacheState): CacheModel => {
     },
     compacted: ({ now, sizeAfter, manual = false }) => {
       const idle = !s.turnOpen && !manual && s.requests > 0 && now - s.lastAt >= IDLE_GAP_MS
-      noteCompaction(s, sizeAfter)
-      s.compactedAt = now
-      s.compactedIdle = idle
+      // The summary replaces the conversation, at its size, 0 where it wasn't told.
+      s.window = sizeAfter ?? 0
+      s.cached = 0
+      s.compaction = { at: now, idle }
     },
     wroteFor: ttl => noteWrittenFor(s, ttl),
     turnEnded: ledger => {
