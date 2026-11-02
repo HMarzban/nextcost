@@ -350,9 +350,26 @@ It's always shown with `~`.
   `subagentPromptCacheTtl`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` or
   `ENABLE_PROMPT_CACHING_1H` asks an hour, read in Claude Code's order. A
   mod isn't told each write's lifetime, so this is the band's reading of
-  it. A reopened session's cost record doesn't split its writes by
-  lifetime, so a rate solved from it counts them at 1.25×; a reply logged
+  it. A reopened session's cost record splits its writes by lifetime since
+  Claude Code 2.1.310; an older one's count at 1.25×, and a reply logged
   after it counts at the split its usage logs.
+- **Each model solves its own `r`.** The ledger doesn't say which model each
+  dollar is for, but what it grows by across a step is that step's. So once
+  a session's bill holds two models, a switch or a subagent on another, the
+  current model's `r` comes from its own steps, and what the cache saved is
+  priced model by model. A step whose ledger couldn't be read takes what the
+  bill leaves over.
+- **Growth outside a step is left out of `r`.** A compaction's own request
+  raises no step, and adds to the ledger with no tokens to weigh. It still
+  counts in what the session has cost.
+- **Fast mode** bills every price at 2× from a cache of its own, and a mod
+  isn't told a reply's speed. The band reads a change of speed off a reply
+  that read short of the cache and was billed at twice or half its model's
+  `r`: that's no unexpected rebuild, and `r` follows the new speed. It can't
+  read it from a session's first reply, and with no step's bill to go by
+  (the ledger unread) the change counts as a rebuild and the re-warm lags
+  until the bill catches up. A rate at fast prices isn't remembered for the
+  model's other sessions.
 - **After `/clear` or a resume,** the rate is solved from what
   the current conversation has spent, not the session's whole ledger.
 - **Claude Haiku 5.5 has two price tiers.** A request whose prompt (every

@@ -632,6 +632,9 @@ export const register: Register = on => {
   on('turn.step', async function* ($, e, next) {
     // The cache's TTL runs from when the request is sent, not when its reply ends.
     const sentAt = await $.clock.now()
+    // What the ledger grows by from here to the response is this step's bill;
+    // what it grew by since the last step, no step's.
+    const ledgerBefore = await ledgerUsd($)
     const result = yield* next(e)
     const isMain = e.agentId === undefined
     if (result?.usage) {
@@ -640,7 +643,7 @@ export const register: Register = on => {
       const served = 'serverToolUses' in result && Array.isArray(result.serverToolUses) ? result.serverToolUses.length : 0
       // The ledger goes in with the response, so no other hook's step can
       // come between them and take its bill for this one's.
-      band.cache.responded(result.usage, sentAt, isMain, { serverTools: served, ledger: await ledgerUsd($) })
+      band.cache.responded(result.usage, sentAt, isMain, { serverTools: served, ledger: await ledgerUsd($), ledgerBefore })
       $.ui.invalidate('ui.render')
     }
     if (isMain && result?.stopReason === 'compaction') band.cache.compacted({ now: sentAt })

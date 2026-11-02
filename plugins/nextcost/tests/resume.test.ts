@@ -134,8 +134,8 @@ test('after each turn the band remembers the reply and the rate it solved', asyn
   await $.session.start(START)
   await clock.advance(5 * MIN)
   await $.turn.start(TURN_START)
-  await respond($, BUILD_155K)
   usage.current = { ...usage.current, cost: { usd: 2.83 } } // the turn cost $0.42
+  await respond($, BUILD_155K)
   await $.turn.complete(TURN_DONE)
   await clock.settle()
   expect(engine.store.sessions).toEqual({ s1: { lastAt: 5 * MIN, billed: MODEL } })
@@ -148,8 +148,8 @@ test('a rate solved on a 1M-context session is remembered under the model, for a
   engine.model = `${MODEL}[1m]`
   await $.session.start(START)
   await $.turn.start(TURN_START)
-  await respond($, BUILD_155K)
   usage.current = { ...usage.current, cost: { usd: 2.83 } }
+  await respond($, BUILD_155K)
   await $.turn.complete(TURN_DONE)
   await clock.settle()
   expect(Object.keys(engine.store.rates as Record<string, number>)).toEqual([MODEL])
@@ -160,8 +160,8 @@ test('a rate solved on a session named by an alias is remembered under the bille
   engine.model = 'opus[1m]'
   await $.session.start(START)
   await $.turn.start(TURN_START)
-  await respond($, BUILD_155K)
   usage.current = { ...usage.current, cost: { usd: 2.83 } }
+  await respond($, BUILD_155K)
   await $.turn.complete(TURN_DONE)
   await clock.settle()
   expect(Object.keys(engine.store.rates as Record<string, number>)).toEqual([MODEL])
@@ -173,8 +173,8 @@ test('reloaded, a session named by an alias recalls its rate from the store, wit
   engine.model = 'opus[1m]'
   await $.session.start(START)
   await $.turn.start(TURN_START)
-  await respond($, BUILD_155K)
   usage.current = { ...usage.current, cost: { usd: 2.83 } }
+  await respond($, BUILD_155K)
   await $.turn.complete(TURN_DONE)
   await clock.settle()
   await clock.advance(2 * HOUR)
@@ -204,8 +204,8 @@ test("reloaded with no transcript, a session named by an alias reads its cache a
   engine.model = 'opus[1m]'
   await $.session.start(START)
   await $.turn.start(TURN_START)
-  await respond($, BUILD_155K)
   usage.current = { ...usage.current, cost: { usd: 2.83 } }
+  await respond($, BUILD_155K)
   await $.turn.complete(TURN_DONE)
   await clock.settle()
   await clock.advance(10 * MIN)

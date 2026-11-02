@@ -121,8 +121,8 @@ test('a session resumed or reloaded with spend on the ledger prices the re-warm 
   const clock = setup(on, { usage: { ...USAGE, cost: { usd: 20 } } }) // the ledger carries an earlier run's $20
   await $.session.start(START)
   await $.turn.start(TURN_START)
-  await respond($, BUILD_100K)
   usage.current = { ...USAGE, cost: { usd: 20.3 } }
+  await respond($, BUILD_100K)
   await $.turn.complete(TURN_DONE)
   await clock.advance(61 * MIN)
 
