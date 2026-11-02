@@ -4,7 +4,7 @@
 import { test, expect, type Engine } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
 import { LAYOUT_NAMES } from '../hooks/snapshot'
-import { LONG, MIN, START, TURN_DONE, TURN_START, engine, mountBand, resp, respond, setup, textOf } from './helpers'
+import { BUILD_155K, LONG, MIN, START, TURN_DONE, TURN_START, engine, mountBand, resp, respond, setup, textOf } from './helpers'
 
 const drawn = async ($: Engine): Promise<string> => {
   const ui = await mountBand($, 'terminal', 160)
@@ -64,4 +64,21 @@ test('before any request there is no cache to lose', () => {
   const c = newCache()
   c.loaded({ priceModel: 'opus', ledger: 0 })
   expect(view(c, 'sonnet').modelChanged).toBe(false)
+})
+
+test('model changed compares with what the last request went on: a turn that sent none still says it, and a new conversation starts clean', () => {
+  const c = newCache()
+  c.configured({ ttl: '1h', idleCompactFrom: undefined })
+  c.turnStarted({ priceModel: 'opus', ledger: 0 })
+  c.responded({ ...BUILD_155K, model: 'claude-opus-5-5' }, 0, true)
+  c.turnEnded(0)
+  const changed = (modelNow: string) => c.view({ now: MIN, ledger: 0, contextTokens: 100_000, autoCompactOff: false, modelNow }).cache.modelChanged
+  expect(changed('opus')).toBe(false)
+  expect(changed('haiku')).toBe(true)
+  // A turn on Haiku that never reached the API: the cache is still Opus's.
+  c.turnStarted({ priceModel: 'haiku', ledger: 0 })
+  c.turnEnded(0)
+  expect(changed('haiku')).toBe(true)
+  c.conversationEnded(0, true)
+  expect(changed('sonnet')).toBe(false)
 })

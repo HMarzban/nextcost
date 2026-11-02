@@ -534,20 +534,3 @@ test('a recalled reply at now is a reply just made, not unknown', () => {
   const cache = viewAt(c, HOUR)
   expect([cache.recalled, cache.idleMs, cache.leftMs]).toEqual([true, 0, TTL_MS['1h']])
 })
-
-test('model changed compares with what the last request went on: a turn that sent none still says it, and a new conversation starts clean', () => {
-  const c = newCache()
-  c.configured({ ttl: '1h', idleCompactFrom: undefined })
-  c.turnStarted({ priceModel: 'opus', ledger: 0 })
-  c.responded(OPUS_BUILD, 0, true)
-  c.turnEnded(0)
-  const changed = (modelNow: string) => c.view({ now: MIN, ledger: 0, contextTokens: 100_000, autoCompactOff: false, modelNow }).cache.modelChanged
-  expect(changed('opus')).toBe(false)
-  expect(changed('haiku')).toBe(true)
-  // A turn on Haiku that never reached the API: the cache is still Opus's.
-  c.turnStarted({ priceModel: 'haiku', ledger: 0 })
-  c.turnEnded(0)
-  expect(changed('haiku')).toBe(true)
-  c.conversationEnded(0, true)
-  expect(changed('sonnet')).toBe(false)
-})
