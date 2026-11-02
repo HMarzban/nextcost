@@ -4,6 +4,7 @@
 import { test, expect } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
 import { BUILD_80K, LONG, MIN, START, TURN_DONE, engine, fact, jsonl, mountBand, pillOf, replyLine, requestLines, resp, respond, setup, shown } from './helpers'
+import { cacheView } from './matrix'
 
 /** Past the band's first look for a turn's line. */
 const LOOK = 600
@@ -106,7 +107,7 @@ test('a pin taken away after a read leaves the lifetime assumed again', () => {
   c.wroteFor('5m')
   c.configured({ ttl: '1h', idleCompactFrom: undefined })
   c.configured({ ttl: undefined, idleCompactFrom: undefined })
-  expect(c.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false }).cache.ttlPinned).toBe(false)
+  expect(cacheView(c, 2 * MIN, { ledger: 2, contextTokens: 400_000 }).ttlPinned).toBe(false)
 })
 
 test("a line not yet written isn't taken for this turn's: the band looks again", LONG, async ($, on) => {
@@ -182,7 +183,7 @@ test('a read of five minutes moves the turn\'s writes, so the re-warm is priced 
   const c = respondedOnce(2)
   c.turnEnded(2)
   c.wroteFor('5m')
-  const { cache } = c.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false })
+  const cache = cacheView(c, 2 * MIN, { ledger: 2, contextTokens: 400_000 })
   expect(cache.ttl).toBe('5m')
   expect(Math.abs((cache.reWarmUsd ?? 0) - 2)).toBeLessThan(1e-9)
 })
@@ -192,7 +193,7 @@ test('a read of an hour leaves the rate as billed at 2x', () => {
   const c = respondedOnce(3.2)
   c.turnEnded(3.2)
   c.wroteFor('1h')
-  const { cache } = c.view({ now: 2 * MIN, ledger: 3.2, contextTokens: 400_000, autoCompactOff: false })
+  const cache = cacheView(c, 2 * MIN, { ledger: 3.2, contextTokens: 400_000 })
   expect(Math.abs((cache.reWarmUsd ?? 0) - 3.2)).toBeLessThan(1e-9)
 })
 
@@ -201,7 +202,7 @@ test('a read made while the next turn is under way waits for that turn\'s', () =
   c.turnEnded(2)
   c.turnStarted({ priceModel: undefined, ledger: 2 })
   c.wroteFor('5m')
-  expect(c.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false }).cache.ttl).toBe('1h')
+  expect(cacheView(c, 2 * MIN, { ledger: 2, contextTokens: 400_000 }).ttl).toBe('1h')
 })
 
 test('a read carries through a reload', () => {
@@ -209,7 +210,7 @@ test('a read carries through a reload', () => {
   c.turnEnded(2)
   c.wroteFor('5m')
   const after = newCache(c.kept())
-  const { cache } = after.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false })
+  const cache = cacheView(after, 2 * MIN, { ledger: 2, contextTokens: 400_000 })
   expect(cache.ttl).toBe('5m')
   expect(cache.ttlPinned).toBe(true)
 })
@@ -263,7 +264,7 @@ const unread = (hit: number, messages = 42) => {
   const c = newCache()
   c.responded({ ...resp(2_000, 0, 157_000, 500), ...OPUS }, 0, true, { messages: 40 })
   c.responded({ ...resp(1_000, hit, 157_000 - hit, 500), ...OPUS }, 12 * MIN, true, { messages })
-  return c.view({ now: 12 * MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.ttl
+  return cacheView(c, 12 * MIN).ttl
 }
 
 test('no read yet: a request 12 minutes on that read near nothing means five minutes', () => {

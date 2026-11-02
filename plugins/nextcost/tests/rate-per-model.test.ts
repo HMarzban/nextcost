@@ -5,6 +5,7 @@
 import { test, expect } from 'claude-code/testing'
 import { newCache, type CacheModel } from '../hooks/cache'
 import { HOUR, LONG, MIN, START, TURN_DONE, TURN_START, USAGE, engine, ledgerGrows, listBill, mountBand, resp, respond, setup, shown, pillOf, usage } from './helpers'
+import { cacheView } from './matrix'
 
 const OPUS = 'claude-opus-5-5'
 const SONNET = 'claude-sonnet-5-5'
@@ -31,7 +32,6 @@ const session = () => {
       ledger += usd
     },
     ledger: (): number => ledger,
-    look: (at: number) => c.view({ now: at, ledger, contextTokens: 0, autoCompactOff: false }).cache,
   }
 }
 
@@ -58,10 +58,10 @@ test('after a switch the re-warm is priced at the new model alone, and it rememb
   const s = session()
   let at = turns(s, OPUS, 40, { at: 0, prefix: 100_000 })
   at = turns(s, SONNET, 3, at)
-  const sonnet = s.look(at.at)
+  const sonnet = cacheView(s.c, at.at, { ledger: s.ledger() })
   expect(near(sonnet.reWarmUsd, trueReWarm(SONNET, sonnet.window))).toBe(true)
   at = turns(s, HAIKU, 3, at)
-  const haiku = s.look(at.at)
+  const haiku = cacheView(s.c, at.at, { ledger: s.ledger() })
   expect(near(haiku.reWarmUsd, trueReWarm(HAIKU, haiku.window))).toBe(true)
   // What a reopened session recalls under Haiku's name: its lower tier's rate.
   const rate = s.c.turnEnded(s.ledger()).remember?.rate ?? 0
@@ -88,7 +88,7 @@ test('a step whose ledger read failed leaves the rest told: its model solves fro
   const whole = opusBill + listBill(sonnet, SONNET, 2)
   c.responded({ ...opus, model: OPUS }, 0, true, { ledger: opusBill, ledgerBefore: 0 })
   c.responded({ ...sonnet, model: SONNET }, MIN, true, { ledger: undefined, ledgerBefore: undefined })
-  const { cache } = c.view({ now: 2 * MIN, ledger: whole, contextTokens: 0, autoCompactOff: false })
+  const cache = cacheView(c, 2 * MIN, { ledger: whole })
   expect(near(cache.reWarmUsd, trueReWarm(SONNET, cache.window))).toBe(true)
 })
 
@@ -99,8 +99,8 @@ test("subagents on another model neither move the main model's rate nor book its
   turns(withAgents, OPUS, 5, { at: 0, prefix: 150_000 })
   for (let i = 0; i < 20; i++) withAgents.step(HAIKU, resp(1_000, 90_000, 0, 200), i * MIN, false)
 
-  const without = plain.look(end.at)
-  const beside = withAgents.look(end.at)
+  const without = cacheView(plain.c, end.at, { ledger: plain.ledger() })
+  const beside = cacheView(withAgents.c, end.at, { ledger: withAgents.ledger() })
   expect(near(beside.reWarmUsd, trueReWarm(OPUS, without.window))).toBe(true)
   // 1.8M reads at $0.01 per million rather than $0.10: 1.8M × 0.9 × $0.10 per million.
   expect(near((beside.savedUsd ?? 0) - (without.savedUsd ?? 0), 0.162)).toBe(true)
@@ -109,9 +109,9 @@ test("subagents on another model neither move the main model's rate nor book its
 test('what the cache saved never falls at a switch to a cheaper model', () => {
   const s = session()
   const at = turns(s, OPUS, 10, { at: 0, prefix: 100_000 })
-  const before = s.look(at.at).savedUsd ?? 0
+  const before = cacheView(s.c, at.at, { ledger: s.ledger() }).savedUsd ?? 0
   turns(s, HAIKU, 2, at)
-  expect((s.look(at.at + MIN).savedUsd ?? 0) >= before).toBe(true)
+  expect((cacheView(s.c, at.at + MIN, { ledger: s.ledger() }).savedUsd ?? 0) >= before).toBe(true)
 })
 
 /** Keeps `c`'s counts as a reload does: through JSON. */
@@ -121,9 +121,8 @@ test('a reload carries each model\'s own books', () => {
   const s = session()
   const at = turns(s, OPUS, 5, { at: 0, prefix: 100_000 })
   turns(s, SONNET, 2, at)
-  const look = (c: CacheModel) => c.view({ now: HOUR, ledger: s.ledger(), contextTokens: 0, autoCompactOff: false }).cache
-  const then = look(s.c)
-  const now = look(reloaded(s.c))
+  const then = cacheView(s.c, HOUR, { ledger: s.ledger() })
+  const now = cacheView(reloaded(s.c), HOUR, { ledger: s.ledger() })
   expect(now.reWarmUsd).toBe(then.reWarmUsd)
   expect(now.savedUsd).toBe(then.savedUsd)
 })
@@ -134,7 +133,7 @@ test('/clear starts the books again: the conversation after it solves from its o
   s.c.conversationEnded(s.ledger(), false)
   s.c.turnStarted({ priceModel: undefined, ledger: s.ledger() })
   const end = turns(s, HAIKU, 2, { at: HOUR, prefix: 20_000 })
-  const { reWarmUsd, window } = s.look(end.at)
+  const { reWarmUsd, window } = cacheView(s.c, end.at, { ledger: s.ledger() })
   expect(near(reWarmUsd, trueReWarm(HAIKU, window), 0.0005)).toBe(true)
   expect(Object.keys(s.c.kept().books)).toEqual([HAIKU])
 })
@@ -144,13 +143,13 @@ test("a resumed conversation's earlier spend stays out of the books; its reads c
   s.c.resumed({ cache: undefined, transcript: { spend: { usd: 5, tokens: { uncached: 0, written: 0, writtenHour: 0, read: 1_000_000, output: 0 } }, ttl: undefined } })
   const at = turns(s, OPUS, 2, { at: 0, prefix: 100_000 })
   const end = turns(s, SONNET, 2, at)
-  const look = s.look(end.at)
+  const look = cacheView(s.c, end.at, { ledger: s.ledger() })
   expect(near(look.reWarmUsd, trueReWarm(SONNET, look.window))).toBe(true)
   // 1M reads of the record's at the rate in force, Sonnet's: 1M × 0.95 × $2 per million.
   const unresumed = session()
   const a2 = turns(unresumed, OPUS, 2, { at: 0, prefix: 100_000 })
   const e2 = turns(unresumed, SONNET, 2, a2)
-  expect(near((look.savedUsd ?? 0) - (unresumed.look(e2.at).savedUsd ?? 0), 1.9)).toBe(true)
+  expect(near((look.savedUsd ?? 0) - (cacheView(unresumed.c, e2.at, { ledger: unresumed.ledger() }).savedUsd ?? 0), 1.9)).toBe(true)
 })
 
 test("Haiku's upper tier holds in its own book: the rate stays the lower tier's beside another model", () => {
@@ -159,7 +158,7 @@ test("Haiku's upper tier holds in its own book: the rate stays the lower tier's 
   const end = turns(s, HAIKU, 3, { at: at.at, prefix: 150_000 })
   const rate = s.c.turnEnded(s.ledger()).remember?.rate ?? 0
   expect(Math.abs(rate - 1e-7) < 1e-9).toBe(true)
-  expect(near(s.look(end.at).reWarmUsd, trueReWarm(HAIKU, s.look(end.at).window))).toBe(true)
+  expect(near(cacheView(s.c, end.at, { ledger: s.ledger() }).reWarmUsd, trueReWarm(HAIKU, cacheView(s.c, end.at, { ledger: s.ledger() }).window))).toBe(true)
 })
 
 test("what a turn's end reads of the lifetime moves a model's own writes", () => {
@@ -196,7 +195,7 @@ test('growth since the last step, at a redraw, a turn\'s end or the next turn\'s
   s.step(HAIKU, resp(500, 0, 50_000, 800), 0)
   s.grows(0.002)
   expect(Math.abs((s.c.turnEnded(s.ledger()).remember?.rate ?? 0) - 1e-7) < 1e-10).toBe(true)
-  const { cache } = s.c.view({ now: MIN, ledger: s.ledger(), contextTokens: 0, autoCompactOff: false })
+  const cache = cacheView(s.c, MIN, { ledger: s.ledger() })
   expect(near(cache.reWarmUsd, trueReWarm(HAIKU, cache.window), 1e-6)).toBe(true)
   s.c.turnStarted({ priceModel: undefined, ledger: s.ledger() })
   s.step(HAIKU, resp(500, 50_000, 1_000, 800), 2 * MIN)

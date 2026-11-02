@@ -5,6 +5,7 @@ import { test, expect, type Engine } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
 import { LAYOUT_NAMES } from '../hooks/snapshot'
 import { BUILD_155K, LONG, MIN, START, TURN_DONE, TURN_START, engine, mountBand, resp, respond, setup, textOf } from './helpers'
+import { cacheView } from './matrix'
 
 const drawn = async ($: Engine): Promise<string> => {
   const ui = await mountBand($, 'terminal', 160)
@@ -46,24 +47,21 @@ test('the next turn takes the new model, and the countdown is back', LONG, async
   expect(await drawn($)).not.toMatch(SAID)
 })
 
-const view = (c: ReturnType<typeof newCache>, modelNow: string | undefined) =>
-  c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false, modelNow }).cache
-
 test('an alias /model named all along, and its [1m] form, are no switch', () => {
   const c = newCache()
   c.loaded({ priceModel: 'opus[1m]', ledger: 0 })
   c.turnStarted({ priceModel: 'opus[1m]', ledger: 0 })
   c.responded({ ...resp(2_000, 0, 155_000, 500), model: 'claude-opus-5-5' }, 0, true)
-  expect(view(c, 'opus[1m]').modelChanged).toBe(false)
-  expect(view(c, 'opus').modelChanged).toBe(false)
-  expect(view(c, undefined).modelChanged).toBe(false)
-  expect(view(c, 'sonnet').modelChanged).toBe(true)
+  expect(cacheView(c, MIN, { modelNow: 'opus[1m]' }).modelChanged).toBe(false)
+  expect(cacheView(c, MIN, { modelNow: 'opus' }).modelChanged).toBe(false)
+  expect(cacheView(c, MIN, { modelNow: undefined }).modelChanged).toBe(false)
+  expect(cacheView(c, MIN, { modelNow: 'sonnet' }).modelChanged).toBe(true)
 })
 
 test('before any request there is no cache to lose', () => {
   const c = newCache()
   c.loaded({ priceModel: 'opus', ledger: 0 })
-  expect(view(c, 'sonnet').modelChanged).toBe(false)
+  expect(cacheView(c, MIN, { modelNow: 'sonnet' }).modelChanged).toBe(false)
 })
 
 test('model changed compares with what the last request went on: a turn that sent none still says it, and a new conversation starts clean', () => {
@@ -72,7 +70,7 @@ test('model changed compares with what the last request went on: a turn that sen
   c.turnStarted({ priceModel: 'opus', ledger: 0 })
   c.responded({ ...BUILD_155K, model: 'claude-opus-5-5' }, 0, true)
   c.turnEnded(0)
-  const changed = (modelNow: string) => c.view({ now: MIN, ledger: 0, contextTokens: 100_000, autoCompactOff: false, modelNow }).cache.modelChanged
+  const changed = (modelNow: string) => cacheView(c, MIN, { ledger: 0, contextTokens: 100_000, modelNow }).modelChanged
   expect(changed('opus')).toBe(false)
   expect(changed('haiku')).toBe(true)
   // A turn on Haiku that never reached the API: the cache is still Opus's.

@@ -7,7 +7,7 @@ import type { RenderChildren } from 'claude-code'
 import { expect, test, type Engine } from 'claude-code/testing'
 import { DEFAULT_MAX_ROWS, HOUR, LONG, MIN, USAGE, fakeEl, firstRow, runCommand, shown, walk, wordsOf, type Node } from './helpers'
 import { drawBand, layoutAt } from '../hooks/band'
-import type { CacheView, Ttl } from '../hooks/cache'
+import type { CacheModel, CacheView, Ttl } from '../hooks/cache'
 import { makeKit, type Kit } from '../hooks/kit'
 import { DESKTOP, ROW_SLACK, TERMINAL, cellsOf, isDrawn } from '../hooks/layout'
 import { DARK } from '../hooks/palette'
@@ -67,6 +67,11 @@ export const bandOf = (over: Partial<BandSnapshot> = {}): Node => drawBand(fakeE
 /** SNAP_PARTS' cache with `over`. */
 export const cacheWith = (over: Partial<CacheView>): CacheView => ({ ...SNAP_PARTS.cache, ...over })
 /** A cache gone cold. */
+/** The cache model `c`'s view at `now`: no ledger or context known and
+ *  auto-compaction on, unless `over` says otherwise. */
+export const cacheView = (c: CacheModel, now: number, over: Partial<Parameters<CacheModel['view']>[0]> = {}): CacheView =>
+  c.view({ now, ledger: undefined, contextTokens: 0, autoCompactOff: false, ...over }).cache
+
 export const COLD_CACHE = cacheWith({ leftMs: 0 })
 /** The 5-minute cache in its last minute, 30 s left: amber. */
 export const LAST_MINUTE_CACHE = cacheWith({ leftMs: 30_000, ttl: '5m' })

@@ -7,6 +7,7 @@ import { test, expect, type Engine } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
 import { LAYOUT_NAMES } from '../hooks/snapshot'
 import { LONG, MIN, START, mountBand, resp, respond, setup, svgAlts, textOf } from './helpers'
+import { cacheView } from './matrix'
 
 const shutAndOpen = async ($: Engine, surface: 'terminal' | 'desktop'): Promise<string> => {
   const ui = await mountBand($, surface, 160)
@@ -36,7 +37,7 @@ for (const layout of LAYOUT_NAMES)
 const afterOne = (input: number) => {
   const c = newCache()
   c.responded(resp(input, 0, 0, 10), 0, true)
-  return c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache
+  return cacheView(c, MIN)
 }
 
 test('the threshold is the largest minimum the docs list: 4,096 tokens may be below a model\'s minimum, more is not', () => {
@@ -52,7 +53,7 @@ test('no time is left to count, so the timer has nothing to repaint', () => {
 test('a first request that builds the cache, and a small prompt, still count down', () => {
   const built = newCache()
   built.responded(resp(2_000, 0, 80_000, 10), 0, true)
-  expect(built.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.notCaching).toBe(false)
+  expect(cacheView(built, MIN).notCaching).toBe(false)
   expect(afterOne(900).leftMs).toBeGreaterThan(0)
 })
 
@@ -60,7 +61,7 @@ test('a reply with cache tokens ends it, and the countdown starts', () => {
   const c = newCache()
   c.responded(resp(157_000, 0, 0, 10), 0, true)
   c.responded(resp(100, 0, 157_000, 10), MIN, true)
-  const { cache } = c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false })
+  const cache = cacheView(c, MIN)
   expect([cache.notCaching, cache.leftMs]).toEqual([false, 60 * MIN])
   expect(c.turnEnded(undefined).rebuilt).toBe(false)
 })
@@ -69,7 +70,7 @@ test('caching going off is no miss, no rebuild and no five-minute cache', () => 
   const c = newCache()
   c.responded(resp(2_000, 0, 150_000, 10), 0, true)
   c.responded(resp(152_000, 0, 0, 10), 12 * MIN, true)
-  const { cache } = c.view({ now: 12 * MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false })
+  const cache = cacheView(c, 12 * MIN)
   expect([cache.misses, cache.ttl]).toEqual([0, '1h'])
   expect(c.turnEnded(undefined).rebuilt).toBe(false)
 })
@@ -78,5 +79,5 @@ test('a subagent that caches nothing says nothing of the main cache', () => {
   const c = newCache()
   c.responded(resp(2_000, 0, 150_000, 10), 0, true)
   c.responded(resp(50_000, 0, 0, 10), MIN, false)
-  expect(c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.notCaching).toBe(false)
+  expect(cacheView(c, MIN).notCaching).toBe(false)
 })
