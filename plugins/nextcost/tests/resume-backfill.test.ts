@@ -381,6 +381,18 @@ test('a SessionStart while session.start runs still resumes the conversation', a
   expect(shown(pillOf(await mounted($), 'cost'))).toMatch(/\$30\.30/)
 })
 
+test("a load that recalls reads where a SessionStart before it says the transcript is: a config directory moves it", async ($, on) => {
+  const moved = '/elsewhere/projects/-p/s1.jsonl'
+  const clock = setup(on, { usage: { ...RESUMED, cost: { usd: 5 } }, env: ENV, now: 3 * HOUR })
+  engine.transcript = TRANSCRIPT
+  await $.classic.SessionStart({ source: 'startup', session_id: engine.sessionId, transcript_path: moved })
+  await $.session.start(START)
+  await clock.settle()
+  const tails = engine.ran.filter(argv => argv[0] === 'tail')
+  expect(tails.length).toBeGreaterThan(0)
+  expect(tails.every(argv => argv.at(-1) === moved)).toBe(true)
+})
+
 test('a resume of another session said before the load never counts its spend in this one', async ($, on) => {
   const clock = setup(on, { usage: RESUMED, env: ENV, now: 3 * HOUR })
   engine.transcript = TRANSCRIPT

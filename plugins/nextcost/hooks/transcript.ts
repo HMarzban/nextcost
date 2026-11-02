@@ -3,9 +3,9 @@
 // how long its cache was last written for, and what the session had spent.
 // Every line is untrusted data, parsed on its own.
 
-import type { Spend, Ttl } from './cache'
+import type { Spend } from './cache'
 import { NO_TOKENS, addTokens, modelName, tierFactor, weightedTokens } from './prices'
-import type { TokenCounts } from './prices'
+import type { TokenCounts, Ttl } from './prices'
 import { stripTrailingSlashes } from './workspace'
 
 /** Whether a parsed value is an object, as a store entry or a transcript line must be. */
@@ -56,6 +56,14 @@ const isMainReply = (entry: Record<string, unknown>): boolean =>
   entry.isApiErrorMessage !== true &&
   !(isRecord(entry.message) && entry.message.model === SYNTHETIC_MODEL)
 
+/** A transcript's main-loop replies that name `marker`, from its end: each
+ *  line, and the message it holds. */
+function* mainReplies(transcript: string, marker: string): Generator<Readonly<{ entry: Record<string, unknown>; message: Record<string, unknown> }>> {
+  for (const entry of fromEnd(transcript, marker)) {
+    if (isMainReply(entry) && isRecord(entry.message)) yield { entry, message: entry.message }
+  }
+}
+
 /** When a transcript line was logged; undefined where it doesn't say. */
 const loggedAt = (entry: Record<string, unknown>): number | undefined => {
   const at = typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN
@@ -82,10 +90,8 @@ export const lastRequestAt = (transcript: string): number | undefined => {
 
 /** The model the transcript's last main-loop reply was billed under, as the API names it. */
 export const lastReplyModel = (transcript: string): string | undefined => {
-  for (const entry of fromEnd(transcript, REPLY_MARKER)) {
-    if (!isMainReply(entry) || !isRecord(entry.message)) continue
-    const model = entry.message.model
-    if (typeof model === 'string' && model !== '') return model
+  for (const { message } of mainReplies(transcript, REPLY_MARKER)) {
+    if (typeof message.model === 'string' && message.model !== '') return message.model
   }
   return undefined
 }
@@ -133,9 +139,9 @@ export const COST_RECORD = '"type":"cost-state"'
 /** The prompt the transcript's last main-loop reply sent: every input
  *  token, cache reads and writes included, as a price tier counts it. */
 const lastPrompt = (transcript: string): number | undefined => {
-  for (const entry of fromEnd(transcript, REPLY_MARKER)) {
-    if (!isMainReply(entry) || !isRecord(entry.message) || !isRecord(entry.message.usage)) continue
-    const t = replyTokens(entry.message.usage)
+  for (const { message } of mainReplies(transcript, REPLY_MARKER)) {
+    if (!isRecord(message.usage)) continue
+    const t = replyTokens(message.usage)
     return t.uncached + t.read + t.written
   }
   return undefined
@@ -162,19 +168,14 @@ const CACHE_WRITE_MARKER = '"cache_creation"'
  *  hour if it wrote any for an hour, else five minutes if it wrote any, and
  *  when its line was logged. */
 export const lastWrite = (transcript: string): Readonly<{ ttl: Ttl; at: number | undefined }> | undefined => {
-  for (const entry of fromEnd(transcript, CACHE_WRITE_MARKER)) {
-    if (!isMainReply(entry) || !isRecord(entry.message)) continue
-    const usage = entry.message.usage
-    const written = isRecord(usage) ? usage.cache_creation : undefined
+  for (const { entry, message } of mainReplies(transcript, CACHE_WRITE_MARKER)) {
+    const written = isRecord(message.usage) ? message.usage.cache_creation : undefined
     if (!isRecord(written)) continue
     if (countOf(written, 'ephemeral_1h_input_tokens') > 0) return { ttl: '1h', at: loggedAt(entry) }
     if (countOf(written, 'ephemeral_5m_input_tokens') > 0) return { ttl: '5m', at: loggedAt(entry) }
   }
   return undefined
 }
-
-/** The TTL the transcript's last main-loop cache write was made at. */
-export const lastWriteTtl = (transcript: string): Ttl | undefined => lastWrite(transcript)?.ttl
 
 /** A line's cost record, parsed; undefined for any other line, or one cut short. */
 const costRecordOf = (line: string): Record<string, unknown> | undefined => {

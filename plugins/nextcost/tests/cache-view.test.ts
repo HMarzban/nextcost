@@ -2,7 +2,8 @@
 // reply has been seen, recalled before that, and one rule between the two.
 
 import { test, expect } from 'claude-code/testing'
-import { cacheFactsOf, newCache } from '../hooks/cache'
+import { newCache } from '../hooks/cache'
+import { cacheFactsOf } from '../hooks/cache-facts'
 import type { CacheModel } from '../hooks/cache'
 import { BUILD_155K, MIN } from './helpers'
 
@@ -13,9 +14,9 @@ const viewAt = (c: CacheModel, now: number, ledger: number | undefined, contextT
   c.view({ now, ledger, contextTokens, autoCompactOff: false }).cache
 
 /** Loaded with `ledger` on it, the last reply recalled at 0 with `rate`. */
-const recalledAt0 = (ledger: number, rate: number | null, priceModel?: string): CacheModel => {
+const recalledAt0 = (ledger: number, rate: number | null, namedModel?: string): CacheModel => {
   const c = newCache()
-  c.loaded({ priceModel, ledger })
+  c.loaded({ namedModel, ledger })
   c.recalled({ lastAt: 0, rate, billed: undefined })
   return c
 }
@@ -63,7 +64,7 @@ test("once a reply is seen, the measured cache stands and the recall doesn't", (
 test('a new session forgets the recall and the model the tokens were priced at', () => {
   expect(viewAt(recalledAt0(2.41, RATE, 'claude-opus-5-5'), 0, 2.41, 0).readShare).toBe(0.05)
   const c = newCache()
-  c.loaded({ priceModel: undefined, ledger: 2.41 })
+  c.loaded({ namedModel: undefined, ledger: 2.41 })
   const view = viewAt(c, 0, 2.41, 0)
   expect(view.recalled).toBe(false)
   expect(view.readShare).toBe(0.1)
@@ -83,11 +84,11 @@ test('coldAt: null before a reply, the reply plus the lifetime after, null once 
 
 test("a ledger that has spent nothing is a new conversation; one that can't be read is not known to be", () => {
   const spent = newCache()
-  spent.loaded({ priceModel: undefined, ledger: 0 })
+  spent.loaded({ namedModel: undefined, ledger: 0 })
   expect(viewAt(spent, 0, 0, 0).fresh).toBe(true)
   expect(spent.wantsRecall()).toBe(false)
   const unread = newCache()
-  unread.loaded({ priceModel: undefined, ledger: undefined })
+  unread.loaded({ namedModel: undefined, ledger: undefined })
   expect(viewAt(unread, 0, undefined, 0).fresh).toBe(false)
   expect(unread.wantsRecall()).toBe(true)
 })

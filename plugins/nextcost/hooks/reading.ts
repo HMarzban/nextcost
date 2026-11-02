@@ -3,8 +3,8 @@
 // beside them, the board's and chips'. Pure, so readingsOf can be checked
 // without mounting the band.
 
-import { cacheFactsOf } from './cache'
-import type { CacheFacts } from './cache'
+import { cacheFactsOf } from './cache-facts'
+import type { CacheFacts } from './cache-facts'
 import { drawnWeekOf } from './calendar'
 import type { DrawnWeek, WindowNow } from './calendar'
 import type { ContextFacts, ContextFill, Frame, LimitBase, LimitFacts, LimitKey, LiveLimit, SpendFacts } from './facts'

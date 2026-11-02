@@ -47,7 +47,7 @@ test('the first reply after a resume or a reload rebuilds a cache already cold',
   expect(rebuilt(resumed)).toBe(true)
   const reloaded = (): CacheModel => {
     const c = newCache()
-    c.loaded({ priceModel: undefined, ledger: 5 })
+    c.loaded({ namedModel: undefined, ledger: 5 })
     c.recalled({ lastAt: 0, rate: null, billed: undefined })
     return c
   }
@@ -466,7 +466,7 @@ test('a lifetime pinned before a reload and no longer set stands unpinned, assum
   const reloaded = newCache(before.kept())
   reloaded.configured({ ttl: undefined, idleCompactFrom: undefined })
   const { cache } = reloaded.view({ now: 0, ledger: undefined, contextTokens: 0, autoCompactOff: false })
-  expect(cache.ttlPinned).toBe(false)
+  expect(cache.ttlKnown).toBe(false)
   expect(cache.ttl).toBe('1h')
 })
 
@@ -499,7 +499,7 @@ test('a reply dated after now counts down one lifetime at most, whatever the clo
 test('a recalled reply dated after now is unknown: no countdown, no idle time', () => {
   for (const lastAt of [HOUR + 1, 6 * HOUR, 1e15]) {
     const c = newCache()
-    c.loaded({ priceModel: undefined, ledger: 5 })
+    c.loaded({ namedModel: undefined, ledger: 5 })
     c.recalled({ lastAt, rate: null, billed: undefined })
     const cache = viewAt(c, HOUR)
     expect([cache.recalled, cache.coldAt, cache.idleMs, c.idleMs(HOUR)]).toEqual([false, null, null, null])
@@ -516,7 +516,7 @@ test("a resume the engine dates after now is unknown too", () => {
 
 test('a recalled reply at now is a reply just made, not unknown', () => {
   const c = newCache()
-  c.loaded({ priceModel: undefined, ledger: 5 })
+  c.loaded({ namedModel: undefined, ledger: 5 })
   c.recalled({ lastAt: HOUR, rate: null, billed: undefined })
   const cache = viewAt(c, HOUR)
   expect([cache.recalled, cache.idleMs, cache.leftMs]).toEqual([true, 0, TTL_MS['1h']])
@@ -525,14 +525,14 @@ test('a recalled reply at now is a reply just made, not unknown', () => {
 test('model changed compares with what the last request went on: a turn that sent none still says it, and a new conversation starts clean', () => {
   const c = newCache()
   c.configured({ ttl: '1h', idleCompactFrom: undefined })
-  c.turnStarted({ priceModel: 'opus', ledger: 0 })
+  c.turnStarted({ namedModel: 'opus', ledger: 0 })
   c.responded(OPUS_BUILD, 0, true)
   c.turnEnded(0)
-  const changed = (modelNow: string) => c.view({ now: MIN, ledger: 0, contextTokens: 100_000, autoCompactOff: false, modelNow }).cache.modelChanged
+  const changed = (modelNow: string) => c.view({ now: MIN, ledger: 0, contextTokens: 100_000, autoCompactOff: false, modelNow }).cache.interrupted === 'switched'
   expect(changed('opus')).toBe(false)
   expect(changed('haiku')).toBe(true)
   // A turn on Haiku that never reached the API: the cache is still Opus's.
-  c.turnStarted({ priceModel: 'haiku', ledger: 0 })
+  c.turnStarted({ namedModel: 'haiku', ledger: 0 })
   c.turnEnded(0)
   expect(changed('haiku')).toBe(true)
   c.conversationEnded(0, true)

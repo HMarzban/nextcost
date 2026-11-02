@@ -183,7 +183,7 @@ test('a compaction a resumed conversation makes before its first reply reads com
   c.resumed({ cache: { lastAt: 0, expired: false, reWarmUsd: 9 }, transcript: undefined })
   c.compacted({ now: 5 * MIN, sizeAfter: 20_000, manual: true })
   const { cache } = c.view({ now: 6 * MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false })
-  expect([cache.compacted, cache.leftMs, cache.window, cache.recalled]).toEqual([true, 0, 20_000, false])
+  expect([cache.interrupted, cache.leftMs, cache.window, cache.recalled]).toEqual(['compacted', 0, 20_000, false])
 })
 
 // ---- where it runs ----------------------------------------------------------

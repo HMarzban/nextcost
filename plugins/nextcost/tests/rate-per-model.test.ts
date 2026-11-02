@@ -28,7 +28,7 @@ const billOf = (u: Usage, model: string, writeMult: number): number => {
 const session = () => {
   const c = newCache()
   c.configured({ ttl: '1h', idleCompactFrom: undefined })
-  c.turnStarted({ priceModel: undefined, ledger: 0 })
+  c.turnStarted({ namedModel: undefined, ledger: 0 })
   let ledger = 0
   return {
     c,
@@ -83,7 +83,7 @@ test('after a switch the re-warm is priced at the new model alone, and it rememb
 test('a switch before the new model has a bill of its own remembers no blended rate', () => {
   const c = newCache()
   c.configured({ ttl: '1h', idleCompactFrom: undefined })
-  c.turnStarted({ priceModel: undefined, ledger: 0 })
+  c.turnStarted({ namedModel: undefined, ledger: 0 })
   c.responded({ ...resp(500, 0, 100_000, 800), model: OPUS }, 0, true, { ledger: 0.8 + 0.018, ledgerBefore: 0 })
   c.responded({ ...resp(500, 0, 100_000, 800), model: HAIKU }, MIN, true, { ledger: undefined })
   // The bill leaves about $0.02 over Haiku's steps, but it's no rate of its own.
@@ -93,7 +93,7 @@ test('a switch before the new model has a bill of its own remembers no blended r
 test('a step whose ledger read failed leaves the rest told: its model solves from what is left over', () => {
   const c = newCache()
   c.configured({ ttl: '1h', idleCompactFrom: undefined })
-  c.turnStarted({ priceModel: undefined, ledger: 0 })
+  c.turnStarted({ namedModel: undefined, ledger: 0 })
   const opus = resp(500, 0, 100_000, 800)
   const sonnet = resp(500, 0, 100_000, 800)
   const opusBill = billOf(opus, OPUS, 2)
@@ -162,11 +162,11 @@ test('/clear starts the books again: the conversation after it solves from its o
   const s = session()
   turns(s, OPUS, 5, { at: 0, prefix: 100_000 })
   s.c.conversationEnded(s.ledger(), false)
-  s.c.turnStarted({ priceModel: undefined, ledger: s.ledger() })
+  s.c.turnStarted({ namedModel: undefined, ledger: s.ledger() })
   const end = turns(s, HAIKU, 2, { at: HOUR, prefix: 20_000 })
   const { reWarmUsd, window } = s.look(end.at)
   expect(near(reWarmUsd, trueReWarm(HAIKU, window), 0.0005)).toBe(true)
-  expect(Object.keys(s.c.kept().books)).toEqual([HAIKU])
+  expect(Object.keys(s.c.kept().bill.books)).toEqual([HAIKU])
 })
 
 test("a resumed conversation's earlier spend stays out of the books; its reads count in what was saved", () => {
@@ -194,7 +194,7 @@ test("Haiku's upper tier holds in its own book: the rate stays the lower tier's 
 
 test("what a turn's end reads of the lifetime moves a model's own writes", () => {
   const c = newCache()
-  c.turnStarted({ priceModel: undefined, ledger: 0 })
+  c.turnStarted({ namedModel: undefined, ledger: 0 })
   const opus = resp(500, 0, 100_000, 800)
   // The ledger bills the writes at five minutes' 1.25×; the band assumed the hour's 2×.
   const opusBill = billOf(opus, OPUS, 1.25)
@@ -202,12 +202,88 @@ test("what a turn's end reads of the lifetime moves a model's own writes", () =>
   c.turnEnded(opusBill)
   const sonnet = resp(500, 0, 100_000, 800)
   const whole = opusBill + billOf(sonnet, SONNET, 1.25)
-  c.turnStarted({ priceModel: undefined, ledger: opusBill })
+  c.turnStarted({ namedModel: undefined, ledger: opusBill })
   c.responded({ ...sonnet, model: SONNET }, MIN, true, { ledger: whole, ledgerBefore: opusBill })
   c.turnEnded(whole)
   c.wroteFor('5m')
   const rate = c.turnEnded(whole).remember?.rate ?? 0
   expect(Math.abs(rate - 2e-6) < 1e-9).toBe(true)
+})
+
+test("what a turn's end reads of the lifetime moves the writes of a step with no bill told, in its own book", () => {
+  const c = newCache()
+  c.turnStarted({ namedModel: undefined, ledger: 0 })
+  const opus = resp(500, 0, 100_000, 800)
+  const opusBill = billOf(opus, OPUS, 1.25)
+  c.responded({ ...opus, model: OPUS }, 0, true, { ledger: opusBill, ledgerBefore: 0 })
+  c.turnEnded(opusBill)
+  // Sonnet's bill is left to tell: the ledger read failed, and it solves from what's left over.
+  const sonnet = resp(500, 0, 100_000, 800)
+  const whole = opusBill + billOf(sonnet, SONNET, 1.25)
+  c.turnStarted({ namedModel: undefined, ledger: opusBill })
+  c.responded({ ...sonnet, model: SONNET }, MIN, true, { ledger: undefined, ledgerBefore: opusBill })
+  c.turnEnded(whole)
+  c.wroteFor('5m')
+  const { reWarmUsd, window } = c.view({ now: 2 * MIN, ledger: whole, contextTokens: 0, autoCompactOff: false }).cache
+  expect(near(reWarmUsd, 1.25 * window * 2e-6, 1e-6)).toBe(true)
+})
+
+// ---- a whole bill over steps on another model -------------------------------
+
+/** A model that has only heard /model name `named`, and no main reply yet. */
+const namedOnly = (named: string): CacheModel => {
+  const c = newCache()
+  c.configured({ ttl: '1h', idleCompactFrom: undefined })
+  c.turnStarted({ namedModel: named, ledger: 0 })
+  return c
+}
+
+test('a subagent-only first step: the whole bill solves with its reads at the read share of the model /model names', () => {
+  const c = namedOnly(OPUS)
+  // 1k input, 200k read and 1k output on Haiku's upper tier, $1 in all.
+  c.responded({ ...resp(1_000, 200_000, 0, 1_000), model: HAIKU }, 0, false, { ledger: 1, ledgerBefore: 0 })
+  const { savedUsd } = c.view({ now: MIN, ledger: 1, contextTokens: 0, autoCompactOff: false }).cache
+  // Weighs 1k + 5% of 200k + 5k at Opus's read share, and four more of Haiku's 26k
+  // for its tier: 120k. Saved: Haiku's reads, 5 × 200k, at Opus's 95% off.
+  expect(near(savedUsd, (1 / 120_000) * 0.95 * 1_000_000, 1e-9)).toBe(true)
+})
+
+test('steps on two models under a third that /model names: the whole bill still speaks, its reads at the third\'s share', () => {
+  const c = namedOnly(OPUS)
+  c.responded({ ...resp(1_000, 200_000, 0, 1_000), model: HAIKU }, 0, false, { ledger: 1, ledgerBefore: 0 })
+  c.responded({ ...resp(1_000, 100_000, 0, 1_000), model: SONNET }, MIN, false, { ledger: 2, ledgerBefore: 1 })
+  const { savedUsd } = c.view({ now: 2 * MIN, ledger: 2, contextTokens: 0, autoCompactOff: false }).cache
+  // 2k + 5% of 300k + 10k = 27k, and Haiku's 104k premium: 131k for $2.
+  expect(near(savedUsd, (2 / 131_000) * 0.95 * 1_100_000, 1e-9)).toBe(true)
+})
+
+test('a step with a tool loop on another model stays off the whole bill, all but what its reads weigh apart', () => {
+  const c = namedOnly(OPUS)
+  c.responded({ ...resp(1_000, 100_000, 0, 1_000), model: SONNET }, 0, false, { ledger: 1, ledgerBefore: 0 })
+  // Two rounds of 100.5k each, Haiku's upper tier, and its $3 off the books.
+  c.responded({ ...resp(1_000, 200_000, 0, 1_000), model: HAIKU }, MIN, false, { ledger: 4, ledgerBefore: 1, serverTools: 1 })
+  const { savedUsd } = c.view({ now: 2 * MIN, ledger: 4, contextTokens: 0, autoCompactOff: false }).cache
+  // Every token at Opus's read share, 27k, and Haiku's 104k premium, less its 130k weight: 1k, for $1.
+  expect(near(savedUsd, (1 / 1_000) * 0.95 * 1_100_000, 1e-9)).toBe(true)
+})
+
+test('after /clear the billed model carries over: subagents on two others solve as one bill at its share', () => {
+  const c = namedOnly(OPUS)
+  c.responded({ ...resp(500, 0, 100_000, 800), model: OPUS }, 0, true, { ledger: 1, ledgerBefore: 0 })
+  c.conversationEnded(1, false)
+  c.turnStarted({ namedModel: OPUS, ledger: 1 })
+  c.responded({ ...resp(1_000, 200_000, 0, 1_000), model: HAIKU }, MIN, false, { ledger: 2, ledgerBefore: 1 })
+  c.responded({ ...resp(1_000, 100_000, 0, 1_000), model: SONNET }, 2 * MIN, false, { ledger: 3, ledgerBefore: 2 })
+  const { savedUsd } = c.view({ now: 3 * MIN, ledger: 3, contextTokens: 0, autoCompactOff: false }).cache
+  expect(near(savedUsd, (2 / 131_000) * 0.95 * 1_100_000, 1e-9)).toBe(true)
+})
+
+test('a step that names no model weighs its reads at the default share, and the whole bill at the model priced', () => {
+  const c = namedOnly(OPUS)
+  c.responded(resp(1_000, 100_000, 0, 1_000), 0, true, { ledger: 1, ledgerBefore: 0 })
+  const rate = c.turnEnded(1).remember?.rate ?? 0
+  // 1k + 5% of 100k + 5k = 11k, for $1.
+  expect(Math.abs(rate - 1 / 11_000) < 1e-12).toBe(true)
 })
 
 // ---- growth outside a step --------------------------------------------------
@@ -228,7 +304,7 @@ test('growth since the last step, at a redraw, a turn\'s end or the next turn\'s
   expect(Math.abs((s.c.turnEnded(s.ledger()).remember?.rate ?? 0) - 1e-7) < 1e-10).toBe(true)
   const { cache } = s.c.view({ now: MIN, ledger: s.ledger(), contextTokens: 0, autoCompactOff: false })
   expect(near(cache.reWarmUsd, trueReWarm(HAIKU, cache.window), 1e-6)).toBe(true)
-  s.c.turnStarted({ priceModel: undefined, ledger: s.ledger() })
+  s.c.turnStarted({ namedModel: undefined, ledger: s.ledger() })
   s.step(HAIKU, resp(500, 50_000, 1_000, 800), 2 * MIN)
   expect(Math.abs((s.c.turnEnded(s.ledger()).remember?.rate ?? 0) - 1e-7) < 1e-10).toBe(true)
 })
@@ -244,7 +320,7 @@ test('what the session has cost still counts every dollar, off the rate or on it
 test('two steps under way at once each take their own bill', () => {
   const c = newCache()
   c.configured({ ttl: '1h', idleCompactFrom: undefined, subagentTtl: '1h' })
-  c.turnStarted({ priceModel: undefined, ledger: 0 })
+  c.turnStarted({ namedModel: undefined, ledger: 0 })
   const main = resp(500, 0, 100_000, 800)
   const agent = resp(500, 0, 50_000, 800)
   const mainBill = billOf(main, OPUS, 2)

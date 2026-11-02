@@ -39,8 +39,8 @@ const afterOne = (input: number) => {
 }
 
 test('the threshold is the largest minimum the docs list: 4,096 tokens may be below a model\'s minimum, more is not', () => {
-  expect(afterOne(4_096).notCaching).toBe(false)
-  expect(afterOne(4_097).notCaching).toBe(true)
+  expect(afterOne(4_096).interrupted).toBe(undefined)
+  expect(afterOne(4_097).interrupted).toBe('uncached')
 })
 
 test('no time is left to count, so the timer has nothing to repaint', () => {
@@ -51,7 +51,7 @@ test('no time is left to count, so the timer has nothing to repaint', () => {
 test('a first request that builds the cache, and a small prompt, still count down', () => {
   const built = newCache()
   built.responded(resp(2_000, 0, 80_000, 10), 0, true)
-  expect(built.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.notCaching).toBe(false)
+  expect(built.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.interrupted).toBe(undefined)
   expect(afterOne(900).leftMs).toBeGreaterThan(0)
 })
 
@@ -60,7 +60,7 @@ test('a reply with cache tokens ends it, and the countdown starts', () => {
   c.responded(resp(157_000, 0, 0, 10), 0, true)
   c.responded(resp(100, 0, 157_000, 10), MIN, true)
   const { cache } = c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false })
-  expect([cache.notCaching, cache.leftMs]).toEqual([false, 60 * MIN])
+  expect([cache.interrupted, cache.leftMs]).toEqual([undefined, 60 * MIN])
   expect(c.turnEnded(undefined).rebuilt).toBe(false)
 })
 
@@ -77,5 +77,5 @@ test('a subagent that caches nothing says nothing of the main cache', () => {
   const c = newCache()
   c.responded(resp(2_000, 0, 150_000, 10), 0, true)
   c.responded(resp(50_000, 0, 0, 10), MIN, false)
-  expect(c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.notCaching).toBe(false)
+  expect(c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.interrupted).toBe(undefined)
 })

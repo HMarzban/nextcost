@@ -170,10 +170,11 @@ export const recallOf = (r: StoreRecall, transcript: string | undefined, now: nu
   // /model may name an alias; the last reply names the model it was billed under.
   const billed = lastReplyModel(transcript) ?? r.billed
   const logged = lastRequestAt(transcript)
+  const named = billed ?? r.model
   return {
     // A request logged after now is unknown, not the time recalled.
     lastAt: r.lastAt ?? (logged !== undefined && logged <= now ? logged : undefined),
-    rate: r.rate ?? (billed === undefined ? rateFromTranscript(transcript, r.model) : (rateFor(r.rates, billed) ?? rateFromTranscript(transcript, billed))),
+    rate: r.rate ?? rateFor(r.rates, named) ?? rateFromTranscript(transcript, named),
     billed,
   }
 }

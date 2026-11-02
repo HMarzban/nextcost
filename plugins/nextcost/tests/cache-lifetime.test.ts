@@ -113,7 +113,7 @@ test('a pin taken away after a read leaves the lifetime assumed again', () => {
   c.wroteFor('5m')
   c.configured({ ttl: '1h', idleCompactFrom: undefined })
   c.configured({ ttl: undefined, idleCompactFrom: undefined })
-  expect(c.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false }).cache.ttlPinned).toBe(false)
+  expect(c.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false }).cache.ttlKnown).toBe(false)
 })
 
 test("a line not yet written isn't taken for this turn's: the band looks again", LONG, async ($, on) => {
@@ -176,7 +176,7 @@ test('a transcript that cannot be read leaves the lifetime assumed, and the band
 
 const respondedOnce = (ledger: number) => {
   const c = newCache()
-  c.turnStarted({ priceModel: undefined, ledger: 0 })
+  c.turnStarted({ namedModel: undefined, ledger: 0 })
   c.responded({ ...resp(0, 0, 400_000, 0), ...OPUS }, MIN, true, { ledger })
   return c
 }
@@ -203,7 +203,7 @@ test('a read of an hour leaves the rate as billed at 2x', () => {
 test('a read made while the next turn is under way waits for that turn\'s', () => {
   const c = respondedOnce(2)
   c.turnEnded(2)
-  c.turnStarted({ priceModel: undefined, ledger: 2 })
+  c.turnStarted({ namedModel: undefined, ledger: 2 })
   c.wroteFor('5m')
   expect(c.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false }).cache.ttl).toBe('1h')
 })
@@ -215,7 +215,7 @@ test('a read carries through a reload', () => {
   const after = newCache(c.kept())
   const { cache } = after.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false })
   expect(cache.ttl).toBe('5m')
-  expect(cache.ttlPinned).toBe(true)
+  expect(cache.ttlKnown).toBe(true)
 })
 
 

@@ -84,7 +84,7 @@ test("who started a turn: the user's own gestures, or what woke the session", ()
 
 test('the model keeps what started its last turn, and whether that turn rebuilt the cache', () => {
   const c = newCache()
-  c.turnStarted({ priceModel: undefined, ledger: undefined, wokenBy: 'task' })
+  c.turnStarted({ namedModel: undefined, ledger: undefined, wokenBy: 'task' })
   c.responded(BUILD_100K, 0, true)
   c.turnEnded(undefined)
   expect(c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.wake).toEqual({ by: 'task', reWarm: false })
@@ -93,7 +93,7 @@ test('the model keeps what started its last turn, and whether that turn rebuilt 
 /** A model after a turn from a background task that measured a request, its wake set. */
 const wokenModel = () => {
   const c = newCache()
-  c.turnStarted({ priceModel: undefined, ledger: undefined, wokenBy: 'task' })
+  c.turnStarted({ namedModel: undefined, ledger: undefined, wokenBy: 'task' })
   c.responded(BUILD_100K, 0, true)
   c.turnEnded(undefined)
   return c
@@ -110,10 +110,10 @@ const NO_REQUEST: ReadonlyArray<readonly [string, (c: ReturnType<typeof newCache
 for (const [name, step] of NO_REQUEST) {
   test(`a turn from a background task with ${name} never touched the cache, so it names no one`, () => {
     const c = newCache()
-    c.turnStarted({ priceModel: undefined, ledger: undefined })
+    c.turnStarted({ namedModel: undefined, ledger: undefined })
     c.responded(BUILD_100K, 0, true)
     c.turnEnded(undefined)
-    c.turnStarted({ priceModel: undefined, ledger: undefined, wokenBy: 'task' })
+    c.turnStarted({ namedModel: undefined, ledger: undefined, wokenBy: 'task' })
     step(c)
     c.turnEnded(undefined)
     expect(wakeOf(c)).toBeUndefined()
@@ -121,12 +121,12 @@ for (const [name, step] of NO_REQUEST) {
   test(`a turn with ${name} leaves the last wake as it was, and its waker doesn't outlive it`, () => {
     for (const wokenBy of ['session', undefined] as const) {
       const c = wokenModel()
-      c.turnStarted({ priceModel: undefined, ledger: undefined, ...(wokenBy === undefined ? {} : { wokenBy }) })
+      c.turnStarted({ namedModel: undefined, ledger: undefined, ...(wokenBy === undefined ? {} : { wokenBy }) })
       step(c)
       c.turnEnded(undefined)
       expect(wakeOf(c)).toEqual({ by: 'task', reWarm: false })
       // The user's next turn that reaches the API takes it away, naming neither.
-      c.turnStarted({ priceModel: undefined, ledger: undefined })
+      c.turnStarted({ namedModel: undefined, ledger: undefined })
       c.responded(READ_100K, 2 * MIN, true)
       c.turnEnded(undefined)
       expect(wakeOf(c)).toBeUndefined()
@@ -136,7 +136,7 @@ for (const [name, step] of NO_REQUEST) {
 
 test("a subagent's request is no turn of the main loop's: it sets no wake", () => {
   const c = newCache()
-  c.turnStarted({ priceModel: undefined, ledger: undefined, wokenBy: 'task' })
+  c.turnStarted({ namedModel: undefined, ledger: undefined, wokenBy: 'task' })
   c.responded(BUILD_100K, 0, false)
   c.turnEnded(undefined)
   expect(wakeOf(c)).toBeUndefined()

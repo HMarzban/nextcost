@@ -57,7 +57,7 @@ test("a peer's message is `a message`, never `another session`: the band cannot 
 // ---- a guessed lifetime is never cut --------------------------------------------
 
 /** A cache whose lifetime is the hour assumed, neither pinned nor read. */
-const GUESSED = cacheWith({ ttlPinned: false })
+const GUESSED = cacheWith({ ttlKnown: false })
 const WOKEN = { misses: 1, wake: { by: 'task', reWarm: false } } as const
 
 /** The keys of a card's fact rows, in the order drawn. */
@@ -77,7 +77,7 @@ test('a guessed hour is marked in the warm hover, in both of its branches and wh
   expect(readingsOf(snapOf({ cache: { ...GUESSED, leftMs: 30_000 } })).chips.cache.hover).toMatch(/^0:30 left \(assumed\); /)
   // A pin or a read says nothing of a guess; an inferred 5m is one.
   expect(readingsOf(snapOf()).chips.cache.hover).not.toMatch(/assumed/)
-  expect(readingsOf(snapOf({ cache: cacheWith({ ttlPinned: false, ttl: '5m' }) })).chips.cache.hover).toMatch(/assumed 5m/)
+  expect(readingsOf(snapOf({ cache: cacheWith({ ttlKnown: false, ttl: '5m' }) })).chips.cache.hover).toMatch(/assumed 5m/)
 })
 
 test('a guessed hour is the second fact of the Cache card, above everything droppable; a known one stays last', () => {
@@ -106,7 +106,7 @@ test('the hovers say the price is the cache rewrite, and what comes on top', () 
   const hover = (cache: BandSnapshot['cache']) => readingsOf(snapOf({ cache })).chips.cache.hover
   expect(hover(cacheWith({ leftMs: 0 }))).toBe('Cold: ~$1.66 rewrites 155k tokens to the cache, plus your reply')
   expect(hover({ ...cacheWith({ leftMs: 0 }), reWarmUsd: null })).toBe('Cold: next message rewrites 155k tokens to the cache, plus your reply')
-  expect(hover(cacheWith({ leftMs: 0, compacted: true, compactedIdle: true }))).toBe('Compacted while idle: ~$1.66 rewrites the 155k summary, plus your reply')
+  expect(hover(cacheWith({ leftMs: 0, interrupted: 'compacted', compactedIdle: true }))).toBe('Compacted while idle: ~$1.66 rewrites the 155k summary, plus your reply')
   expect(hover(cacheWith({ leftMs: 30_000 }))).toBe('0:30 left; if cold, ~$1.66 rewrites the cache, plus your reply')
   // A warm pill shows no price, so its hover names none.
   expect(hover(cacheWith({}))).not.toMatch(/rewrite|extra/)
@@ -123,7 +123,7 @@ test('every hover is one line a terminal row keeps whole: the price and a guess 
     ['idle-compactable, assumed', { cache: { ...GUESSED, idleCompacts: true, leftMs: 50 * MIN } }],
     ['expiring, assumed', { cache: { ...GUESSED, leftMs: 30_000 } }],
     ['cold', { cache: cacheWith({ leftMs: 0 }) }],
-    ['compacted', { cache: cacheWith({ leftMs: 0, compacted: true }) }],
+    ['compacted', { cache: cacheWith({ leftMs: 0, interrupted: 'compacted' }) }],
     ['near compaction', { context: NEAR_COMPACTION }],
     ['under way', { cache: cacheWith({ fresh: false, recovered: false }) }],
   ]
@@ -241,7 +241,7 @@ test('the ASCII tier never draws a bare span after a bar, nor a bare token count
 })
 
 test('the short cache pill keeps the word cache in the ASCII tier, where the clock glyph was its only mark', () => {
-  for (const cache of [LAST_MINUTE_CACHE, cacheWith({ leftMs: 0 }), cacheWith({ leftMs: 0, compacted: true })]) {
+  for (const cache of [LAST_MINUTE_CACHE, cacheWith({ leftMs: 0 }), cacheWith({ leftMs: 0, interrupted: 'compacted' })]) {
     const snap = snapOf({ glyphs: 'ascii', cache })
     const pill = cachePill(makeKit(fakeEl, snap), readingsOf(snap), true)
     expect(shown({ children: pill.body })).toMatch(/cache/)

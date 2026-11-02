@@ -50,17 +50,17 @@ const view = (c: ReturnType<typeof newCache>, modelNow: string | undefined) =>
 
 test('an alias /model named all along, and its [1m] form, are no switch', () => {
   const c = newCache()
-  c.loaded({ priceModel: 'opus[1m]', ledger: 0 })
-  c.turnStarted({ priceModel: 'opus[1m]', ledger: 0 })
+  c.loaded({ namedModel: 'opus[1m]', ledger: 0 })
+  c.turnStarted({ namedModel: 'opus[1m]', ledger: 0 })
   c.responded({ ...resp(2_000, 0, 155_000, 500), model: 'claude-opus-5-5' }, 0, true)
-  expect(view(c, 'opus[1m]').modelChanged).toBe(false)
-  expect(view(c, 'opus').modelChanged).toBe(false)
-  expect(view(c, undefined).modelChanged).toBe(false)
-  expect(view(c, 'sonnet').modelChanged).toBe(true)
+  expect(view(c, 'opus[1m]').interrupted).toBe(undefined)
+  expect(view(c, 'opus').interrupted).toBe(undefined)
+  expect(view(c, undefined).interrupted).toBe(undefined)
+  expect(view(c, 'sonnet').interrupted).toBe('switched')
 })
 
 test('before any request there is no cache to lose', () => {
   const c = newCache()
-  c.loaded({ priceModel: 'opus', ledger: 0 })
-  expect(view(c, 'sonnet').modelChanged).toBe(false)
+  c.loaded({ namedModel: 'opus', ledger: 0 })
+  expect(view(c, 'sonnet').interrupted).toBe(undefined)
 })
