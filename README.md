@@ -195,7 +195,7 @@ card, command and setting.
 It's a **mod**: a Claude Code plugin written with the function-hooks API.
 A `ui.render` hook draws the band above the prompt, and the other hooks watch
 turns, steps and compactions. It's TypeScript and JSX, with no dependencies,
-no build step and over 1,100 tests.
+no build step and over 1,200 tests.
 
 - **The price comes from your own bill.** No pricing table is reachable from
   a mod, so the band solves the base rate from the session's cost and token

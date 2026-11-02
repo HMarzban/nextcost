@@ -1,5 +1,5 @@
-// Whole pieces: in the frame a hover card shows in, every piece of its row
-// is covered whole or left whole, so no sliver of a chip reads as a value of
+// Whole pieces: on a text surface, in the frame a hover card shows in, every
+// piece of its row is covered whole or left whole, so no sliver of a chip reads as a value of
 // its own. Golden holds each of chips' frames to it, and the hover and
 // strip tests the frames they draw.
 import type { RenderChildren, RenderElement } from 'claude-code'

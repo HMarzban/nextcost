@@ -31,7 +31,7 @@ for (const [name, p, hosts] of [
 
   test(`${name}: a hover card is inverted, its ink legible and its ground apart from every chip's and the band's`, () => {
     expect(contrast(p.tooltipFg, p.tooltipBg)).toBeGreaterThanOrEqual(4.5)
-    // Cards are drawn over chips' row and the workspace strip alone, so the
+    // A text surface's cards are drawn over chips' row and the workspace strip alone, so the
     // grounds they cover are the chips' and the host's.
     const covered = [...pillGrounds, p.meterTrack, p.trackInk, p.batteryFill, p.batteryAmber, ...hosts]
     const low = covered.filter(bg => contrast(p.tooltipBg, bg) < 3)
