@@ -30,7 +30,7 @@ type CacheCopy = Readonly<{
 
 /** The cache's pill and hover by mood. Where a pill reads as the other
  *  layouts' figure it is theirs; a countdown and cold's long form are its own. */
-const moodCopy = (c: ChipsFacts['cache']): Pick<CacheCopy, 'pill' | 'hover'> => {
+const moodCopy = (c: ChipsFacts['cache']): Omit<CacheCopy, 'alt'> => {
   // What a warm read costs against input on the model in force.
   const readPct = `${+(c.readShare * 100).toFixed(1)}%`
   const left = fmtCountdown(c.leftMs)
@@ -47,22 +47,26 @@ const moodCopy = (c: ChipsFacts['cache']): Pick<CacheCopy, 'pill' | 'hover'> => 
     case 'unmeasured':
       return {
         pill: () => `cache ${c.figure}`,
+        named: () => true,
         hover: "Not measured since the band loaded; the countdown starts with Claude's next reply",
       }
     case 'warming':
       return {
         pill: () => `cache ${c.figure}`,
+        named: () => true,
         hover: `Your first message builds the cache; after that it bills input at ${readPct}`,
       }
     case 'expiring':
       return {
         pill: cut => (cut ? `${left} ${c.estimate}` : `${left} left · re-warm ${c.estimate}`),
+        named: () => false,
         hover: woken(`${left} left${assumed ? ' (assumed)' : ''}; if cold, ${rewrites('the cache')}, plus your reply`),
       }
     case 'compacted':
       return {
         // A summary to write, not a cache lost: as calm as cold.
         pill: cut => (cut ? c.figureShort : `cache ${c.figure}`),
+        named: cut => !cut,
         hover: c.window === 0
           ? 'Compacted: next message writes the summary, plus your reply'
           : `${compactedWords(c.compactedIdle)}: ${rewrites(`the ${fmtTokens(c.window)} summary`)}, plus your reply`,
@@ -70,22 +74,26 @@ const moodCopy = (c: ChipsFacts['cache']): Pick<CacheCopy, 'pill' | 'hover'> => 
     case 'uncached':
       return {
         pill: figure,
+        named: cut => cut,
         hover: 'The last reply read and wrote no cache, so all input bills in full',
       }
     case 'switched':
       return {
         pill: figure,
+        named: () => false,
         hover: `Model changed: each model has its own cache, so the next message rebuilds ${c.estimate}`,
       }
     case 'cold':
       return {
         // Cold is a price, not an error: neutral, no hue, no alarm.
         pill: cut => (cut ? c.figureShort : `cache cold · next message ${c.estimate}`),
+        named: cut => !cut,
         hover: woken(`Cold: ${rewrites(`${fmtTokens(c.window)} tokens to the cache`)}, plus your reply`),
       }
     case 'warm':
       return {
         pill: () => (c.coldInMs === undefined ? 'cache warm' : `cache ${left}`),
+        named: () => true,
         hover: woken(
           c.idleCompactSoon
             ? `${left} left${assumed ? ' (assumed)' : ''}; may be compacted ${IDLE_COMPACT_AT}`
@@ -102,10 +110,6 @@ const batteried = (mood: CacheFacts['mood']): boolean => mood === 'warm' || mood
 
 const cacheCopy = (c: ChipsFacts['cache']): CacheCopy => ({
   ...moodCopy(c),
-  named: short =>
-    c.mood === 'uncached' ? short
-    : c.mood === 'cold' || c.mood === 'compacted' ? !short
-    : c.mood === 'unmeasured' || c.mood === 'warming' || c.mood === 'warm',
   alt: !batteried(c.mood) ? MOOD_ALT[c.mood] : c.charge <= 0 ? 'cache battery empty' : `cache battery ${Math.round(clamp01(c.charge) * 100)}% left`,
 })
 
