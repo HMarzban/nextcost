@@ -614,10 +614,10 @@ const readCacheSettings = async ($: EngineInterface): Promise<void> => {
 }
 
 /** Recalls session `id`'s last reply into the cache model, off the store or
- *  the end of its transcript: where a resume names it, else where Claude
- *  Code keeps it. */
+ *  the end of its transcript: where a resume, or a SessionStart before this
+ *  load, names it, else where Claude Code keeps it. */
 const recallOnLoad = async ($: EngineInterface, id: string): Promise<void> => {
-  const path = band.resume?.path
+  const path = band.resume?.path ?? band.transcript
   const readEnd = async () => {
     const file = await transcriptFile($, id, path)
     return file === undefined ? undefined : transcriptEnd($, file)
