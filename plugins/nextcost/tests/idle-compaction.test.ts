@@ -3,6 +3,7 @@
 import { test, expect, type Engine, type MockClock } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
 import { idleCompactFrom } from '../hooks/cache-settings'
+import { LAYOUT_NAMES } from '../hooks/snapshot'
 import {
   LONG,
   MIN,
@@ -119,7 +120,7 @@ const COMPACTED = /cache compacted|compacted while idle|COMPACTED/
 
 const autoCompact = ($: Engine) => $.session.compact({ trigger: 'auto', messages: SUMMARY })
 
-for (const layout of ['chips', 'pulse', 'departures'])
+for (const layout of LAYOUT_NAMES)
   test(`${layout} says the cache was compacted`, LONG, async ($, on) => {
     const clock = setup(on, { usage: LONG_TALK, store: { layout } })
     expect(await afterIdle($, clock, autoCompact)).toMatch(COMPACTED)
@@ -150,7 +151,7 @@ test('a compaction five minutes after a request reads compacted, in no words of 
   NOT_IDLE(await afterIdle($, clock, autoCompact, 5 * MIN))
 })
 
-for (const layout of ['chips', 'pulse', 'departures'])
+for (const layout of LAYOUT_NAMES)
   test(`${layout}: /compact stops the old countdown until the next reply`, LONG, async ($, on) => {
     const clock = setup(on, { store: { layout } })
     await $.session.start(START)
