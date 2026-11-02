@@ -48,6 +48,9 @@ test("a fill's clock is rounded as its ETA is: to 5 minutes under an hour, 15 fr
   // At +5:30 the wall clock reads 19:10; its minutes round, not UTC's.
   expect(filling(43 * MIN, fixedZone(330))?.fillText).toBe('full ~19:55')
   expect(filling(117 * MIN, fixedZone(330))?.fillText).toBe('full ~21:00') // 21:07, to the quarter hour
+  // Never a clock at or before now: 13:41 and a minute to go is 13:45, not 13:40.
+  const soon = Date.UTC(2026, 9, 9, 13, 41)
+  expect(readingsOf(snapOf({ now: soon, zone: fixedZone(0), fiveHour: { percentUsed: 84, resetsAt: soon + 4 * HOUR, etaMs: MIN } })).fiveHour?.fillText).toBe('full ~13:45')
 })
 test("an average over a young window is not a claim: the week needs a day of it, and its 12% in 9 hours says nothing of filling", () => {
   const seven = (hoursGone: number, percentUsed: number) =>

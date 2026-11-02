@@ -195,10 +195,13 @@ const hhmm = (wall: number): string => {
 
 /** When a projection `etaMs` away fills, at `ms`, rounded as its ETA is: the
  *  minutes of the clock it will be read on go to 5 under an hour and 15 from
- *  one, so `~1h 15m` doesn't come with a clock to the minute. */
+ *  one, so `~1h 15m` doesn't come with a clock to the minute, and none falls
+ *  before now. */
 export const fillTime = (ms: number, etaMs: number, zone: Zone): number => {
   const step = (etaMs / MINUTE_MS < ETA_QUARTER_FROM_MIN ? 5 : 15) * MINUTE_MS
-  return Math.round(wallTime(ms, zone) / step) * step - zone(ms) * MINUTE_MS
+  const rounded = Math.round(wallTime(ms, zone) / step) * step
+  // Never before now, which a minute to go would round back to.
+  return (rounded < wallTime(ms - etaMs, zone) ? rounded + step : rounded) - zone(ms) * MINUTE_MS
 }
 
 /** A local 24-hour clock time: `14:32`. */

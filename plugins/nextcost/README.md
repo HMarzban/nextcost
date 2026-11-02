@@ -546,7 +546,7 @@ carry on from.
 
 | Hook | What it does |
 | --- | --- |
-| `session.start` | Starts a once-a-second timer that repaints only when the drawing would change and registers `/nextcost` (and its old name, `/usage-band`), then resets the band, or after a reload carries on from the session's own state, reads its stored limit readings and layout, then its settings, and git. Loaded into a conversation it can't tell is new, it recalls the last reply, from its store or the transcript's end as above. |
+| `session.start` | Starts a once-a-second timer that repaints only when the drawing would change and registers `/nextcost` (and its old name, `/usage-band`), then resets the band, or after a reload carries on from the session's own state, reads its stored limit readings and layout, then its settings, where auto-compaction runs and git. Loaded into a conversation it can't tell is new, it recalls the last reply, from its store or the transcript's end as above. |
 | `session.end` | On `/clear` or a resume, starts the next conversation's count and reads git again. |
 | `classic.SessionStart` | On a resume or fork, notes that the conversation isn't new and reads its transcript as above. |
 | `turn.start`, `turn.complete` | Note the session's cost as each main turn starts and ends, the turn's cost, the context, and a limit reading; then read the layout and git again. A subagent's turn is left alone. |

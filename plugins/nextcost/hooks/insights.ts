@@ -12,6 +12,9 @@ const LOOKBACK_MS = 30 * MINUTE_MS
 const MIN_SPAN_MS = 10 * MINUTE_MS
 const MIN_RISE = 2
 const STALE_MS = 15 * MINUTE_MS
+/** Replies that bring no new point, past this many of the measured pace's
+ *  point-lengths, say the pace has slowed: it isn't projected on. */
+const SLOW_BY = 3
 
 /** The newest messages' costs the cost trail keeps. */
 export const COST_TRAIL = 24
@@ -123,7 +126,11 @@ export const newInsights = (kept?: InsightState): Insights => {
       if (first === undefined || last === undefined || last.pct >= 100) return null
       const span = last.at - first.at
       const rise = last.pct - first.pct
-      if (span < MIN_SPAN_MS || rise < MIN_RISE || now - last.at > STALE_MS) return null
+      // The newest reading, which a reply that moved nothing is: the last point is only the last move.
+      const seen = Math.max(last.at, s.readAt ?? last.at)
+      if (span < MIN_SPAN_MS || rise < MIN_RISE || now - seen > STALE_MS) return null
+      // Each point took span / rise at the measured pace; a stretch of readings with none says it is slower.
+      if (seen - last.at > (SLOW_BY * span) / rise) return null
       const tFull = last.at + ((100 - last.pct) * span) / rise
       if (s.resetsAt !== undefined && tFull >= s.resetsAt) return null
       // The time it projected has come and gone: the window may be full, or the pace has dropped.

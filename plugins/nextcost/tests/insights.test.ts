@@ -99,6 +99,28 @@ test('the ETA hides once the time it projects has passed, rather than saying ~5m
   expect(i.fiveHourEtaMs(21 * MIN)).toBe(null)
 })
 
+test('the ETA ages from the newest reading, not from the last time the percent moved', () => {
+  const i = newInsights()
+  i.noteFiveHour(0, 84, RESET_IN_3H)
+  i.noteFiveHour(12 * MIN, 86, RESET_IN_3H) // a point every 6 minutes, 14 to go: full at 96m
+  i.noteReading(20 * MIN)
+  i.noteReading(26 * MIN) // replies, and no new point since 12m
+  expect(i.fiveHourEtaMs(28 * MIN)).toBe(68 * MIN) // 16 minutes past the last point, but 2 past a reading
+  // Idle, with no reading, it still hides a quarter of an hour after the last.
+  expect(i.fiveHourEtaMs(41 * MIN)).not.toBe(null)
+  expect(i.fiveHourEtaMs(42 * MIN)).toBe(null)
+})
+
+test('readings that keep arriving with no move say the pace is flatter than measured: the ETA hides', () => {
+  const i = newInsights()
+  i.noteFiveHour(0, 84, RESET_IN_3H)
+  i.noteFiveHour(12 * MIN, 86, RESET_IN_3H) // one point should take 6 minutes
+  i.noteReading(29 * MIN) // 17 minutes on, not yet three points' time
+  expect(i.fiveHourEtaMs(30 * MIN)).not.toBe(null)
+  i.noteReading(31 * MIN) // 19 minutes and no point: well past
+  expect(i.fiveHourEtaMs(32 * MIN)).toBe(null)
+})
+
 test('the ETA hides when the window resets first', () => {
   const i = newInsights()
   const soon = 30 * MIN
