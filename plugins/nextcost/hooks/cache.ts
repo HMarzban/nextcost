@@ -204,12 +204,11 @@ export type CacheState = {
   messageCount: number | undefined
   /** The model the last main-loop request ran on; a switch rebuilds the cache. */
   model: string | undefined
-  /** The conversation is known to start here (a new session, a /clear), so
-   *  its cache is warming; after a reload mid-conversation it is unmeasured. */
-  knownFresh: boolean
-  /** The engine said this conversation was resumed, so it never starts here,
-   *  whatever the ledger says. */
-  resumed: boolean
+  /** Where the conversation began. Fresh: known to start here (a new session,
+   *  a /clear), so its cache is warming. Resumed: the engine said so, so it
+   *  never starts here, whatever the ledger says. Unknown: after a reload
+   *  mid-conversation, its cache is unmeasured. */
+  origin: 'unknown' | 'fresh' | 'resumed'
   /** What the engine said of the resumed conversation's cache, when it said;
    *  before this band's first reply it stands over anything recalled. */
   resumedCache: ResumedCache | undefined
@@ -250,8 +249,7 @@ const INITIAL: Readonly<CacheState> = {
   notCaching: false,
   messageCount: undefined,
   model: undefined,
-  knownFresh: false,
-  resumed: false,
+  origin: 'unknown',
   resumedCache: undefined,
   recall: undefined,
   prior: undefined,
@@ -268,7 +266,7 @@ const INITIAL: Readonly<CacheState> = {
  *  since. As the engine said on a resume, else as recalled. A time after `now`
  *  is a clock that ran ahead, or data that isn't a time: unknown. */
 const recalledAt = (s: CacheState, now: number): number | undefined => {
-  if (s.requests > 0 || s.knownFresh || s.compaction !== undefined) return undefined
+  if (s.requests > 0 || s.origin === 'fresh' || s.compaction !== undefined) return undefined
   const at = s.resumedCache?.lastAt ?? s.recall?.lastAt
   return at !== undefined && at <= now ? at : undefined
 }
@@ -370,7 +368,7 @@ const viewOf = (s: CacheState, { now, ledger: sessionCost, contextTokens, autoCo
     // Every cache read saved the rest of the base rate against full input price.
     savedUsd: tokens.read <= 0 ? null : savedUsdOf(s.bill, pricing, sessionCost, rate, s.prior?.tokens.read ?? 0),
     readShare: share,
-    fresh: s.knownFresh,
+    fresh: s.origin === 'fresh',
     interrupted: s.compaction !== undefined ? 'compacted' : s.notCaching ? 'uncached' : modelChangedTo(s, modelNow, now) ? 'switched' : undefined,
     compactedIdle: s.compaction?.idle ?? false,
     // Claude Code compacts an idle conversation on every surface the band draws
@@ -388,8 +386,7 @@ const viewOf = (s: CacheState, { now, ledger: sessionCost, contextTokens, autoCo
  *  the engine knows of its cache, when it says, stands over anything
  *  recalled. A resume's facts replace any noted before them. */
 const noteResume = (s: CacheState, said: ResumedCache | undefined): void => {
-  s.knownFresh = false
-  s.resumed = true
+  s.origin = 'resumed'
   s.resumedCache = said
   s.prior = undefined
   s.ttlSeen = undefined
@@ -574,9 +571,9 @@ export const newCache = (kept?: CacheState): CacheModel => {
     kept: () => ({ ...s }),
     loaded: ({ priceModel, ledger }) => {
       s.priceModel = priceModel
-      if (!s.resumed && kept === undefined) s.knownFresh = ledger === 0
+      if (s.origin !== 'resumed' && kept === undefined) s.origin = ledger === 0 ? 'fresh' : 'unknown'
     },
-    wantsRecall: () => s.requests === 0 && !s.knownFresh && s.resumedCache === undefined,
+    wantsRecall: () => s.requests === 0 && s.origin !== 'fresh' && s.resumedCache === undefined,
     recalled: (reply, transcript) => {
       if (s.requests === 0) {
         if (reply?.billed !== undefined) s.billedModel = reply.billed
@@ -645,7 +642,7 @@ export const newCache = (kept?: CacheState): CacheModel => {
       // everything measured starts again. The baseline is provisional until
       // the next turn starts and takes the ledger then.
       const { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turn } = s
-      Object.assign(s, INITIAL, { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turn: { ...NO_TURN, open: turn.open }, bill: billOfNewConversation(ledger), knownFresh: !resumed })
+      Object.assign(s, INITIAL, { ttl, ttlBasis, subagentTtl, priceModel, billedModel, idleCompactFrom, turn: { ...NO_TURN, open: turn.open }, bill: billOfNewConversation(ledger), origin: resumed ? 'unknown' : 'fresh' })
     },
     view: look => {
       s.bill = billAtRedraw(s.bill, look.ledger)
