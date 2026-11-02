@@ -107,9 +107,10 @@ test("subagents on another model neither move the main model's rate nor book its
 test('what the cache saved never falls at a switch to a cheaper model', () => {
   const s = session()
   const at = turns(s, OPUS, 10, { at: 0, prefix: 100_000 })
-  const before = cacheView(s.c, at.at, { ledger: s.ledger() }).savedUsd ?? 0
+  const before = cacheView(s.c, at.at, { ledger: s.ledger() }).savedUsd
+  expect(before).toBeGreaterThan(0)
   turns(s, HAIKU, 2, at)
-  expect(cacheView(s.c, at.at + MIN, { ledger: s.ledger() }).savedUsd ?? 0).toBeGreaterThanOrEqual(before)
+  expect(cacheView(s.c, at.at + MIN, { ledger: s.ledger() }).savedUsd).toBeGreaterThanOrEqual(before ?? Infinity)
 })
 
 /** Keeps `c`'s counts as a reload does: through JSON. */
@@ -121,6 +122,9 @@ test('a reload carries each model\'s own books', () => {
   turns(s, SONNET, 2, at)
   const then = cacheView(s.c, HOUR, { ledger: s.ledger() })
   const now = cacheView(reloaded(s.c), HOUR, { ledger: s.ledger() })
+  // Both figures are there to carry, and Sonnet's, the model it ended on.
+  expectNear(then.reWarmUsd, trueReWarm(SONNET, then.window), 0.005)
+  expect(then.savedUsd).toBeGreaterThan(0)
   expect(now.reWarmUsd).toBe(then.reWarmUsd)
   expect(now.savedUsd).toBe(then.savedUsd)
 })
@@ -172,7 +176,9 @@ test("what a turn's end reads of the lifetime moves a model's own writes", () =>
   c.turnStarted({ priceModel: undefined, ledger: opusBill })
   c.responded({ ...sonnet, model: SONNET }, MIN, true, { ledger: whole, ledgerBefore: opusBill })
   c.turnEnded(whole)
+  // The read lands after the turn's end; the rate is read at the next turn's, which sent nothing.
   c.wroteFor('5m')
+  c.turnStarted({ priceModel: undefined, ledger: whole })
   const rate = c.turnEnded(whole).remember?.rate ?? 0
   expectNear(rate, 2e-6, 1e-9)
 })
