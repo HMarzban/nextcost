@@ -248,15 +248,33 @@ conversation at the cache-write price: 2× base input on the hour's cache,
 1.25× on five minutes. On the hour, the context part of that message then
 costs ~40× the warm read on Opus 5.5 and Sonnet 5.5, ~80× on Fable 5.1 and
 ~20× on Haiku 5.5; on five minutes, ~25×, ~50× and ~12.5×. Output and new
-input cost the same either way. In a terminal session on
-the hour's cache, Claude Code may compact the conversation first; see
+input cost the same either way. On the hour's cache,
+Claude Code may compact the conversation first; see
 [Idle compaction](#idle-compaction).
 
 The band never suggests sending a message to keep the cache warm. That
 would mean burning tokens to avoid burning tokens.
 
-A compaction or a model switch rebuilds the cache on purpose, so neither
-counts as an unexpected rebuild.
+A compaction or a model switch rebuilds the cache on purpose, and a `/rewind`
+(the request carries fewer messages) reads back to an earlier cache entry, so
+none of them counts as an unexpected rebuild. Any other request that reads
+short of a warm cache does: a change to the tools, say. Claude Code's own
+`/usage` counts clearing old tool results as an expected rebuild, but a mod
+isn't told when that happens, so the band counts it as unexpected.
+
+After a compaction, `/compact` or one in a turn too, the old countdown stops:
+the cache reads `compacted` until the next reply, which writes the summary.
+
+After `/model` names another model, the cache reads `model changed` with the
+tokens the next message rebuilds, each model having its own cache. It shows at
+the band's next redraw, and the next message ends it.
+
+When a response with more than 4,096 tokens of input reads and writes no cache
+(`DISABLE_PROMPT_CACHING`, a gateway that strips the cache markers, a model
+without caching), the cache reads `not caching`, with no countdown and no
+re-warm price, until a reply reports cache tokens again. 4,096 is the largest
+minimum [Anthropic's docs](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+list; a smaller prompt can read and write none just for being below its model's.
 
 ## Reopening an old session
 
@@ -418,13 +436,14 @@ band reads it off the session's transcript. Your first reply counts down
 what was really written, and a subscription moving onto usage credits counts
 down five minutes from that turn on.
 
-Until a read succeeds, the band assumes an hour and says `· assumed`. If a
-request after a gap longer than five minutes, on the same model, reads
-short of the cache, it corrects itself to `5m`. Such a request still reads
-the system prompt other sessions in the same folder keep warm, so short
-means short of the conversation, not nothing. A later request after five
-idle minutes that reads it all moves it back to an hour, as Claude Code
-does when a subscription moves off usage credits. On a resumed session, the
+Once a read has succeeded, a short read never changes the lifetime. Until
+then, the band assumes an hour and says `· assumed`. If a request after a gap
+longer than five minutes, on the same model, finds near nothing beyond the
+system prompt other sessions in the same folder keep warm (50k tokens or less),
+it corrects itself to `5m`; reading more than that says only that part of the
+conversation changed. A later request after five idle minutes that reads it
+all moves it back to an hour, as Claude Code does when a subscription moves
+off usage credits. On a resumed session, the
 transcript's last cache write says which until the band's first reply (see
 [Reopening an old session](#reopening-an-old-session)).
 
@@ -457,20 +476,23 @@ message delivered into a turn already running starts none.
 
 ### Idle compaction
 
-In a terminal session on the hour's cache, Claude Code compacts a long
-conversation (200k tokens of context by default) that sits idle for about
-54 minutes, shortly before its cache would expire. Your next message then
+In an interactive terminal, the VS Code chat panel or the desktop app's Code
+tab, on the hour's cache, Claude Code compacts a long conversation (200k tokens
+of context by default) that sits idle for about an hour, which the band takes
+as about 54 minutes, shortly before its cache would expire. Your next message then
 writes a summary instead of the whole conversation
 ([Claude Code's docs](https://code.claude.com/docs/en/settings-reference#idlecompaction)).
 
-While that can happen, the cache's card says so until the 54-minute mark.
+While that can happen, the cache's card says so until about the 54-minute mark.
 The countdown and the re-warm price stay, since Claude Code also needs its
 feature flags and an awake computer to do it. Once it has compacted, the
 cache reads `compacted`, calm, with what the next message costs to write the
 summary; the next reply starts the countdown again. The band follows
 `"idleCompaction": false`, `DISABLE_AUTO_COMPACT`, `DISABLE_COMPACT` and
-`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` as Claude Code does. On the desktop,
-which doesn't compact while idle, neither shows.
+`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` as Claude Code does. On the mobile app,
+which Claude Code's docs don't list, neither shows. Claude Code doesn't compact
+a cloud session while idle, but the band can't tell one from a session on your
+machine, so there it may still say it could.
 
 ## What it runs, reads and sends
 
@@ -491,7 +513,7 @@ it, each given 3 seconds, and never while the band draws:
 | `git -c core.fsmonitor=false --no-optional-locks status --porcelain=v2 --branch` | the session's project folder | the workspace line: branch, changes, ahead and behind. It never takes git's index lock. `-c core.fsmonitor=false` is git's own option for setting one value for this run: it stops a repository's config from making git start its fsmonitor program. It starts no shell. |
 | `git rev-parse --path-format=absolute --git-dir --git-common-dir --show-toplevel` | the same | whether the folder is a linked worktree, and of which repository |
 | `tail -c 1048576 <transcript>` | that session's own transcript: at the path Claude Code gave when it said the session was resumed, else `~/.claude/projects/<project>/<session id>.jsonl`, `<project>` being the project's path with every character but a letter or digit a dash | at the end of each turn that reached the API, unless a setting pins the cache's lifetime: how long its last cache write was made for, and nothing else. Also when a conversation is resumed, or the band loads into one it can't tell is new and its own store doesn't know the last reply's time or its model's rate: when that reply was, so the cache countdown starts from it, the model it was billed under, and the rate its cost record solves to; on a resume, also how long its cache was written for |
-| `grep -a -b -F '"type":"cost-state"' <transcript>`, then `tail -c +<offset> <transcript>` | the same | only when a conversation is resumed: what it spent before this process, so the session's cost includes it |
+| `grep -a -b -F '"type":"cost-state"' <transcript>`, then `tail -c +<offset> <transcript>` | the same | only when a conversation is resumed, and again after its first turn where that found nothing, as a fork's file fills only after its first prompt: what it spent before this process, so the session's cost includes it |
 
 **It reads** the session's id, model and usage from Claude Code (cost, token
 counts, context fill and rate-limit percentages), where each prompt came
@@ -538,7 +560,7 @@ carry on from.
 | `turn.start`, `turn.complete` | Note the session's cost as each main turn starts and ends, the turn's cost, the context, and a limit reading; then read the layout and git again. A subagent's turn is left alone. |
 | `prompt.submit` | Notes where a prompt that starts a turn came from (your own, a background task, another session, a schedule), never its text, so each layout's open view can say who restarted the countdown. |
 | `turn.step` | Reads each response's token counts, and how many tool calls Anthropic ran in it (the advisor), for the cache model and the price per token. |
-| `session.compact` | Notes that the conversation was compacted, so the cache counts as rebuilt at the summary's size. |
+| `session.compact` | Notes that the conversation was compacted, so the cache reads `compacted` at the summary's size until the next reply. |
 | `session.measure` | Reads where auto-compaction runs, and shows a toast as the context or the 5-hour limit crosses its warning levels. |
 | `command.run` | Answers `/nextcost` and `/usage-band`, and no other command; `/nextcost more` reads git. |
 | `ui.render` (above the prompt) | Draws the band; steps aside while a survey holds the space or the band is hidden. Opening the cards with `▵` reads git. |

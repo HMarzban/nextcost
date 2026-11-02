@@ -100,6 +100,8 @@ type Band = {
    *  engine may say so before session.start, or while it runs, and its reset
    *  forgets it, so it outlives that reset and session.start notes it again. */
   resume: Resume | undefined
+  /** When the resume last read again after its first turn was said. */
+  readAgainFor: number | undefined
   /** Where the engine last said this conversation's transcript is. */
   transcript: string | undefined
   /** What the band last drew, so the timer repaints only when it would change. */
@@ -143,6 +145,7 @@ const band: Band = {
   samples: [],
   reads: 0,
   resume: undefined,
+  readAgainFor: undefined,
   transcript: undefined,
   nextWaker: undefined,
   tick: undefined,
@@ -294,6 +297,27 @@ const readResumed = async ($: EngineInterface, mine: Resume): Promise<void> => {
   } catch {
     // the ledger and the TTL stand
   }
+}
+
+/** How long after a resumed conversation's first turn to look again. */
+const RESUME_READS_MS = [500, 2000, 8000]
+
+/** Reads a resumed conversation's transcript again, once, after its first
+ *  turn, where it showed no spend at its start: a fork's new file gains its
+ *  lines only after its first prompt, and the engine doesn't name the file it
+ *  forked from. Waits off the hook, as its line lands late, and stops at the
+ *  first read that finds a record. */
+const readResumedAgain = ($: EngineInterface, waits: readonly number[] = RESUME_READS_MS): void => {
+  const [wait, ...later] = waits
+  if (wait === undefined) return
+  $.clock.after(wait, () => {
+    void (async () => {
+      const mine = band.resume
+      if (mine === undefined || mine.transcript?.spend !== undefined) return
+      await readResumed($, mine)
+      readResumedAgain($, later)
+    })()
+  })
 }
 
 /** A conversation resumed or forked: never new, its cache as the engine
@@ -490,10 +514,9 @@ const readAppearance = async ($: EngineInterface): Promise<void> => {
   })
 }
 
-/** Reads what the environment and settings say of the cache, for a
- *  `terminal` session or not, and hands the cache model the TTL they pin
- *  and where idle compaction runs from. */
-const readCacheSettings = async ($: EngineInterface, terminal: boolean): Promise<void> => {
+/** Reads what the environment and settings say of the cache, and hands the
+ *  cache model the TTL they pin and where idle compaction runs from. */
+const readCacheSettings = async ($: EngineInterface): Promise<void> => {
   // Only these three keys are taken; the rest, `env` included, is dropped here.
   const { promptCacheTtl, subagentPromptCacheTtl, idleCompaction } = (await $.settings.read().catch(() => undefined)) ?? {}
   const pinned = resolveTtl({
@@ -503,7 +526,6 @@ const readCacheSettings = async ($: EngineInterface, terminal: boolean): Promise
     enable1h: await $.env.get('ENABLE_PROMPT_CACHING_1H'),
   })
   const idleFrom = idleCompactFrom({
-    terminal,
     setting: idleCompaction,
     disableAuto: await $.env.get('DISABLE_AUTO_COMPACT'),
     disableAll: await $.env.get('DISABLE_COMPACT'),
@@ -553,7 +575,7 @@ export const register: Register = on => {
     // The settings come before the recall, which may wait on a transcript,
     // so a session.start that runs long has its palette, glyphs and TTL.
     await readAppearance($)
-    await readCacheSettings($, e.surface === 'terminal' && e.isInteractive)
+    await readCacheSettings($)
     const priceModel = await $.session.model().catch(() => undefined)
     // A resume of this session, said before this load or while it runs, is
     // noted again after the reset.
@@ -636,6 +658,10 @@ export const register: Register = on => {
       await keepCounts($)
       if (ended.remember !== undefined) void rememberTurn($, ended.remember)
       if (ended.lifetimeSince !== undefined) readLifetime($, ended.lifetimeSince)
+      if (band.resume !== undefined && band.readAgainFor !== band.resume.at && band.resume.transcript?.spend === undefined) {
+        band.readAgainFor = band.resume.at
+        readResumedAgain($)
+      }
       const now = await $.clock.now()
       const sample = usage === undefined ? undefined : sampleOf(now, usage.rateLimits.map(limitOf))
       if (sample !== undefined) await noteSample($, sample)
@@ -659,7 +685,7 @@ export const register: Register = on => {
       const served = 'serverToolUses' in result && Array.isArray(result.serverToolUses) ? result.serverToolUses.length : 0
       // The ledger goes in with the response, so no other hook's step can
       // come between them and take its bill for this one's.
-      band.cache.responded(result.usage, sentAt, isMain, { serverTools: served, ledger: await ledgerUsd($) })
+      band.cache.responded(result.usage, sentAt, isMain, { serverTools: served, ledger: await ledgerUsd($), messages: e.messageCount })
       $.ui.invalidate('ui.render')
     }
     if (isMain && result?.stopReason === 'compaction') band.cache.compacted({ now: sentAt })
@@ -717,7 +743,9 @@ export const register: Register = on => {
     const usage = await $.session.usage().catch(() => undefined)
     if (usage === undefined) return next(e)
     const now = await $.clock.now()
-    const { cache, costUsd } = band.cache.view({ now, ledger: usage.cost?.usd, contextTokens: contextUsed(usage.context) ?? 0, autoCompactOff: band.autoCompactOff })
+    // A /model switch shows at the next redraw, before the message it rebuilds on.
+    const modelNow = await $.session.model().catch(() => undefined)
+    const { cache, costUsd } = band.cache.view({ now, ledger: usage.cost?.usd, contextTokens: contextUsed(usage.context) ?? 0, autoCompactOff: band.autoCompactOff, modelNow, surface: e.surface })
     const snap = snapshotOf({
       usage,
       now,

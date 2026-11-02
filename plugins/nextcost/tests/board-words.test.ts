@@ -42,6 +42,21 @@ test('working boards; unmeasured and warming check in; recalled carries ~', () =
   expect(row({ cache: cacheAt({ requests: 0, recalled: false, fresh: true }) }, 'cache')?.cell).toBe('CHECK-IN')
   expect(row({ cache: cacheAt({ requests: 0, recalled: true, leftMs: 38 * MIN, coldAt: 38 * MIN }) }, 'cache')?.cell).toBe('DEPARTS ~00:38')
 })
+test('a cache gone cold or compacted mid-turn says so, as chips and pulse do', () => {
+  const cold = row({ isWorking: true, now: HOUR, cache: cacheAt({ requests: 1, leftMs: 0, coldAt: 10 * MIN }) }, 'cache')
+  expect(cold?.status).toBe('DEPARTED')
+  const compacted = row({ isWorking: true, now: HOUR, cache: cacheAt({ requests: 1, leftMs: 0, coldAt: 10 * MIN, compacted: true }) }, 'cache')
+  expect(compacted?.status).toBe('COMPACTED')
+})
+test('not caching and a pending model switch have their own lines, working or not', () => {
+  for (const isWorking of [false, true]) {
+    const off = row({ isWorking, cache: cacheAt({ requests: 1, leftMs: 0, notCaching: true }) }, 'cache')
+    expect([off?.status, off?.time, off?.remarks]).toEqual(['NOT CACHING', undefined, ''])
+    const moved = row({ isWorking, cache: cacheAt({ requests: 1, leftMs: 38 * MIN, modelChanged: true }) }, 'cache')
+    expect([moved?.status, moved?.time]).toEqual(['MODEL CHANGED', undefined])
+    expect(moved?.remarks).toBe('NEXT 155K TOKENS')
+  }
+})
 test('context: USED when calm; amber says COMPACTS IN, its short form the mark and value; never CTX', () => {
   expect(row({}, 'context')?.status).toMatch(/^\d+% USED$/)
   const near = row({ context: { ...snapOf().context, tokens: 150_000, window: 200_000, compactAt: 160_000 } }, 'context')

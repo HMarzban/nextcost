@@ -7,7 +7,7 @@ import { test, expect } from 'claude-code/testing'
 import {
   COST_RECORD,
   isRecord,
-  lastReplyAt,
+  lastRequestAt,
   lastReplyModel,
   lastWriteTtl,
   rateFromTranscript,
@@ -37,20 +37,34 @@ test("home's trailing slashes are trimmed", () => {
   expect(transcriptPath('/Users/me//', '/p', 's1')).toBe('/Users/me/.claude/projects/-p/s1.jsonl')
 })
 
-// ── the last reply ─────────────────────────────────────────────────────
+// ── the last request ───────────────────────────────────────────────────
 
-test("the last reply is the last assistant line's time, past the lines Claude Code adds after it", () => {
-  const transcript = jsonl(promptLine(1_000), replyLine(5_000), { type: 'last-prompt', lastPrompt: 'hi' }, { type: 'cost-state', totalCostUSD: 1, modelUsage: {} })
-  expect(lastReplyAt(transcript)).toBe(5_000)
+test('a lifetime runs from the request: the last reply\'s time is that of the prompt before it', () => {
+  // A 3-minute generation.
+  expect(lastRequestAt(jsonl(promptLine(1_000), replyLine(181_000)))).toBe(1_000)
+})
+
+test('in a tool loop, the request is the one after the last tool result', () => {
+  expect(lastRequestAt(jsonl(promptLine(1_000), replyLine(2_000), promptLine(3_000), replyLine(90_000)))).toBe(3_000)
+})
+
+test('a reply logged a line per block goes back past its own lines; a subagent\'s prompt is no request of this loop', () => {
+  const sidechain = { ...promptLine(50_000), isSidechain: true }
+  expect(lastRequestAt(jsonl(promptLine(1_000), replyLine(2_000), sidechain, replyLine(3_000)))).toBe(1_000)
+})
+
+test("with no line before it to go by, the last request is the last reply's time, past the lines Claude Code adds after it", () => {
+  const transcript = jsonl(replyLine(5_000), { type: 'last-prompt', lastPrompt: 'hi' }, { type: 'cost-state', totalCostUSD: 1, modelUsage: {} })
+  expect(lastRequestAt(transcript)).toBe(5_000)
 })
 
 test('the last reply is the last in the file, not the latest time in it', () => {
-  expect(lastReplyAt(jsonl(replyLine(9_000), replyLine(2_000)))).toBe(2_000)
+  expect(lastRequestAt(jsonl(replyLine(9_000), replyLine(2_000)))).toBe(2_000)
 })
 
 test('lines that are not assistant replies, even ones naming "assistant", are skipped', () => {
   const transcript = jsonl(replyLine(5_000), promptLine(9_000), { type: 'last-prompt', lastPrompt: 'assistant' })
-  expect(lastReplyAt(transcript)).toBe(5_000)
+  expect(lastRequestAt(transcript)).toBe(5_000)
 })
 
 /** A reply Claude Code wrote itself, sent nowhere: an API error such as a
@@ -64,18 +78,18 @@ const syntheticLine = (ms: number, isApiErrorMessage: boolean) => ({
 
 test("a reply Claude Code wrote itself, an error's or one it sent nowhere, is no last reply", () => {
   const transcript = jsonl(replyLine(5_000), syntheticLine(9_000, true), syntheticLine(12_000, false))
-  expect(lastReplyAt(transcript)).toBe(5_000)
+  expect(lastRequestAt(transcript)).toBe(5_000)
   expect(lastReplyModel(transcript)).toBe('claude-opus-5-5')
 })
 
 test("an error that names a real model is still no last reply", () => {
   const error = { ...syntheticLine(9_000, true), message: { ...syntheticLine(9_000, true).message, model: 'claude-opus-5-5' } }
-  expect(lastReplyAt(jsonl(replyLine(5_000), error))).toBe(5_000)
+  expect(lastRequestAt(jsonl(replyLine(5_000), error))).toBe(5_000)
 })
 
 test('an unparseable line, or a reply with no readable time, is skipped', () => {
   const transcript = jsonl(replyLine(5_000), '{"type":"assistant", "timestamp": broken', { type: 'assistant', timestamp: 'not a time' }, { type: 'assistant', timestamp: 7_000 })
-  expect(lastReplyAt(transcript)).toBe(5_000)
+  expect(lastRequestAt(transcript)).toBe(5_000)
 })
 
 test("the last reply's model is the one the API billed it under, past lines that name none", () => {
@@ -86,7 +100,7 @@ test("the last reply's model is the one the API billed it under, past lines that
 
 test("a subagent's reply is not the conversation's last: its own cache says nothing of the main loop's", () => {
   const subagent = { ...replyLine(9_000), isSidechain: true }
-  expect(lastReplyAt(jsonl(replyLine(5_000), subagent))).toBe(5_000)
+  expect(lastRequestAt(jsonl(replyLine(5_000), subagent))).toBe(5_000)
 })
 
 test("a subagent's reply names neither the main loop's model nor its last prompt", () => {
@@ -98,8 +112,8 @@ test("a subagent's reply names neither the main loop's model nor its last prompt
 })
 
 test('a transcript with no reply has no last reply', () => {
-  expect(lastReplyAt('')).toBeUndefined()
-  expect(lastReplyAt(jsonl(promptLine(1_000)))).toBeUndefined()
+  expect(lastRequestAt('')).toBeUndefined()
+  expect(lastRequestAt(jsonl(promptLine(1_000)))).toBeUndefined()
 })
 
 // ── the rate ───────────────────────────────────────────────────────────

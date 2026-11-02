@@ -62,14 +62,22 @@ const loggedAt = (entry: Record<string, unknown>): number | undefined => {
   return Number.isFinite(at) ? at : undefined
 }
 
-/** When a transcript's last main-loop reply was. Its file time won't do:
- *  Claude Code writes a cost line each time it opens a session. */
-export const lastReplyAt = (transcript: string): number | undefined => {
-  for (const entry of fromEnd(transcript, REPLY_MARKER)) {
-    const at = isMainReply(entry) ? loggedAt(entry) : undefined
-    if (at !== undefined) return at
+/** When the request behind a transcript's last main-loop reply was sent: a
+ *  cache's lifetime runs from there, not from the reply's end. That is when
+ *  the line before it was logged, the prompt or the tool result it answers;
+ *  with none in reach (a tail that starts inside the reply), the reply's own
+ *  time, which errs warm by how long it took. Its file time won't do: Claude
+ *  Code writes a cost line each time it opens a session. */
+export const lastRequestAt = (transcript: string): number | undefined => {
+  let reply: number | undefined
+  for (const entry of fromEnd(transcript, '"timestamp"')) {
+    const at = loggedAt(entry)
+    if (at === undefined || entry.isSidechain === true) continue
+    if (reply === undefined) {
+      if (isMainReply(entry)) reply = at
+    } else if (entry.type === 'user') return at
   }
-  return undefined
+  return reply
 }
 
 /** The model the transcript's last main-loop reply was billed under, as the API names it. */

@@ -3,7 +3,7 @@
 // model per session, made at session.start and fed each hook's facts in that
 // hook's own shape; the order they must be applied in is kept here.
 
-import type { ModelUsage } from 'claude-code'
+import type { ModelUsage, RenderSurface } from 'claude-code'
 import type { Tone } from './facts'
 import { LAST_CALL_MS, MINUTE_MS, SOON_MS, fmtEstimate, fmtTokens } from './format'
 import { NO_TOKENS, WRITE_MULT, addTokens, modelName, readMultiplier, tierFactor, weightedTokens } from './prices'
@@ -17,8 +17,21 @@ export const TTL_MS: Readonly<Record<Ttl, number>> = { '5m': 5 * MINUTE_MS, '1h'
 const MISS_MIN_TOKENS = 2000
 const MISS_MIN_SHARE = 0.05
 
+/** A response with more input than this that read and wrote no cache isn't
+ *  caching. Below a model's minimum, reading and writing none is expected, and
+ *  this is the largest minimum the API's docs list (Opus 4.6, Opus 4.5 and
+ *  Haiku 4.5, as of 2026-11): platform.claude.com/docs/en/build-with-claude/prompt-caching */
+const UNCACHED_MIN_TOKENS = 4096
+
+/** With no read of the lifetime, what a request after a gap reads of a cache
+ *  gone cold: only what other sessions keep warm, the shared system prompt.
+ *  Over 1,383 real transcripts such reads had a median of 27k and a p90 of
+ *  45k; more than this is a change in part of the prefix, no cold cache. */
+const COLD_READ_MAX_TOKENS = 50_000
+
 /** Claude Code compacts a conversation left idle on the hour's cache about
- *  this long after its last request, before the cache runs out. */
+ *  this long after its last request, before the cache runs out: its docs say
+ *  about an hour. */
 export const IDLE_COMPACT_MS = 54 * MINUTE_MS
 /** A compaction this long after the last request, with no turn under way, is
  *  an idle one: an auto-compaction comes as a turn starts, not half an hour on. */
@@ -96,8 +109,16 @@ export type CacheView = Readonly<{
   /** Claude Code compacted the conversation while it sat idle: the cache
    *  is gone, and the next message writes the summary. */
   compacted: boolean
+  /** It was compacted while idle, rather than by /compact or in a turn. */
+  compactedIdle: boolean
+  /** The last response had a prompt too large for the minimum and read and
+   *  wrote no cache: nothing is cached, so nothing counts down or re-warms. */
+  notCaching: boolean
+  /** /model names another model than the last turn ran under: each has its
+   *  own cache, so the next message rebuilds. */
+  modelChanged: boolean
   /** Claude Code may compact this conversation when it sits idle on the
-   *  hour's cache: a terminal session, idle compaction on, and the context
+   *  hour's cache: where it does that, idle compaction on, and the context
    *  past its threshold. */
   idleCompacts: boolean
   /** Before the first reply the band saw, the cache is as recalled: from
@@ -176,9 +197,17 @@ export type CacheState = {
   cached: number
   /** The next request rebuilds the cache on purpose (a compaction). */
   rebuilding: boolean
-  /** When Claude Code compacted the conversation while it sat idle: the
+  /** When the conversation was last compacted, until the next reply: the
    *  cache it held is given up, and the next request writes the summary. */
   compactedAt: number | undefined
+  /** That compaction was Claude Code's, while the conversation sat idle. */
+  compactedIdle: boolean
+  /** The last main-loop response read and wrote no cache, on a prompt too
+   *  large for that to be the minimum. */
+  notCaching: boolean
+  /** How many messages the last main-loop request carried: fewer in the next
+   *  means a /rewind, which reads back to an earlier cache entry. */
+  messageCount: number | undefined
   /** The model the last main-loop request ran on; a switch rebuilds the cache. */
   model: string | undefined
   /** Since the turn's end last read it, a main-loop request rebuilt a cache
@@ -238,6 +267,9 @@ const INITIAL: Readonly<CacheState> = {
   cached: 0,
   rebuilding: false,
   compactedAt: undefined,
+  compactedIdle: false,
+  notCaching: false,
+  messageCount: undefined,
   model: undefined,
   lastRebuilt: false,
   costBase: 0,
@@ -258,8 +290,8 @@ const INITIAL: Readonly<CacheState> = {
 const recalledAt = (s: CacheState): number | undefined => s.resumedCache?.lastAt ?? s.recall?.lastAt
 
 /** Whether the cache stands as recalled: no reply seen yet, a conversation
- *  that didn't start here, and something to recall. */
-const isRecalled = (s: CacheState): boolean => s.requests === 0 && !s.knownFresh && recalledAt(s) !== undefined
+ *  that didn't start here, something to recall, and no compaction since. */
+const isRecalled = (s: CacheState): boolean => s.requests === 0 && !s.knownFresh && s.compactedAt === undefined && recalledAt(s) !== undefined
 
 /** The TTL the cache stands at: the pin, else one seen on the transcript,
  *  else the one assumed or inferred. */
@@ -322,6 +354,7 @@ const measuredColdAt = (s: CacheState): number | null => (s.requests > 0 ? s.las
  *  recalled; null with nothing to go by, or a resume the engine called expired. */
 const coldAtOf = (s: CacheState): number | null => {
   if (s.compactedAt !== undefined) return s.compactedAt
+  if (s.notCaching) return null
   const measured = measuredColdAt(s)
   if (measured !== null) return measured
   if (s.resumedCache?.expired === true) return null
@@ -333,7 +366,7 @@ const coldAtOf = (s: CacheState): number | null => {
  *  it recalls, none if the engine called it expired; a full lifetime before
  *  either. */
 const leftMsOf = (s: CacheState, now: number): number => {
-  if (s.compactedAt !== undefined) return 0
+  if (s.compactedAt !== undefined || s.notCaching) return 0
   if (s.requests === 0 && s.resumedCache?.expired === true) return 0
   const at = coldAtOf(s)
   return at === null ? TTL_MS[effectiveTtl(s)] : Math.max(0, at - now)
@@ -346,10 +379,20 @@ const idleMsOf = (s: CacheState, now: number): number | null => {
   return isRecalled(s) && lastAt !== undefined ? now - lastAt : null
 }
 
+/** Where Claude Code compacts an idle conversation, of where the band draws:
+ *  an interactive terminal, the VS Code panel, the desktop's Code tab. */
+const idleCompactsOn = (surface: RenderSurface | undefined): boolean => surface !== 'mobile'
+
+/** Whether /model names another model than the last turn took, while there
+ *  is a cache to lose. Name against name, as /model gives them, since a name
+ *  may be an alias that the API's own name for it would never match. */
+const modelChangedTo = (s: CacheState, modelNow: string | undefined): boolean =>
+  (s.requests > 0 || isRecalled(s)) && modelNow !== undefined && s.priceModel !== undefined && modelName(modelNow) !== modelName(s.priceModel)
+
 /** The cache as the band shows it, at `now`: measured once a reply has been
  *  seen, recalled before that. `contextTokens` is the context as it stands,
  *  which a recalled cold cache would rebuild. */
-const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, contextTokens: number, autoCompactOff: boolean): CacheView => {
+const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, contextTokens: number, autoCompactOff: boolean, at: Readonly<{ modelNow?: string | undefined; surface?: RenderSurface }>): CacheView => {
   const recalled = isRecalled(s)
   const recallRate = s.recall?.rate ?? null
   // A resume's price is the engine's own; else it is solved from the rate recalled.
@@ -377,7 +420,10 @@ const viewOf = (s: CacheState, now: number, sessionCost: number | undefined, con
     readShare: share,
     fresh: s.knownFresh,
     compacted: s.compactedAt !== undefined,
-    idleCompacts: s.idleCompactFrom !== undefined && !autoCompactOff && contextTokens >= s.idleCompactFrom,
+    compactedIdle: s.compactedIdle,
+    notCaching: s.notCaching,
+    modelChanged: modelChangedTo(s, at.modelNow),
+    idleCompacts: idleCompactsOn(at.surface) && s.idleCompactFrom !== undefined && !autoCompactOff && contextTokens >= s.idleCompactFrom,
     recovered: s.prior !== undefined,
     tokens: { sent: tokens.uncached + tokens.written, back: tokens.output, cached: tokens.read },
     wake: s.lastWake,
@@ -427,13 +473,11 @@ const noteStepLedger = (s: CacheState, costNow: number | undefined, offBook: num
 }
 
 /** A compaction replaces the conversation with a summary: the next request
- *  rebuilds the cache on purpose, at the summary's size. */
+ *  rebuilds the cache on purpose, at the summary's size, 0 where it wasn't told. */
 const noteCompaction = (s: CacheState, sizeAfter: number | undefined): void => {
   s.rebuilding = true
-  if (sizeAfter !== undefined) {
-    s.window = sizeAfter
-    s.cached = 0
-  }
+  s.window = sizeAfter ?? 0
+  s.cached = 0
 }
 
 /** A response's tokens toward the bill: every response's, a subagent's
@@ -481,6 +525,14 @@ const noteWrittenFor = (s: CacheState, ttl: Ttl): void => {
   s.unreadWrites = NO_UNREAD_WRITES
 }
 
+/** How many rounds a response's usage says it sums, where it lists them: a
+ *  server tool's block doesn't always start one. */
+const listedRounds = (usage: Response): number | undefined => {
+  if (!Array.isArray(usage.iterations)) return undefined
+  const rounds = usage.iterations.filter((round: unknown) => typeof round === 'object' && round !== null && 'type' in round && round.type === 'message').length
+  return rounds > 0 ? rounds : undefined
+}
+
 /** Whether a main-loop request that read `hit` tokens read short of what
  *  the cache held, by enough tokens and enough of it; undefined with nothing
  *  to measure it by: no prefix, one rebuilt on purpose, or another model. */
@@ -496,8 +548,10 @@ const shortOf = (s: CacheState, hit: number, switched: boolean): boolean | undef
  *  was billed under. A subagent's prefix is its own, so it says nothing of
  *  the main conversation's cache or its countdown. Over `rounds` of a
  *  server-side tool loop each round read the prefix again, so the cache is
- *  measured by a round's share. */
-const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: number): void => {
+ *  measured by a round's share; where those are guessed, not `roundsSure`,
+ *  the share may be half a whole read, so it counts as no miss. `messages` is
+ *  how many messages it carried, where told. */
+const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: number, roundsSure: boolean, messages: number | undefined): void => {
   const model = usage.model
   const perRound = (n: number): number => Math.round(n / rounds)
   const hit = perRound(usage.cache_read_input_tokens)
@@ -510,20 +564,30 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   const gap = s.requests > 0 ? sentAt - s.lastAt : 0
   // Another model has its own cache: reading nothing after a switch is no miss.
   const switched = s.model !== undefined && model !== undefined && model !== s.model
-  const short = shortOf(s, hit, switched)
-  // Unpinned, the TTL is read off a request after five idle minutes: one that
-  // read short found only what other sessions keep warm, the system prompt,
-  // so the cache lived five minutes; one that read it all, an hour. Claude
-  // Code switches as a subscription goes onto usage credits, or back off.
-  if (!s.ttlPinned && short !== undefined && gap > TTL_MS['5m'] && gap <= TTL_MS['1h']) s.ttl = short ? '5m' : '1h'
+  // Nothing read or written of a prompt past every minimum: no cache to miss.
+  const uncached = hit === 0 && written === 0 && perRound(usage.input_tokens) > UNCACHED_MIN_TOKENS
+  // Fewer messages than last time: a /rewind, which reads the earlier entry.
+  const rewound = messages !== undefined && s.messageCount !== undefined && messages < s.messageCount
+  const short = uncached || rewound || !roundsSure ? undefined : shortOf(s, hit, switched)
+  // The lifetime is read off the transcript at each turn's end. Until a read
+  // succeeds, it is inferred from a request after five idle minutes: one that
+  // read all it could, an hour; one that found only what other sessions keep
+  // warm, the system prompt, five minutes. A read of more is a change to part
+  // of the prefix (tool results cleared, the tools changed), which says
+  // nothing of the lifetime.
+  if (!s.ttlPinned && !s.ttlRead && short !== undefined && gap > TTL_MS['5m'] && gap <= TTL_MS['1h']) {
+    if (!short) s.ttl = '1h'
+    else if (hit <= COLD_READ_MAX_TOKENS) s.ttl = '5m'
+  }
   // Short of a cache that should have been warm: within its TTL.
   const missed = short === true && gap <= TTL_MS[s.ttl]
   if (missed) s.misses += 1
 
   // A rebuild of a cache that existed: its time ran out, it missed, a
   // compaction rebuilt it, or the model changed. The first build is warming,
-  // unless the cache it rebuilt was already read as cold.
-  if (coldBefore || (s.requests > 0 && (gap > TTL_MS[s.ttl] || missed || s.rebuilding || switched))) s.lastRebuilt = true
+  // unless the cache it rebuilt was already read as cold. With caching off
+  // on either side, nothing was rebuilt.
+  if (!uncached && !s.notCaching && (coldBefore || (s.requests > 0 && (gap > TTL_MS[s.ttl] || missed || s.rebuilding || switched)))) s.lastRebuilt = true
 
   s.requests += 1
   // The next request's TTL follows the config in force, not the transcript's.
@@ -534,6 +598,9 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   s.lastAt = sentAt
   s.rebuilding = false
   s.compactedAt = undefined
+  s.compactedIdle = false
+  s.notCaching = uncached
+  s.messageCount = messages ?? s.messageCount
   s.model = model ?? s.model
 }
 
@@ -541,7 +608,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
 
 /** A response, as turn.step has it. */
 type Response = Pick<ModelUsage, 'input_tokens' | 'output_tokens' | 'cache_read_input_tokens' | 'cache_creation_input_tokens'> &
-  Readonly<{ model?: string }>
+  Readonly<{ model?: string; iterations?: unknown }>
 
 /** What a session remembers of a turn, for when it is reopened or the band
  *  reloads: when its last reply was sent, the rate its bill solves to, the
@@ -577,13 +644,14 @@ export type CacheModel = Readonly<{
   turnStarted: (o: Readonly<{ priceModel: string | undefined; ledger: number | undefined; wokenBy?: Waker }>) => void
   /** turn.step: a response's tokens, sent at `sentAt`; how many tool calls
    *  the API ran itself in it (the advisor), each starting a round whose
-   *  tokens the usage sums; and the ledger as the hook read it after. */
-  responded: (usage: Response, sentAt: number, isMain: boolean, after?: Readonly<{ serverTools?: number; ledger?: number | undefined }>) => void
-  /** A compaction of the main conversation at `now`, to `sizeAfter` tokens.
-   *  With no turn under way, not /compact, and long after the last request,
-   *  it is Claude Code compacting the conversation before its cache ran out
-   *  (the trigger it names isn't matched, so a new one still counts); else
-   *  the cache is rebuilt on purpose. */
+   *  tokens the usage sums; the ledger as the hook read it after; and how many
+   *  messages the request carried. */
+  responded: (usage: Response, sentAt: number, isMain: boolean, after?: Readonly<{ serverTools?: number; ledger?: number | undefined; messages?: number }>) => void
+  /** A compaction of the main conversation at `now`, to `sizeAfter` tokens:
+   *  the cache it held is given up until the next reply. With no turn under
+   *  way, not /compact, and long after the last request, it is Claude Code
+   *  compacting the conversation before its cache ran out (the trigger it
+   *  names isn't matched, so a new one still counts). */
   compacted: (o: Readonly<{ now: number; sizeAfter?: number; manual?: boolean }>) => void
   /** turn.complete of a main-loop turn: whether a request in it rebuilt the
    *  cache (TTL run out, a miss, a compaction, a model switch), taken once
@@ -597,9 +665,10 @@ export type CacheModel = Readonly<{
   /** session.end: another conversation in the same process, at `ledger`. A
    *  /clear starts one here; a /resume moves to one already under way. */
   conversationEnded: (ledger: number, resumed: boolean) => void
-  /** ui.render, with the ledger as it reads now: the cache's view, and what
-   *  the session has cost, to show. */
-  view: (o: Readonly<{ now: number; ledger: number | undefined; contextTokens: number; autoCompactOff: boolean }>) => Readonly<{ cache: CacheView; costUsd: number }>
+  /** ui.render, with the ledger as it reads now, the model /model names now
+   *  and the surface drawn on: the cache's view, and what the session has
+   *  cost, to show. */
+  view: (o: Readonly<{ now: number; ledger: number | undefined; contextTokens: number; autoCompactOff: boolean; modelNow?: string | undefined; surface?: RenderSurface }>) => Readonly<{ cache: CacheView; costUsd: number }>
   /** The cache's time left at `now`, for the timer's repaint. */
   leftMs: (now: number) => number
   /** How long a recalled cache has sat idle at `now`, for the timer's
@@ -658,7 +727,8 @@ export const newCache = (kept?: CacheState): CacheModel => {
       // A reply that sent no tokens made no request: it read and kept no cache.
       const sent = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
       if (isMain && sent > 0) {
-        measureCache(s, usage, sentAt, rounds)
+        const listed = listedRounds(usage)
+        measureCache(s, usage, sentAt, listed ?? rounds, listed !== undefined || rounds === 1, after.messages)
         s.turnMeasured = true
       }
       // Its writes last as long as its bucket's TTL: the main loop's as just
@@ -671,8 +741,8 @@ export const newCache = (kept?: CacheState): CacheModel => {
     compacted: ({ now, sizeAfter, manual = false }) => {
       const idle = !s.turnOpen && !manual && s.requests > 0 && now - s.lastAt >= IDLE_GAP_MS
       noteCompaction(s, sizeAfter)
-      // An idle one's cache counts as gone from then, at the summary's size.
-      if (idle && sizeAfter !== undefined) s.compactedAt = now
+      s.compactedAt = now
+      s.compactedIdle = idle
     },
     wroteFor: ttl => noteWrittenFor(s, ttl),
     turnEnded: ledger => {
@@ -694,9 +764,9 @@ export const newCache = (kept?: CacheState): CacheModel => {
       const { ttl, ttlPinned, ttlRead, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen } = s
       Object.assign(s, INITIAL, { ttl, ttlPinned, ttlRead, subagentTtl, priceModel, billedModel, idleCompactFrom, turnOpen, costBase: ledger, ledgerSeen: ledger, knownFresh: !resumed })
     },
-    view: ({ now, ledger, contextTokens, autoCompactOff }) => {
+    view: ({ now, ledger, contextTokens, autoCompactOff, modelNow, surface }) => {
       noteLedger(s, ledger)
-      return { cache: viewOf(s, now, ledger, contextTokens, autoCompactOff), costUsd: spentUsd(s, ledger) }
+      return { cache: viewOf(s, now, ledger, contextTokens, autoCompactOff, { modelNow, ...(surface === undefined ? {} : { surface }) }), costUsd: spentUsd(s, ledger) }
     },
     leftMs: now => leftMsOf(s, now),
     idleMs: now => idleMsOf(s, now),
@@ -706,9 +776,10 @@ export const newCache = (kept?: CacheState): CacheModel => {
 // ---- what it means ----------------------------------------------------------
 
 /** Unmeasured: loaded mid-conversation, before its next reply. Compacted:
- *  cold because Claude Code compacted the conversation while it sat idle, so
- *  the next message writes the summary. */
-type CacheMood = 'unmeasured' | 'warming' | 'warm' | 'expiring' | 'cold' | 'compacted'
+ *  the conversation was compacted, so the next message writes the summary.
+ *  Uncached: the last response read and wrote no cache, so none exists.
+ *  Switched: /model named another model, so the next message rebuilds. */
+type CacheMood = 'unmeasured' | 'warming' | 'warm' | 'expiring' | 'cold' | 'compacted' | 'uncached' | 'switched'
 
 /** The cache as the band reads it: its view, and what that means. */
 export type CacheFacts = CacheView &
@@ -723,9 +794,11 @@ export type CacheFacts = CacheView &
     estimate: string
     /** A reply seen, or a resumed conversation's tokens read off its transcript. */
     measured: boolean
-    /** Measured, or recalled from the session's last reply: time and price known. */
+    /** Measured, or recalled from the session's last reply: time and price
+     *  known. Not caching, there is neither. */
     known: boolean
-    /** No time to count yet, neither seen nor recalled: unmeasured, or warming. */
+    /** No time to count, neither seen nor recalled: unmeasured, warming, or
+     *  not caching. */
     untimed: boolean
     /** The hit ratio, once measured. */
     hitFrac: number | undefined
@@ -741,17 +814,21 @@ export type CacheFacts = CacheView &
   }>
 
 const moodOf = (c: CacheView): CacheMood =>
-  c.requests === 0 && !c.recalled
-    ? c.fresh
-      ? 'warming'
-      : 'unmeasured'
-    : c.leftMs <= 0
-      ? c.compacted
-        ? 'compacted'
-        : 'cold'
-      : c.leftMs <= SOON_MS
-        ? 'expiring'
-        : 'warm'
+  c.compacted && c.leftMs <= 0
+    ? 'compacted'
+    : c.requests === 0 && !c.recalled
+      ? c.fresh
+        ? 'warming'
+        : 'unmeasured'
+      : c.notCaching
+        ? 'uncached'
+        : c.modelChanged
+          ? 'switched'
+          : c.leftMs <= 0
+            ? 'cold'
+            : c.leftMs <= SOON_MS
+              ? 'expiring'
+              : 'warm'
 
 /** What the cache's view means while Claude is working, or isn't. */
 export const cacheFactsOf = (c: CacheView, isWorking: boolean): CacheFacts => {
@@ -759,16 +836,18 @@ export const cacheFactsOf = (c: CacheView, isWorking: boolean): CacheFacts => {
   const measured = c.requests > 0 || c.recovered
   // Mid-turn every step restarts the TTL, so a countdown would only bounce.
   const counting = mood === 'expiring' || (mood === 'warm' && !isWorking)
-  const untimed = mood === 'unmeasured' || mood === 'warming'
-  const timeless = untimed || mood === 'cold' || mood === 'compacted'
+  const untimed = mood === 'unmeasured' || mood === 'warming' || mood === 'uncached'
+  const timeless = untimed || mood === 'cold' || mood === 'compacted' || mood === 'switched'
   return {
     ...c,
     mood,
     tone: mood === 'expiring' ? 'amber' : 'calm',
     charge: timeless ? 0 : mood === 'warm' && isWorking ? 1 : c.leftMs / TTL_MS[c.ttl],
-    estimate: c.reWarmUsd !== null ? fmtEstimate(c.reWarmUsd) : `${fmtTokens(c.window)} tokens`,
+    // After a switch the rate is the old model's, so the tokens alone. After a
+    // compaction of no size told, only that it writes the summary.
+    estimate: mood === 'compacted' && c.window === 0 ? 'summary' : c.reWarmUsd !== null && mood !== 'switched' ? fmtEstimate(c.reWarmUsd) : `${fmtTokens(c.window)} tokens`,
     measured,
-    known: measured || c.recalled,
+    known: mood !== 'uncached' && (measured || c.recalled),
     untimed,
     hitFrac: measured && c.hitRatio !== null ? c.hitRatio : undefined,
     coldInMs: counting ? c.leftMs : undefined,

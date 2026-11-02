@@ -51,8 +51,22 @@ const cacheCopy = (f: CacheFacts, frame: Frame): CacheCopy => {
       return {
         // A summary to write, not a cache lost: as calm as cold.
         pill: short => (short ? goneShort('compacted', f.estimate) : `cache compacted · next ${f.estimate}`),
-        hover: `Compacted while idle: next message writes the ${fmtTokens(f.window)} summary${priced}`,
+        hover: f.window === 0
+          ? 'Compacted: next message writes the summary'
+          : `${f.compactedIdle ? 'Compacted while idle' : 'Compacted'}: next message writes the ${fmtTokens(f.window)} summary${priced}`,
         alt: MOOD_ALT.compacted,
+      }
+    case 'uncached':
+      return {
+        pill: short => (short ? 'no cache' : 'not caching'),
+        hover: 'The last reply read and wrote no cache, so all input bills in full',
+        alt: MOOD_ALT.uncached,
+      }
+    case 'switched':
+      return {
+        pill: short => (short ? `new model ${f.estimate}` : `model changed · next ${f.estimate}`),
+        hover: `Model changed: each model has its own cache, so the next message rebuilds ${f.estimate}`,
+        alt: MOOD_ALT.switched,
       }
     case 'cold':
       return {
