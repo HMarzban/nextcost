@@ -221,3 +221,10 @@ test('no transcript to read leaves unknown what the store does', () => {
 test('a rate is kept beside the others stored, and over its own', () => {
   expect(rememberRate({ 'claude-sonnet-5-5': 2, 'claude-opus-5-5': 1, bad: -1 }, 'claude-opus-5-5', 3)).toEqual({ 'claude-sonnet-5-5': 2, 'claude-opus-5-5': 3 })
 })
+
+test("a sample with one window keeps the other's reading from the same bucket", () => {
+  const both = { at: 1_000, fivePct: 10, fiveResetAt: 9, sevenPct: 20, sevenResetAt: 99 }
+  const seven = { at: 2_000, sevenPct: 21, sevenResetAt: 99 }
+  expect(mergeSamples([both], [seven])).toEqual([{ at: 2_000, fivePct: 10, fiveResetAt: 9, sevenPct: 21, sevenResetAt: 99 }])
+  expect(mergeSamples([seven], [both])).toEqual([{ at: 2_000, fivePct: 10, fiveResetAt: 9, sevenPct: 21, sevenResetAt: 99 }])
+})

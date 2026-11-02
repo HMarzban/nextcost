@@ -90,13 +90,14 @@ const bucketOf = (at: number): number => Math.floor(at / BUCKET_MS)
 /** Whether two samples fall in one bucket. */
 export const sameBucket = (a: Sample, b: Sample): boolean => bucketOf(a.at) === bucketOf(b.at)
 
-/** Two lists as one: one per bucket, the later winning, sorted, capped. */
+/** Two lists as one: one per bucket, the later winning for each window it
+ *  holds, since a sample may hold only one, sorted, capped. */
 export const mergeSamples = (a: readonly Sample[], b: readonly Sample[]): Sample[] => {
   const byBucket = new Map<number, Sample>()
   for (const s of [...a, ...b]) {
     const bucket = bucketOf(s.at)
     const had = byBucket.get(bucket)
-    if (had === undefined || s.at >= had.at) byBucket.set(bucket, s)
+    byBucket.set(bucket, had === undefined ? s : s.at >= had.at ? { ...had, ...s } : { ...s, ...had })
   }
   return [...byBucket.values()].sort((x, y) => x.at - y.at).slice(-MAX_SAMPLES)
 }

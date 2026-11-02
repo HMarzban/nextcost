@@ -77,6 +77,45 @@ test('a subscription moving onto usage credits mid-session counts down five minu
   await ui.unmount()
 })
 
+test('a turn whose last step only read still reads the lifetime of its earlier write', LONG, async ($, on) => {
+  const clock = setup(on, { env: HOME })
+  await $.session.start(START)
+  await respond($, BUILD_80K)
+  const written = wroteFor(clock.now(), '5m')
+  await clock.advance(MIN)
+  await respond($, resp(1, 80_000, 0, 10))
+  engine.transcript = jsonl(written)
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(LOOK)
+  const ui = await mountBand($, 'terminal', 110)
+  await ui.press({ key: 'more' })
+  expect(fact(await ui.drawn(), 'expires')).toBe('5m idle')
+  await ui.unmount()
+})
+
+test('a turn that wrote nothing runs no read', LONG, async ($, on) => {
+  const clock = setup(on, { env: HOME })
+  await $.session.start(START)
+  await respond($, BUILD_80K)
+  engine.transcript = jsonl(wroteFor(clock.now(), '1h'))
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(LOOK)
+  await respond($, resp(1, 80_000, 0, 10))
+  engine.ran.length = 0
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(LOOK)
+  expect(engine.ran.filter(argv => argv[0] === 'tail')).toEqual([])
+})
+
+test('a pin taken away after a read leaves the lifetime assumed again', () => {
+  const c = respondedOnce(2)
+  c.turnEnded(2)
+  c.wroteFor('5m')
+  c.configured({ ttl: '1h', idleCompactFrom: undefined })
+  c.configured({ ttl: undefined, idleCompactFrom: undefined })
+  expect(c.view({ now: 2 * MIN, ledger: 2, contextTokens: 400_000, autoCompactOff: false }).cache.ttlPinned).toBe(false)
+})
+
 test("a line not yet written isn't taken for this turn's: the band looks again", LONG, async ($, on) => {
   const clock = setup(on, { env: HOME })
   await $.session.start(START)

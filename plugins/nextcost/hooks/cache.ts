@@ -166,6 +166,10 @@ export type CacheState = {
   /** `ttl` was read off the transcript's last cache write, at a turn's end,
    *  so it isn't assumed. */
   ttlRead: boolean
+  /** When the request behind the main loop's last write unread went: a turn
+   *  whose last step only read still wrote earlier, and one that wrote nothing
+   *  has nothing new to read. */
+  writeUnreadSince: number | undefined
   /** The main loop's writes since that read, by the lifetime they were
    *  weighed at: each plain, and with its price tier's factor. A read that
    *  says otherwise moves them to the lifetime they really had. */
@@ -274,6 +278,7 @@ const INITIAL: Readonly<CacheState> = {
   subagentTtl: '5m',
   ttlSeen: undefined,
   ttlRead: false,
+  writeUnreadSince: undefined,
   unreadWrites: NO_UNREAD_WRITES,
   idleCompactFrom: undefined,
   turnOpen: false,
@@ -742,6 +747,7 @@ const measureCache = (s: CacheState, usage: Response, sentAt: number, rounds: nu
   s.notCaching = uncached
   s.messageCount = messages ?? s.messageCount
   s.requestModel = s.priceModel
+  if (usage.cache_creation_input_tokens > 0) s.writeUnreadSince = sentAt
   s.windowGuessed = !roundsSure
   s.model = model ?? s.model
 }
@@ -798,9 +804,9 @@ export type CacheModel = Readonly<{
   /** turn.complete of a main-loop turn: whether a request in it rebuilt the
    *  cache (TTL run out, a miss, a compaction, a model switch), taken once
    *  per turn, though the rebuild is usually its first request; and, once a
-   *  reply has been seen, what to remember at `ledger`; and, where it reached
-   *  the API and no setting pins the lifetime, when its last request was
-   *  sent, to read off the transcript the lifetime it was written for. */
+   *  reply has been seen, what to remember at `ledger`; and, where it wrote to
+   *  the cache and no setting pins the lifetime, when the request behind its
+   *  last write went, to read off the transcript the lifetime it was for. */
   turnEnded: (ledger: number | undefined) => Readonly<{ rebuilt: boolean; lifetimeSince: number | undefined; remember: Remembered | undefined }>
   /** The lifetime the transcript's last main-loop cache write was made for. */
   wroteFor: (ttl: Ttl) => void
@@ -844,6 +850,7 @@ export const newCache = (kept?: CacheState): CacheModel => {
         // Pinned before a reload and no longer: assumed again, as a new session's is.
         s.ttl = INITIAL.ttl
         s.ttlPinned = false
+        s.ttlRead = false
       }
       s.subagentTtl = subagentTtl ?? '5m'
       s.idleCompactFrom = idleCompactFrom
@@ -898,7 +905,8 @@ export const newCache = (kept?: CacheState): CacheModel => {
     turnEnded: ledger => {
       s.turnOpen = false
       const rebuilt = s.lastRebuilt
-      const lifetimeSince = s.turnMeasured && !s.ttlPinned ? s.lastAt : undefined
+      const lifetimeSince = s.ttlPinned ? undefined : s.writeUnreadSince
+      s.writeUnreadSince = undefined
       s.lastRebuilt = false
       // A turn that made no request (a limit hit, a lost connection) left the
       // countdown where it was, so what it says stays too.
