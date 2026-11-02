@@ -18,7 +18,7 @@ import {
   rememberReply,
   sampleOf,
 } from '../hooks/memory'
-import { HOUR, costRecord, jsonl, rateNear, replyLine } from './helpers'
+import { HOUR, costRecord, expectNear, jsonl, replyLine } from './helpers'
 
 // ── the store, as untrusted data ───────────────────────────────────────
 
@@ -199,7 +199,7 @@ test("with no rate stored for either, the rate is solved from the transcript's c
   const recalled = recallOf(stored, jsonl(replyLine(7_000), costRecord('claude-opus-5-5')), NOW)
   // The store's time stands over the transcript's.
   expect(recalled.lastAt).toBe(5_000)
-  expect(rateNear(recalled.rate, 20 / 3_000_000)).toBe(true)
+  expectNear(recalled.rate, 20 / 3_000_000, 1e-15)
 })
 
 test("a transcript's last reply dated after now is unknown, not the time recalled", () => {

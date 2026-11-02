@@ -9,7 +9,7 @@ import { DARK } from '../hooks/palette'
 import { readingsOf } from '../hooks/reading'
 import type { BandSnapshot } from '../hooks/snapshot'
 import { EMPTY } from '../hooks/words'
-import { HOUR, MIN, SAMPLES, USAGE, byKey, firstRow, shown, svgAlts, svgsOf, type Node } from './helpers'
+import { HOUR, MIN, SAMPLES, USAGE, byKey, expectNear, firstRow, shown, svgAlts, svgsOf, type Node } from './helpers'
 import {
   NO_HISTORY, AMBER_WEEK_LIMITS, CALM_LIMITS, COLD_CACHE, HISTORY, LAST_MINUTE_CACHE, bandOf, cacheWith, caseKey, drawCases, snapOf, viewSuite, visualRows, withLimits,
 } from './matrix'
@@ -197,6 +197,6 @@ test("today's fill, with no reading inside today yet, draws as the alt says it: 
     const inner = Number(/<rect class="edge"[^>]* height="([\d.]+)"/.exec(source)?.[1]) - 1
     const guesses = [...source.matchAll(/<rect class="guess"[^>]* height="([\d.]+)"/g)].map(([, h]) => (Number(h) / inner) * 100)
     expect(guesses).toHaveLength(1)
-    expect(Math.abs((guesses[0] ?? 0) - 15)).toBeLessThan(2)
+    expectNear(guesses[0], 15, 2)
   }
 })

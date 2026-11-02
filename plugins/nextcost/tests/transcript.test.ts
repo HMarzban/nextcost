@@ -15,7 +15,7 @@ import {
   transcriptPath,
   transcriptSpend,
 } from '../hooks/transcript'
-import { costRecord, jsonl, promptLine, rateNear, replyLine, requestLines } from './helpers'
+import { costRecord, jsonl, expectNear, promptLine, replyLine, requestLines } from './helpers'
 
 const iso = (ms: number): string => new Date(ms).toISOString()
 /** A Haiku 5.5 reply whose request sent `prompt` input tokens. */
@@ -108,7 +108,7 @@ test("a subagent's reply names neither the main loop's model nor its last prompt
   expect(lastReplyModel(jsonl(replyLine(5_000), subagent))).toBe('claude-opus-5-5')
   // A subagent's prompt over Haiku's tier says nothing of the main loop's: the record counts at the lower tier.
   const transcript = jsonl(costRecord('claude-haiku-5-5'), haikuReply(60_000), subagent)
-  expect(rateNear(rateFromTranscript(transcript, 'claude-haiku-5-5'), 20 / 4_000_000)).toBe(true)
+  expectNear(rateFromTranscript(transcript, 'claude-haiku-5-5'), 20 / 4_000_000, 1e-15)
 })
 
 test('a transcript with no reply has no last reply', () => {
@@ -120,34 +120,34 @@ test('a transcript with no reply has no last reply', () => {
 
 test("the rate is the cost record's dollars over its weighted tokens, reads at Opus 5.5's 0.05×", () => {
   // 1M + 1.25 × 400k + 0.05 × 20M + 5 × 100k = 3M weighted tokens
-  expect(rateNear(rateFromTranscript(jsonl(costRecord('claude-opus-5-5')), 'claude-opus-5-5'), 20 / 3_000_000)).toBe(true)
+  expectNear(rateFromTranscript(jsonl(costRecord('claude-opus-5-5')), 'claude-opus-5-5'), 20 / 3_000_000, 1e-15)
 })
 
 test('on a model without a read price of its own, reads weigh 0.1×', () => {
   // Sonnet 5 reads at $0.20 on $2 input. 1M + 1.25 × 400k + 0.1 × 20M + 5 × 100k = 4M weighted tokens
-  expect(rateNear(rateFromTranscript(jsonl(costRecord('claude-sonnet-5')), 'claude-sonnet-5'), 20 / 4_000_000)).toBe(true)
+  expectNear(rateFromTranscript(jsonl(costRecord('claude-sonnet-5')), 'claude-sonnet-5'), 20 / 4_000_000, 1e-15)
 })
 
 test("Sonnet 5.5 reads its cache at 0.05×, as Anthropic's pricing lists it ($0.10 on $2 input)", () => {
   // 1M + 1.25 × 400k + 0.05 × 20M + 5 × 100k = 3M weighted tokens
-  expect(rateNear(rateFromTranscript(jsonl(costRecord('claude-sonnet-5-5')), 'claude-sonnet-5-5'), 20 / 3_000_000)).toBe(true)
+  expectNear(rateFromTranscript(jsonl(costRecord('claude-sonnet-5-5')), 'claude-sonnet-5-5'), 20 / 3_000_000, 1e-15)
 })
 
 test('on Haiku 5.5, a session whose last prompt was over 100k counts its cost record at the upper tier, 5×', () => {
   // 1M + 1.25 × 400k + 0.1 × 20M + 5 × 100k = 4M weighted tokens, at 5× the lower tier's rate
   const transcript = jsonl(costRecord('claude-haiku-5-5'), haikuReply(150_000))
-  expect(rateNear(rateFromTranscript(transcript, 'claude-haiku-5-5'), 20 / 4_000_000 / 5)).toBe(true)
+  expectNear(rateFromTranscript(transcript, 'claude-haiku-5-5'), 20 / 4_000_000 / 5, 1e-15)
 })
 
 test('on Haiku 5.5, a session whose last prompt was under 100k counts its cost record at the lower tier', () => {
   const transcript = jsonl(costRecord('claude-haiku-5-5'), haikuReply(60_000))
-  expect(rateNear(rateFromTranscript(transcript, 'claude-haiku-5-5'), 20 / 4_000_000)).toBe(true)
+  expectNear(rateFromTranscript(transcript, 'claude-haiku-5-5'), 20 / 4_000_000, 1e-15)
 })
 
 test('the last cost record is the one read', () => {
   const earlier = { ...costRecord(), modelUsage: { 'claude-opus-5-5': { inputTokens: 3_000_000, costUSD: 30 } } }
   const transcript = jsonl(earlier, replyLine(1_000), costRecord('claude-opus-5-5'))
-  expect(rateNear(rateFromTranscript(transcript, 'claude-opus-5-5'), 20 / 3_000_000)).toBe(true)
+  expectNear(rateFromTranscript(transcript, 'claude-opus-5-5'), 20 / 3_000_000, 1e-15)
 })
 
 test('a model the last cost record does not name has no rate, whatever an earlier record says', () => {
@@ -156,7 +156,7 @@ test('a model the last cost record does not name has no rate, whatever an earlie
 })
 
 test('a model named with its context size finds its cost record, which names the model alone', () => {
-  expect(rateNear(rateFromTranscript(jsonl(costRecord('claude-opus-5-5')), 'claude-opus-5-5[1m]'), 20 / 3_000_000)).toBe(true)
+  expectNear(rateFromTranscript(jsonl(costRecord('claude-opus-5-5')), 'claude-opus-5-5[1m]'), 20 / 3_000_000, 1e-15)
 })
 
 test('no cost record, nothing spent or nothing counted is no rate', () => {
@@ -167,49 +167,54 @@ test('no cost record, nothing spent or nothing counted is no rate', () => {
 
 test('a later line that merely names cost-state, such as a prompt quoting it, never hides the real record', () => {
   const transcript = jsonl(costRecord('claude-opus-5-5'), { type: 'last-prompt', lastPrompt: 'cost-state' })
-  expect(rateNear(rateFromTranscript(transcript, 'claude-opus-5-5'), 20 / 3_000_000)).toBe(true)
+  expectNear(rateFromTranscript(transcript, 'claude-opus-5-5'), 20 / 3_000_000, 1e-15)
 })
 
 test('an unreadable last cost line falls back to the record before it', () => {
   const transcript = jsonl(costRecord('claude-opus-5-5'), '{"type":"cost-state", broken')
-  expect(rateNear(rateFromTranscript(transcript, 'claude-opus-5-5'), 20 / 3_000_000)).toBe(true)
+  expectNear(rateFromTranscript(transcript, 'claude-opus-5-5'), 20 / 3_000_000, 1e-15)
+})
+
+/** A cost record of 100k written and $1, `m` laid over its Opus 5.5 usage. */
+const writesRecord = (m: Record<string, unknown>): string =>
+  JSON.stringify({ type: 'cost-state', sessionId: 's1', totalCostUSD: 1, modelUsage: { 'claude-opus-5-5': { costUSD: 1, inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 100_000, ...m } } })
+
+test("a cost record that splits its writes by lifetime is solved at each's price; one that doesn't, as five minutes'", () => {
+  // $1 on 100k written: at the hour's 2×, $5 per million; at 1.25×, $8.
+  const split = writesRecord({ cacheCreationEphemeral5mInputTokens: 0, cacheCreationEphemeral1hInputTokens: 100_000 })
+  expectNear(rateFromTranscript(split, 'claude-opus-5-5'), 5e-6, 1e-12)
+  expectNear(rateFromTranscript(writesRecord({}), 'claude-opus-5-5'), 8e-6, 1e-12)
+  expect(transcriptSpend(split, 's1', 0)?.tokens.writtenHour).toBe(100_000)
+  expect(transcriptSpend(writesRecord({}), 's1', 0)?.tokens.writtenHour).toBe(0)
 })
 
 // ── the cache's last write ─────────────────────────────────────────────
 
-/** A main-loop reply that wrote `oneHour` tokens to the hour's cache and
- *  `fiveMinutes` to the five minutes'. */
-const wrote = (oneHour: number, fiveMinutes: number, sidechain = false) => ({
-  ...replyLine(1_000),
-  ...(sidechain ? { isSidechain: true } : {}),
-  message: { role: 'assistant', model: 'claude-opus-5-5', content: [], usage: { cache_creation: { ephemeral_1h_input_tokens: oneHour, ephemeral_5m_input_tokens: fiveMinutes } } },
-})
-
 test("the cache's last write says its TTL: an hour if it wrote any for an hour, else five minutes", () => {
-  expect(lastWrite(jsonl(wrote(100, 0)))?.ttl).toBe('1h')
-  expect(lastWrite(jsonl(wrote(100, 50)))?.ttl).toBe('1h')
-  expect(lastWrite(jsonl(wrote(0, 50)))?.ttl).toBe('5m')
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '1h': 100 } })))).toBe('1h')
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '1h': 100, '5m': 50 } })))).toBe('1h')
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '5m': 50 } })))).toBe('5m')
   // The last write that wrote anything is the one read.
-  expect(lastWrite(jsonl(wrote(100, 0), wrote(0, 50)))?.ttl).toBe('5m')
-  expect(lastWrite(jsonl(wrote(0, 50), wrote(0, 0)))?.ttl).toBe('5m')
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '1h': 100 } }), replyLine(1_000, { wrote: { '5m': 50 } })))).toBe('5m')
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '5m': 50 } }), replyLine(1_000, { wrote: { '5m': 0, '1h': 0 } })))).toBe('5m')
 })
 
 test("a subagent's write says nothing of the main loop's cache, and no write is no TTL", () => {
-  expect(lastWrite(jsonl(wrote(0, 50), wrote(100, 0, true)))?.ttl).toBe('5m')
-  expect(lastWrite(jsonl(replyLine(1_000), promptLine(2_000)))?.ttl).toBeUndefined()
-  expect(lastWrite('')?.ttl).toBeUndefined()
+  expect(lastWrite(jsonl(replyLine(1_000, { wrote: { '5m': 50 } }), { ...replyLine(1_000, { wrote: { '1h': 100 } }), isSidechain: true }))).toBe('5m')
+  expect(lastWrite(jsonl(replyLine(1_000), promptLine(2_000)))).toBeUndefined()
+  expect(lastWrite('')).toBeUndefined()
 })
 
 // ── a transcript with the request's blobs in it ─────────────────────────
 
 test("a request's megabyte blobs, an assistant's among them, are not replies: the reply, its model, its write and the rate read past them", () => {
-  const reply = { ...replyLine(2_000), message: { ...replyLine(2_000).message, usage: { cache_creation: { ephemeral_1h_input_tokens: 100, ephemeral_5m_input_tokens: 0 } } } }
+  const reply = replyLine(2_000, { wrote: { '1h': 100 } })
   const transcript = jsonl(promptLine(1_000), ...requestLines(1_500, 2 * 1024 * 1024), reply, { type: 'last-prompt', lastPrompt: 'hi' }, ...requestLines(9_000, 2 * 1024 * 1024), costRecord('claude-opus-5-5'))
   expect(transcript.length).toBeGreaterThan(4 * 1024 * 1024)
   expect(lastRequestAt(transcript)).toBe(1_000)
   expect(lastReplyModel(transcript)).toBe('claude-opus-5-5')
   expect(lastWrite(transcript)).toEqual({ ttl: '1h', at: 2_000 })
-  expect(rateNear(rateFromTranscript(transcript, 'claude-opus-5-5'), 20 / 3_000_000)).toBe(true)
+  expectNear(rateFromTranscript(transcript, 'claude-opus-5-5'), 20 / 3_000_000, 1e-15)
 })
 
 // ── the cost record grep found ─────────────────────────────────────────
@@ -259,16 +264,16 @@ test('each reply logged after the record and before the cut adds its tokens, pri
   const transcript = jsonl({ ...costRecord('claude-opus-5-5'), sessionId: 's1' }, billed(1_000, 'm1', 3_000), billed(5_000, 'm2', 6_000))
   const spend = transcriptSpend(transcript, 's1', 5_000)
   expect(spend?.tokens).toEqual({ ...RECORD_TOKENS, uncached: 1_003_000 })
-  expect(Math.abs((spend?.usd ?? 0) - 20.02)).toBeLessThan(1e-9)
+  expectNear(spend?.usd, 20.02, 1e-9)
 })
 
 test("a reply's hour-long cache write is priced at 2×, by the split its usage logs", () => {
   // The record solves to $20 over 3M weighted tokens (its writes unsplit, at
   // 1.25×); 4,000 tokens written for an hour weigh 8,000: $0.0533.
-  const hour = { ...billed(1_000, 'm1', 0), message: { ...billed(1_000, 'm1', 0).message, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 4_000, cache_creation: { ephemeral_1h_input_tokens: 4_000, ephemeral_5m_input_tokens: 0 } } } }
+  const hour = replyLine(1_000, { wrote: { '1h': 4_000 } })
   const spend = transcriptSpend(jsonl({ ...costRecord('claude-opus-5-5'), sessionId: 's1' }, hour), 's1', Infinity)
   expect(spend?.tokens).toEqual({ ...RECORD_TOKENS, written: 404_000, writtenHour: 4_000 })
-  expect(Math.abs((spend?.usd ?? 0) - (20 + 8_000 / 150_000))).toBeLessThan(1e-9)
+  expectNear(spend?.usd, (20 + 8_000 / 150_000), 1e-9)
 })
 
 test('a reply logged once per content block counts once, by its id', () => {

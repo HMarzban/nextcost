@@ -21,12 +21,15 @@ import {
   shown,
   rebuilds,
   engine,
+  expectNear,
   fact,
   cardOf,
   setup,
   mountBand,
+  shutAndOpen,
   usage,
 } from './helpers'
+import { cacheView } from './matrix'
 
 /** Whether the turn's end finds the cache rebuilt. */
 const rebuilt = (c: CacheModel): boolean => c.turnEnded(undefined).rebuilt
@@ -65,7 +68,7 @@ test('a miss within the lifetime rebuilt the cache too, and the turn takes the m
   expect(rebuilt(c)).toBe(false)
   // Two minutes on, well within the hour: the reply reads a tenth of what was cached.
   c.responded({ ...resp(2_000, 15_000, 4_000, 3_000), model: 'claude-opus-5-5' }, 2 * MIN, true)
-  expect(viewAt(c, 2 * MIN).misses).toBe(1)
+  expect(cacheView(c, 2 * MIN).misses).toBe(1)
   expect(rebuilt(c)).toBe(true)
   expect(rebuilt(c)).toBe(false)
 })
@@ -85,12 +88,9 @@ test('an assumed hour is corrected to a guessed 5m when a gap past 5m rebuilt th
   await clock.advance(12 * MIN)
   await respond($, resp(82_500, 0, 82_500, 300))
 
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  const tree = await ui.drawn()
+  const { open: tree } = await shutAndOpen($)
   expect(fact(tree, 'expires')).toBe('5m idle · assumed')
   expect(rebuilds(tree)).toBe(0)
-  await ui.unmount()
 })
 
 test('a prefix the cache should have served but did not is an unexpected rebuild', async ($, on) => {
@@ -100,10 +100,8 @@ test('a prefix the cache should have served but did not is an unexpected rebuild
   await clock.advance(30_000)
   await respond($, resp(82_500, 0, 82_500, 300))
 
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  expect(rebuilds(await ui.drawn())).toBe(1)
-  await ui.unmount()
+  const { open } = await shutAndOpen($)
+  expect(rebuilds(open)).toBe(1)
 })
 
 test('a warm follow-up to a long answer is not a rebuild', async ($, on) => {
@@ -113,12 +111,9 @@ test('a warm follow-up to a long answer is not a rebuild', async ($, on) => {
   await clock.advance(30_000)
   await respond($, resp(300, 80_000, 7_000, 400))
 
-  const ui = await mountBand($, 'terminal', 110)
-  await ui.press({ key: 'more' })
-  const tree = await ui.drawn()
+  const { open: tree } = await shutAndOpen($)
   expect(fact(tree, 'expires')).toBe('1h idle')
   expect(rebuilds(tree)).toBe(0)
-  await ui.unmount()
 })
 
 test("a subagent's steps leave the main countdown and window alone", LONG, async ($, on) => {
@@ -174,12 +169,9 @@ test('a compaction is an expected rebuild', async ($, on) => {
   await $.session.compact({ trigger: 'manual', messages: SUMMARY })
   await respond($, resp(500, 0, 20_000, 300)) // reads nothing: the prefix changed
 
-  const ui = await mountBand($, 'terminal', 160)
-  await ui.press({ key: 'more' })
-  const tree = await ui.drawn()
+  const { open: tree } = await shutAndOpen($, 160)
   expect(cardOf(tree, 'cache')).toBeDefined()
   expect(rebuilds(tree)).toBe(0)
-  await ui.unmount()
 })
 
 test('after a compaction the cold price is for the compacted size', LONG, async ($, on) => {
@@ -201,12 +193,9 @@ test('a model switch is an expected rebuild and keeps the assumed hour', async (
   await clock.advance(6 * MIN)
   await respond($, resp(82_500, 0, 82_500, 300), { model: 'claude-sonnet-5-5' })
 
-  const ui = await mountBand($, 'terminal', 160)
-  await ui.press({ key: 'more' })
-  const tree = await ui.drawn()
+  const { open: tree } = await shutAndOpen($, 160)
   expect(fact(tree, 'expires')).toBe('1h idle · assumed')
   expect(rebuilds(tree)).toBe(0)
-  await ui.unmount()
 })
 
 
@@ -220,11 +209,8 @@ const rebuildsAfterCompaction = async (
   await respond($, resp(2_000, 0, 150_000, 1_000))
   await $.session.compact({ trigger: 'manual', messages: SUMMARY, ...compact })
   await respond($, resp(500, 0, 20_000, 300))
-  const ui = await mountBand($, 'terminal', 160)
-  await ui.press({ key: 'more' })
-  const n = rebuilds(await ui.drawn())
-  await ui.unmount()
-  return n
+  const { open } = await shutAndOpen($, 160)
+  return rebuilds(open)
 }
 
 test('a compaction result that carries an empty skip is still a compaction', async ($, on) => {
@@ -256,10 +242,8 @@ test('a step that stops for compaction makes the next rebuild expected', async (
   await respond($, resp(2_000, 0, 150_000, 1_000))
   engine.stop = 'end_turn'
   await respond($, resp(500, 0, 20_000, 300))
-  const ui = await mountBand($, 'terminal', 160)
-  await ui.press({ key: 'more' })
-  expect(rebuilds(await ui.drawn())).toBe(0)
-  await ui.unmount()
+  const { open } = await shutAndOpen($, 160)
+  expect(rebuilds(open)).toBe(0)
 })
 
 test('switching model and back within a pinned hour is no miss', async ($, on) => {
@@ -270,10 +254,8 @@ test('switching model and back within a pinned hour is no miss', async ($, on) =
   await respond($, resp(82_500, 0, 82_500, 300), { model: 'claude-sonnet-5-5' })
   await clock.advance(30_000)
   await respond($, resp(500, 82_500, 1_000, 300))
-  const ui = await mountBand($, 'terminal', 160)
-  await ui.press({ key: 'more' })
-  expect(rebuilds(await ui.drawn())).toBe(0)
-  await ui.unmount()
+  const { open } = await shutAndOpen($, 160)
+  expect(rebuilds(open)).toBe(0)
 })
 
 // An advisor step: two message rounds read the same ~280k prefix, and the
@@ -285,9 +267,23 @@ test("an advisor step's summed usage counts its prefix once", () => {
   c.responded(resp(2_000, 0, 280_000, 500), 0, true)
   c.responded(ADVISOR_STEP, MIN, true, { serverTools: 1 })
   // (4 + 563.5k + 1.8k) / 2 rounds, then its output: 282,652 + 1,200.
-  expect(c.view({ now: MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.window).toBe(283_852)
+  expect(cacheView(c, MIN).window).toBe(283_852)
   c.responded(resp(2, 282_100, 2_500, 900), 2 * MIN, true)
-  expect(c.view({ now: 2 * MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.misses).toBe(0)
+  expect(cacheView(c, 2 * MIN).misses).toBe(0)
+})
+
+/** An advisor reply after a 100k cache. Claude Code hands a mod a step's four
+ *  token counts alone, never `iterations`, so its rounds are a guess. */
+const advisor = (read: number) => {
+  const c = newCache()
+  c.configured({ ttl: '1h', idleCompactFrom: undefined })
+  c.responded({ ...resp(100, 0, 100_000, 100), model: 'claude-opus-5-5' }, 0, true)
+  c.responded({ ...resp(100, read, 500, 100), model: 'claude-opus-5-5' }, MIN, true, { serverTools: 1 })
+  return cacheView(c, MIN)
+}
+
+test('a read a server tool may have halved counts no miss', () => {
+  expect(advisor(100_000).misses).toBe(0)
 })
 
 test("an advisor step's own bill stays out of the rate the re-warm is solved from", LONG, async ($, on) => {
@@ -295,9 +291,9 @@ test("an advisor step's own bill stays out of the rate the re-warm is solved fro
   await $.session.start(START)
   await respond($, BUILD_100K) // the ledger reads $2.41: 220k weighted, its writes an hour's
   // The step's message rounds and the advisor's own round bill $1.29 more.
-  usage.current = { ...USAGE, cost: { usd: 3.7009 }, context: { tokens: 102_002, window: 200_000, percent: 51 } }
+  usage.current = { ...usage.current, context: { tokens: 102_002, window: 200_000, percent: 51 } }
   engine.serverTools = 1
-  await respond($, resp(4, 200_000, 2_000, 1_000))
+  await respond($, resp(4, 200_000, 2_000, 1_000), { billsTo: 3.7009 })
   engine.serverTools = 0
   await clock.advance(61 * MIN)
 
@@ -314,7 +310,7 @@ test("a server tool's step prices the context Claude Code reports, not a guess a
   c.configured({ ttl: '1h', idleCompactFrom: undefined })
   c.responded(OPUS_BUILD, 0, true)
   c.responded({ ...resp(100, 200_000, 500, 100), model: 'claude-opus-5-5' }, MIN, true, { serverTools: 1 })
-  const at = (contextTokens: number) => c.view({ now: 2 * MIN, ledger: undefined, contextTokens, autoCompactOff: false }).cache.window
+  const at = (contextTokens: number) => cacheView(c, 2 * MIN, { contextTokens }).window
   expect(at(203_000)).toBe(203_000)
   // With none reported, the round's share stands.
   expect(at(0)).toBeLessThan(110_000)
@@ -324,7 +320,7 @@ test('a reply that sent no tokens leaves the cache as it was measured', () => {
   const c = newCache()
   c.responded(OPUS_BUILD, 0, true)
   c.responded({ ...resp(0, 0, 0, 0), model: '<synthetic>' }, 30 * MIN, true)
-  const { cache } = c.view({ now: 30 * MIN, ledger: undefined, contextTokens: 0, autoCompactOff: false })
+  const cache = cacheView(c, 30 * MIN)
   expect(cache.requests).toBe(1)
   expect(cache.coldAt).toBe(HOUR)
   expect(cache.window).toBe(208_000)
@@ -333,7 +329,7 @@ test('a reply that sent no tokens leaves the cache as it was measured', () => {
 
 /** The TTL and misses the model reads at `now`. */
 const ttlAt = (c: CacheModel, now: number) => {
-  const { cache } = c.view({ now, ledger: undefined, contextTokens: 0, autoCompactOff: false })
+  const cache = cacheView(c, now)
   return { ttl: cache.ttl, misses: cache.misses }
 }
 
@@ -381,11 +377,11 @@ test("a redraw that reads the ledger while an advisor step runs leaves its bill 
     m.responded(BUILD_100K, 0, true, { ledger: 2.41 })
     if (redraw) m.view({ now: MIN, ledger: 3.7009, contextTokens: 0, autoCompactOff: false })
     m.responded(resp(4, 200_000, 2_000, 1_000), MIN, true, { serverTools: 1, ledger: 3.7009 })
-    return m.view({ now: 61 * MIN, ledger: 3.7009, contextTokens: 0, autoCompactOff: false }).cache.reWarmUsd
+    return cacheView(m, 61 * MIN, { ledger: 3.7009 }).reWarmUsd
   }
   expect(rewarm(true)).toBe(rewarm(false))
   // r = 2.41/220k, its 1h writes at 2x; window 202,004/2 + 1,000 = 102,002: 2 * 102,002 * r = $2.2346
-  expect(Math.abs((rewarm(false) ?? 0) - (2 * 102_002 * 2.41) / 220_000) < 1e-9).toBe(true)
+  expectNear(rewarm(false), (2 * 102_002 * 2.41) / 220_000, 1e-9)
 })
 
 // Claude Code's ledger bills a cache write by its lifetime, as Anthropic lists
@@ -394,8 +390,7 @@ test("a redraw that reads the ledger while an advisor step runs leaves its bill 
 
 /** The re-warm a model prices at `now`, its ledger at `ledger`. */
 const reWarmAt = (c: CacheModel, now: number, ledger: number): number | null =>
-  c.view({ now, ledger, contextTokens: 0, autoCompactOff: false }).cache.reWarmUsd
-const near = (a: number | null, b: number): boolean => a !== null && Math.abs(a - b) < 1e-6
+  cacheView(c, now, { ledger }).reWarmUsd
 const pinnedTo = (ttl: '5m' | '1h', subagentTtl?: '5m' | '1h'): CacheModel => {
   const c = newCache()
   c.configured({ ttl, idleCompactFrom: undefined, subagentTtl })
@@ -406,14 +401,14 @@ test("on the hour's cache the main loop's writes weigh 2x, and a re-warm is a 2x
   const c = pinnedTo('1h')
   c.responded(BUILD_100K, 0, true, { ledger: 2.2 })
   // weighted = 10k + 2*100k + 5*2k = 220k, so r = $0.00001; re-warm = 2 * 112k * r = $2.24
-  expect(near(reWarmAt(c, 61 * MIN, 2.2), 2.24)).toBe(true)
+  expectNear(reWarmAt(c, 61 * MIN, 2.2), 2.24, 1e-6)
 })
 
 test("on five minutes' cache a write weighs 1.25x, as before", () => {
   const c = pinnedTo('5m')
   c.responded(BUILD_100K, 0, true, { ledger: 2.2 })
   // weighted = 10k + 1.25*100k + 5*2k = 145k; re-warm = 1.25 * 112k * 2.2/145k = $2.1241
-  expect(near(reWarmAt(c, 10 * MIN, 2.2), (1.25 * 112_000 * 2.2) / 145_000)).toBe(true)
+  expectNear(reWarmAt(c, 10 * MIN, 2.2), (1.25 * 112_000 * 2.2) / 145_000, 1e-6)
 })
 
 test("a subagent's writes weigh 1.25x on the hour's main cache, unless its own TTL is an hour", () => {
@@ -423,20 +418,19 @@ test("a subagent's writes weigh 1.25x on the hour's main cache, unless its own T
   five.responded(MAIN, 0, true, { ledger: 2.2 })
   five.responded(SUB, MIN, false, { ledger: 2.565 })
   // main 220k + subagent 3k + 1.25*10k + 0.05*20k + 5*4k = 36.5k: r = 2.565/256.5k = $0.00001
-  expect(near(reWarmAt(five, 61 * MIN, 2.565), 2.24)).toBe(true)
+  expectNear(reWarmAt(five, 61 * MIN, 2.565), 2.24, 1e-6)
   const hour = pinnedTo('1h', '1h')
   hour.responded(MAIN, 0, true, { ledger: 2.2 })
   hour.responded(SUB, MIN, false, { ledger: 2.565 })
   // the subagent's 10k written for an hour weigh 20k: 44k, r = 2.565/264k
-  expect(near(reWarmAt(hour, 61 * MIN, 2.565), (2 * 112_000 * 2.565) / 264_000)).toBe(true)
+  expectNear(reWarmAt(hour, 61 * MIN, 2.565), (2 * 112_000 * 2.565) / 264_000, 1e-6)
 })
 
 test("a subagent's own TTL is read as Claude Code reads it, and an hour there prices its writes at 2x", LONG, async ($, on) => {
   const clock = setup(on, { env: { ENABLE_PROMPT_CACHING_1H: '1', CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL: '5m' } })
   await $.session.start(START)
   await respond($, BUILD_100K) // main: weighted 220k
-  usage.current = { ...USAGE, cost: { usd: 2.565 } }
-  await respond($, resp(3_000, 20_000, 10_000, 4_000), { agentId: 'agent-1' }) // 36.5k at five minutes
+  await respond($, resp(3_000, 20_000, 10_000, 4_000), { agentId: 'agent-1', billsTo: 2.565 }) // 36.5k at five minutes
   await clock.advance(61 * MIN)
   // ENABLE_PROMPT_CACHING_1H asks an hour for both buckets, but the subagent's
   // own variable comes first: r = 2.565/256.5k; re-warm 2 * 112k * r = $2.24
@@ -456,7 +450,7 @@ test('an advisor step that bills most of the session leaves the rate exactly as 
   c.responded(opus(resp(2, 102_000, 1_000, 500)), 2 * MIN, true, { ledger: 7.29602 })
   // r stays $0.00001; re-warm = 2 * 103,502 * r = $2.07 (with the advisor's
   // bill in the rate, about $6).
-  expect(near(reWarmAt(c, 63 * MIN, 7.29602), 2 * 103_502 * 0.00001)).toBe(true)
+  expectNear(reWarmAt(c, 63 * MIN, 7.29602), 2 * 103_502 * 0.00001, 1e-6)
   expect(c.view({ now: 63 * MIN, ledger: 7.29602, contextTokens: 0, autoCompactOff: false }).costUsd).toBe(7.29602)
 })
 
@@ -465,7 +459,7 @@ test('a lifetime pinned before a reload and no longer set stands unpinned, assum
   before.configured({ ttl: '5m', idleCompactFrom: undefined })
   const reloaded = newCache(before.kept())
   reloaded.configured({ ttl: undefined, idleCompactFrom: undefined })
-  const { cache } = reloaded.view({ now: 0, ledger: undefined, contextTokens: 0, autoCompactOff: false })
+  const cache = cacheView(reloaded, 0)
   expect(cache.ttlKnown).toBe(false)
   expect(cache.ttl).toBe('1h')
 })
@@ -474,22 +468,21 @@ test('a lifetime inferred before a reload stands, with nothing pinned on either 
   const before = newCache()
   before.responded(resp(1_000, 0, 100_000, 100), 0, true)
   before.responded(resp(1_000, 0, 100_000, 100), 6 * 60_000, true)
-  const inferred = before.view({ now: 6 * 60_000, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.ttl
+  const inferred = cacheView(before, 6 * 60_000).ttl
   expect(inferred).toBe('5m')
   const reloaded = newCache(before.kept())
   reloaded.configured({ ttl: undefined, idleCompactFrom: undefined })
-  expect(reloaded.view({ now: 6 * 60_000, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache.ttl).toBe('5m')
+  expect(cacheView(reloaded, 6 * 60_000).ttl).toBe('5m')
 })
 
 // ── a countdown never runs past its lifetime ────────────────────────────
 
-const viewAt = (c: CacheModel, now: number) => c.view({ now, ledger: undefined, contextTokens: 0, autoCompactOff: false }).cache
 
 test('a reply dated after now counts down one lifetime at most, whatever the clock says', () => {
   const c = newCache()
   c.responded(OPUS_BUILD, 6 * HOUR, true)
   for (const now of [0, HOUR]) {
-    const cache = viewAt(c, now)
+    const cache = cacheView(c, now)
     expect(cache.leftMs).toBe(TTL_MS['1h'])
     expect(c.leftMs(now)).toBe(TTL_MS['1h'])
     expect(cache.coldAt).toBe(now + TTL_MS['1h'])
@@ -501,7 +494,7 @@ test('a recalled reply dated after now is unknown: no countdown, no idle time', 
     const c = newCache()
     c.loaded({ namedModel: undefined, ledger: 5 })
     c.recalled({ lastAt, rate: null, billed: undefined })
-    const cache = viewAt(c, HOUR)
+    const cache = cacheView(c, HOUR)
     expect([cache.recalled, cache.coldAt, cache.idleMs, c.idleMs(HOUR)]).toEqual([false, null, null, null])
     expect(cache.leftMs).toBeLessThanOrEqual(TTL_MS['1h'])
   }
@@ -510,7 +503,7 @@ test('a recalled reply dated after now is unknown: no countdown, no idle time', 
 test("a resume the engine dates after now is unknown too", () => {
   const c = newCache()
   c.resumed({ cache: { lastAt: 1e15, expired: false, reWarmUsd: undefined }, transcript: undefined })
-  const cache = viewAt(c, HOUR)
+  const cache = cacheView(c, HOUR)
   expect([cache.recalled, cache.coldAt, cache.idleMs]).toEqual([false, null, null])
 })
 
@@ -518,23 +511,6 @@ test('a recalled reply at now is a reply just made, not unknown', () => {
   const c = newCache()
   c.loaded({ namedModel: undefined, ledger: 5 })
   c.recalled({ lastAt: HOUR, rate: null, billed: undefined })
-  const cache = viewAt(c, HOUR)
+  const cache = cacheView(c, HOUR)
   expect([cache.recalled, cache.idleMs, cache.leftMs]).toEqual([true, 0, TTL_MS['1h']])
-})
-
-test('model changed compares with what the last request went on: a turn that sent none still says it, and a new conversation starts clean', () => {
-  const c = newCache()
-  c.configured({ ttl: '1h', idleCompactFrom: undefined })
-  c.turnStarted({ namedModel: 'opus', ledger: 0 })
-  c.responded(OPUS_BUILD, 0, true)
-  c.turnEnded(0)
-  const changed = (modelNow: string) => c.view({ now: MIN, ledger: 0, contextTokens: 100_000, autoCompactOff: false, modelNow }).cache.interrupted === 'switched'
-  expect(changed('opus')).toBe(false)
-  expect(changed('haiku')).toBe(true)
-  // A turn on Haiku that never reached the API: the cache is still Opus's.
-  c.turnStarted({ namedModel: 'haiku', ledger: 0 })
-  c.turnEnded(0)
-  expect(changed('haiku')).toBe(true)
-  c.conversationEnded(0, true)
-  expect(changed('sonnet')).toBe(false)
 })

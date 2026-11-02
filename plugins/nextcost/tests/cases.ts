@@ -7,11 +7,27 @@ import type { Engine, MockClock } from 'claude-code/testing'
 import { TTL_MS } from '../hooks/cache'
 import type { Ttl } from '../hooks/prices'
 import {
-  BUILD_155K, DEFAULT_MAX_ROWS, HOUR, HOUR_1, MIN, SPEND_LIMIT, START, SUMMARY, USAGE, FRESH, breakdown, engine, mountBand, pacing, respond, setup,  usageAt, type Node,
-  startTurn,
-  endTurn,
-  usage,
+  BUILD_155K,
+  DEFAULT_MAX_ROWS,
+  FRESH,
+  HOME,
+  HOUR,
+  HOUR_1,
+  MIN,
+  SPEND_LIMIT,
+  START,
+  SUMMARY,
+  USAGE,
+  breakdown,
+  engine,
+  mountBand,
+  pacing,
   resp,
+  respond,
+  setup,
+  turn,
+  usageAt,
+  type Node,
 } from './helpers'
 
 export type Appearance = 'dark' | 'light' | 'plain'
@@ -69,7 +85,7 @@ export const SCENARIOS = {
   warming: { usage: FRESH, drive: started, amber: [] },
   // Its last reply 20 minutes ago, as the band remembered it; HOME lets it
   // look for the transcript's cost record too.
-  recalled: { store: { sessions: { s1: { lastAt: 0 } } }, now: 20 * MIN, env: { HOME: '/Users/me' }, drive: started, amber: [] },
+  recalled: { store: { sessions: { s1: { lastAt: 0 } } }, now: 20 * MIN, env: HOME, drive: started, amber: [] },
   cold: { drive: cooled, amber: [] },
   lastMinute: { drive: async ($, clock, ttlMs) => { await replied($); await clock.advance(ttlMs - 30_000) }, amber: ['cacheLastMinute'] },
   working: { drive: replied, isWorking: true, amber: [] },
@@ -94,12 +110,7 @@ export const SCENARIOS = {
     drive: async $ => {
       await replied($)
       // As the real ledger moves: each turn's bill lands in its step.
-      for (let i = 1; i <= 30; i++) {
-        await startTurn($, `t${i}`, 2.41 + (i - 1) * 0.2)
-        usage.current = { ...usage.current, cost: { usd: 2.41 + i * 0.2 } }
-        await respond($, resp(200, 155_000, 1_000, 500))
-        await endTurn($, `t${i}`, 2.41 + i * 0.2)
-      }
+      for (let i = 1; i <= 30; i++) await turn($, `t${i}`, 2.41 + (i - 1) * 0.2, 2.41 + i * 0.2, { usage: resp(200, 155_000, 1_000, 500) })
     },
     amber: [],
   },

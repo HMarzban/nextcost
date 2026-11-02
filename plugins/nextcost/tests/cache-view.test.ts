@@ -5,7 +5,7 @@ import { test, expect } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
 import { cacheFactsOf } from '../hooks/cache-facts'
 import type { CacheModel } from '../hooks/cache'
-import { BUILD_155K, MIN } from './helpers'
+import { BUILD_155K, MIN, expectNear } from './helpers'
 
 const RATE = 0.00001
 
@@ -28,7 +28,7 @@ test('recalled, the cache counts down from the last reply and prices the whole c
   expect(view.leftMs).toBe(50 * MIN) // the assumed hour, from the last reply
   expect(view.window).toBe(76_000)
   // A re-warm on the hour writes for an hour, at 2× base input.
-  expect(Math.abs((view.reWarmUsd ?? 0) - 2 * RATE * 76_000)).toBeLessThan(1e-9)
+  expectNear(view.reWarmUsd, 2 * RATE * 76_000, 1e-9)
   expect(view.idleMs).toBe(10 * MIN)
 })
 

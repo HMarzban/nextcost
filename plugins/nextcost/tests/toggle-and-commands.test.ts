@@ -20,6 +20,7 @@ import {
   engine,
   fact,
   transcriptOf,
+  HOME,
   HOUR,
 } from './helpers'
 
@@ -105,14 +106,14 @@ test('Collapse and Hide band are real buttons with c and h hotkeys, beside how t
 })
 
 test('the commands are registered before the band reads a transcript to recall the last reply', async ($, on) => {
-  setup(on, { env: { HOME: '/Users/me' } })
+  setup(on, { env: HOME })
   // How many commands were registered when the recall's tail first read the transcript.
   let registeredAtRead: number | undefined
   Object.defineProperty(engine, 'transcript', {
     configurable: true,
     enumerable: true,
     get: () => {
-      if (engine.ran.at(-1)?.[0] === 'tail') registeredAtRead ??= engine.commands.length
+      if (engine.runs.at(-1)?.argv[0] === 'tail') registeredAtRead ??= engine.commands.length
       return undefined
     },
     // The next test's reset makes it a plain field again.
@@ -126,7 +127,7 @@ test('the commands are registered before the band reads a transcript to recall t
 })
 
 test('the settings are read and applied before the band waits on a transcript to recall the last reply', async ($, on) => {
-  const clock = setup(on, { env: { HOME: '/Users/me', FORCE_PROMPT_CACHING_5M: '1' }, now: 3 * HOUR })
+  const clock = setup(on, { env: { ...HOME, FORCE_PROMPT_CACHING_5M: '1' }, now: 3 * HOUR })
   engine.transcript = transcriptOf(0)
   let release = (): void => undefined
   engine.tailHold = new Promise<void>(resolve => {
@@ -135,7 +136,7 @@ test('the settings are read and applied before the band waits on a transcript to
   const started = $.session.start(START)
   await clock.settle()
   // The recall waits on its read of the transcript's end.
-  expect(engine.ran.filter(argv => argv[0] === 'tail')).toHaveLength(1)
+  expect(engine.runs.filter(({ argv }) => argv[0] === 'tail')).toHaveLength(1)
   const ui = await mountBand($, 'terminal', 140)
   await ui.press({ key: 'more' })
   // The TTL the environment pins is in force already.

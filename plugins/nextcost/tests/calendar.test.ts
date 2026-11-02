@@ -2,7 +2,7 @@ import { test, expect } from 'claude-code/testing'
 import { cappedMarks, drawnWeekOf, weekOf, windowNowAt } from '../hooks/calendar'
 import type { HourCell } from '../hooks/calendar'
 import { fixedZone } from '../hooks/format'
-import { HOUR as H } from './helpers'
+import { HOUR as H, expectNear } from './helpers'
 
 /** A cell as a reader would say it: '6%', '~7%' (a guess), '' (unknown). */
 const said = (c: Readonly<{ pct: number | undefined; guess: boolean }>): string => (c.pct === undefined ? '' : `${c.guess ? '~' : ''}${Math.round(c.pct)}%`)
@@ -19,7 +19,7 @@ test("a day cell is that day's rise in the weekly limit", () => {
   expect(marked(wk.days)).toBe('TWT[F]SSM')
   expect(wk.days.slice(0, 4).map(said)).toEqual(['6%', '9%', '11%', '4%'])
   expect(wk.days.map(d => d.guess)).toEqual([false, false, false, false, true, true, true])
-  expect(Math.abs((wk.days[4]?.pct ?? 0) - (50 - 30) / 3)).toBeLessThan(1e-5)
+  expectNear(wk.days[4]?.pct, (50 - 30) / 3, 1e-5)
   expect(wk.days[4] && said(wk.days[4])).toBe('~7%')
 })
 test('a sample from another window is ignored', () => {

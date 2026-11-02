@@ -1,7 +1,7 @@
 import { test, expect } from 'claude-code/testing'
 import { barChart, braille, dayCells, dayCellsFit, flatBeats, heartbeat, meter, sparkline, splitBar, track } from '../hooks/charts'
 import { CHIP_BAR } from '../hooks/views/chips'
-import { byKey, svgsOf, textOf, type Node } from './helpers'
+import { byKey, expectNear, svgsOf, textOf, type Node } from './helpers'
 import { bandOf, kitOf } from './matrix'
 
 test('braille puts two values in a cell, four heights each', () => {
@@ -124,7 +124,7 @@ for (const [cellPx, height] of [[18, 56], [4, 14]] as const) {
     values.forEach((v, i) => {
       expect(fillX[i]!).toBeGreaterThanOrEqual(edgeX[i]! - 0.01)
       expect(fillX[i]! + fillW[i]!).toBeLessThanOrEqual(edgeX[i]! + edgeW[i]! + 0.01)
-      expect(Math.abs(fillH[i]! - (v / 100) * (height - 2))).toBeLessThan(0.1)
+      expectNear(fillH[i]!, (v / 100) * (height - 2), 0.1)
     })
   })
 }

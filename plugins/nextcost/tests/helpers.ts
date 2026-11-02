@@ -12,7 +12,7 @@ import type {
   TurnStepInput,
   TurnStopReason,
 } from 'claude-code'
-import { mock, type Engine, type MockClock } from 'claude-code/testing'
+import { expect, mock, type Engine, type MockClock } from 'claude-code/testing'
 import type { Sample } from '../hooks/memory'
 import { CHIP_BAR } from '../hooks/views/chips'
 import { textCells } from '../hooks/layout'
@@ -63,18 +63,10 @@ const USAGE_FLAGS = { breakdownFails: false, fails: false }
  *  limits, or sets one of USAGE_FLAGS to make a read throw. */
 export const usage: { current: SessionUsage } & typeof USAGE_FLAGS = { current: USAGE, ...USAGE_FLAGS }
 
-/** The ledger as the last step left it: `respond` holds it there until its
- *  step bills, as the real one moves, while a test sets `usage.current` to
- *  what it reads after the step. `ledgerGrows` moves it between steps. */
-let ledgerAtStepEnd: number | undefined
-let ledgerAfterStep: SessionUsage | null = null
-
 /** The ledger grows by `usd` with no step to show for it, as a compaction's
  *  request does. */
 export const ledgerGrows = (usd: number): void => {
-  const was = usage.current.cost?.usd ?? 0
-  usage.current = { ...usage.current, cost: { usd: was + usd } }
-  ledgerAtStepEnd = was + usd
+  usage.current = { ...usage.current, cost: { usd: (usage.current.cost?.usd ?? 0) + usd } }
 }
 
 /** The size the engine reports for the conversation after a compaction. */
@@ -110,9 +102,7 @@ type EngineFake = {
   git: GitAnswer
   /** While set, git and grep answers wait on it: each answer is the one at the call. */
   hold: Promise<void> | undefined
-  ran: string[][]
-  /** The same runs with where and for how long each was asked to run:
-   *  `ran` holds the argv alone, which most tests read. */
+  /** Every program the plugin ran, in order, with where and for how long each was asked to run. */
   runs: Array<{ argv: string[]; cwd: string | undefined; timeoutMs: number | undefined }>
   /** The session's id and model, as the engine names them. */
   sessionId: string
@@ -183,7 +173,6 @@ const ENGINE_INITIAL: Readonly<EngineFake> = {
   root: PROJECT,
   repoRoot: PROJECT,
   git: { status: GIT_CLEAN, dirs: GIT_MAIN_TREE },
-  ran: [],
   runs: [],
   compact: { messages: SUMMARY, tokensAfter: COMPACTED_TO },
   stop: 'end_turn',
@@ -200,15 +189,14 @@ export const engine: EngineFake = structuredClone(ENGINE_INITIAL)
 /** Every toast the plugin raised since `base` ran. */
 export const toasts: string[] = []
 
-let nextUsage: ModelUsage | null = null
+/** What the next step answers with: its usage, and the ledger it leaves behind. */
+let pending: { usage: ModelUsage; billsTo: number | undefined } | null = null
 
 /** Everything beneath the plugin: the engine's own answers. */
 const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<string, unknown>> = {}): void => {
   Object.assign(usage, USAGE_FLAGS, { current: initial })
   toasts.length = 0
-  nextUsage = null
-  ledgerAtStepEnd = undefined
-  ledgerAfterStep = null
+  pending = null
   Object.assign(engine, structuredClone(ENGINE_INITIAL))
   engine.store = JSON.parse(JSON.stringify(store)) as Record<string, unknown>
   on('store.get', ($, e) => {
@@ -253,7 +241,6 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
     value: engine.repoRoot === undefined ? null : { root: engine.repoRoot, remote: null, internal: false, name: null },
   }))
   on('process.run', async ($, e) => {
-    engine.ran.push([...e.argv])
     engine.runs.push({ argv: [...e.argv], cwd: e.init?.cwd, timeoutMs: e.init?.timeoutMs })
     const quiet = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
     if (e.argv[0] === 'tail') {
@@ -284,10 +271,7 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
     return { value: { ...quiet, exitCode: 0, stdout: e.argv.includes('status') ? git.status : git.dirs, isStdoutTruncated: truncates === 'git' } }
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('session.end', ($, e) => {
-    ledgerAtStepEnd = usage.current.cost?.usd
-    return { sessionId: e.sessionId }
-  })
+  on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   on('classic.SessionStart', () => ({}))
   on('command.register', ($, e) => {
     engine.commands.push(e.name)
@@ -301,10 +285,7 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
   on('session.compact', () => engine.compact)
   on('prompt.submit', ($, e) => ({ text: e.text, origin: e.origin }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
-  on('turn.start', ($, e) => {
-    ledgerAtStepEnd = usage.current.cost?.usd
-    return { turnId: e.turnId }
-  })
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
@@ -318,14 +299,15 @@ const base = (on: On, initial: SessionUsage = USAGE, store: Readonly<Record<stri
   })
   on('turn.step', async function* ($, e) {
     if (engine.gate !== undefined) await engine.gate
-    if (ledgerAfterStep !== null) usage.current = ledgerAfterStep
+    // The step's bill lands in the ledger as it answers, after the hook read it.
+    if (pending?.billsTo !== undefined) usage.current = { ...usage.current, cost: { usd: pending.billsTo } }
     return {
       turnId: e.turnId,
       index: e.index,
       answer: '',
       toolUses: [],
       stopReason: engine.stop,
-      usage: nextUsage === null ? null : { ...nextUsage, model: e.model },
+      usage: pending === null ? null : { ...pending.usage, model: e.model },
       ...(engine.serverTools > 0 && {
         serverToolUses: Array.from({ length: engine.serverTools }, (_, i) => ({ id: `srv-${i}`, name: 'advisor', input: {}, startedAt: 0, endedAt: 1 })),
       }),
@@ -340,6 +322,28 @@ export const resp = (input: number, read: number, write: number, output: number)
   cache_creation_input_tokens: write,
 })
 
+/** What the list prices input tokens at on each model the tests bill, in USD
+ *  per token, with what a read costs against it, and the prompt size above
+ *  which Haiku bills five times that. Written out here, apart from
+ *  hooks/prices.ts, so a bill is checked against the list and not against the
+ *  code that reads it. */
+const LIST: Readonly<Record<string, { input: number; read: number; fiveTimesAbove?: number }>> = {
+  'claude-opus-5-5': { input: 4e-6, read: 0.05 },
+  'claude-sonnet-5-5': { input: 2e-6, read: 0.05 },
+  'claude-haiku-5-5': { input: 1e-7, read: 0.1, fiveTimesAbove: 100_000 },
+}
+
+/** What the list bills the step `u` on `model` (Opus 5.5 when not given), as
+ *  Claude Code's ledger adds it: a write at `writeMult` times the input rate
+ *  (2 for the hour's cache, 1.25 for five minutes'), output at 5x. */
+export const listBill = (u: ModelUsage, model = 'claude-opus-5-5', writeMult = 2): number => {
+  const price = LIST[model]
+  if (price === undefined) throw new Error(`no list price for ${model}`)
+  const prompt = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
+  const tier = price.fiveTimesAbove !== undefined && prompt > price.fiveTimesAbove ? 5 : 1
+  return price.input * tier * (u.input_tokens + writeMult * u.cache_creation_input_tokens + price.read * u.cache_read_input_tokens + 5 * u.output_tokens)
+}
+
 /** A step that builds a 155k cache, none read from it: 41k in, 12k out. */
 export const BUILD_155K: ModelUsage = resp(41_000, 0, 155_000, 12_000)
 /** A step that builds a 100k cache: 10k in, 2k out. */
@@ -350,17 +354,18 @@ export const READ_100K: ModelUsage = resp(4_000, 100_000, 6_000, 3_000)
 export const BUILD_80K: ModelUsage = resp(2_000, 0, 80_000, 500)
 
 /** One step of a main-loop turn on `$`, its reply billed as `u`; `over`
- *  makes it a subagent's (`{ agentId }`) or another model's. */
-export const respond = async ($: Engine, u: ModelUsage, over: Partial<TurnStepInput> = {}): Promise<void> => {
-  nextUsage = u
-  ledgerAfterStep = usage.current
-  if (ledgerAtStepEnd !== undefined && usage.current.cost !== undefined) usage.current = { ...usage.current, cost: { usd: ledgerAtStepEnd } }
-  const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 1, ...over })
+ *  makes it a subagent's (`{ agentId }`) or another model's. `billsTo` is the
+ *  ledger the step leaves, in USD: the ledger reads as it stands while the
+ *  request goes out, and as `billsTo` once the reply is in, as the real one
+ *  moves. Without it the step bills nothing. */
+export const respond = async ($: Engine, u: ModelUsage, over: Partial<TurnStepInput> & { billsTo?: number } = {}): Promise<void> => {
+  const { billsTo, ...step } = over
+  pending = { usage: u, billsTo }
+  const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 1, ...step })
   for await (const _chunk of stream) {
     // drain so the hook's result settles
   }
   await stream.result
-  ledgerAtStepEnd = usage.current.cost?.usd
 }
 
 export type Node = {
@@ -453,6 +458,8 @@ export const TURN_DONE = { answer: '', durationMs: 1, isAborted: false, turnId: 
 export const SPEND_LIMIT: SessionRateLimit = { kind: 'spend_limit', percentUsed: 92, resetsAt: new Date(5 * HOUR).toISOString() }
 /** Pins the 1-hour TTL, so tests don't depend on the assumed one. */
 export const HOUR_1 = { ENABLE_PROMPT_CACHING_1H: '1' }
+/** A home to look for a transcript under, which the band reads only where it has one. */
+export const HOME = { HOME: '/Users/me' }
 /** Where a mounted test that reads a host's clock starts: never epoch 0,
  *  where a host's zone may have had an offset off the minute. */
 export const MODERN = Date.UTC(2026, 0, 5)
@@ -505,6 +512,17 @@ export const mountBand = <S extends 'terminal' | 'desktop'>(
   cols: number,
   opts: { maxRows?: number; isWorking?: boolean } = {},
 ) => $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: props(cols, opts.isWorking, opts.maxRows) })
+
+/** The band on `surface` (the terminal when not given), `cols` wide: mounted,
+ *  drawn shut, opened with its key, drawn again and unmounted. */
+export const shutAndOpen = async ($: Engine, cols = 110, surface: 'terminal' | 'desktop' = 'terminal') => {
+  const ui = await mountBand($, surface, cols)
+  const shut = await ui.drawn()
+  await ui.press({ key: 'more' })
+  const open = await ui.drawn()
+  await ui.unmount()
+  return { shut, open }
+}
 
 // ── readers for the drawn tree ─────────────────────────────────────────
 
@@ -602,6 +620,17 @@ export const fact = (tree: unknown, label: string): string | undefined => {
   return row === undefined ? undefined : textOf((row.children ?? []).at(-1))
 }
 
+/** What a card's rows say, in the order drawn: each fact's label, and a note's
+ *  words where it stands. */
+export const factsOf = (card: Node | undefined): string[] => {
+  const out: string[] = []
+  walk(card, n => {
+    const key = n.props?.key
+    if (typeof key === 'string' && (key.startsWith('fact:') || key === 'note')) out.push(key === 'note' ? shown(n) : key.slice(5))
+  })
+  return out
+}
+
 /** A card of the expanded view: cache, spend, context or limits. */
 export const cardOf = (tree: unknown, name: string): Node | undefined => byKey(tree, `card:${name}`, 'Box')
 
@@ -653,10 +682,12 @@ export const endTurn = async ($: Engine, id: string, at: number, extra: TurnEnd 
 }
 
 /** One main-loop turn (or, with `agentId`, a subagent's) that moves the
- *  ledger from `from` to `to`. */
-export const turn = async ($: Engine, id: string, from: number, to: number, extra: TurnEnd = {}): Promise<void> => {
-  await startTurn($, id, from, extra.agentId)
-  await endTurn($, id, to, extra)
+ *  ledger from `from` to `to`; with `usage`, in one step billed as that. */
+export const turn = async ($: Engine, id: string, from: number, to: number, extra: TurnEnd & { usage?: ModelUsage } = {}): Promise<void> => {
+  const { usage: reply, ...end } = extra
+  await startTurn($, id, from, end.agentId)
+  if (reply !== undefined) await respond($, reply, { billsTo: to, ...(end.agentId !== undefined && { agentId: end.agentId }) })
+  await endTurn($, id, to, end)
 }
 
 /** Starts the session and feeds a 5h pace: 40% then 50% twelve minutes on,
@@ -701,13 +732,21 @@ const NO_USAGE = {
 let replies = 0
 /** A main-loop reply's line, logged at `ms`, billed under Opus 5.5, as the
  *  engine writes one (2.1.316): its message has an `id`, one to a reply, and
- *  a `usage`, here billing nothing. Each call is a reply of its own. */
-export const replyLine = (ms: number) => ({
-  type: 'assistant',
-  isSidechain: false,
-  timestamp: new Date(ms).toISOString(),
-  message: { id: `msg_${++replies}`, role: 'assistant', model: 'claude-opus-5-5', content: [], usage: NO_USAGE },
-})
+ *  a `usage`, billing nothing unless `usage` names counts. `wrote` is what the
+ *  reply wrote to the cache for each lifetime, with its split as engines since
+ *  2.1.310 log it; it sets the usage's cache writes, over `usage`'s. Each call
+ *  is a reply of its own. */
+export const replyLine = (ms: number, over: { wrote?: { '5m'?: number; '1h'?: number }; usage?: Partial<typeof NO_USAGE> } = {}) => {
+  const five = over.wrote?.['5m'] ?? 0
+  const hour = over.wrote?.['1h'] ?? 0
+  const written = over.wrote === undefined ? {} : { cache_creation_input_tokens: five + hour, cache_creation: { ephemeral_5m_input_tokens: five, ephemeral_1h_input_tokens: hour } }
+  return {
+    type: 'assistant',
+    isSidechain: false,
+    timestamp: new Date(ms).toISOString(),
+    message: { id: `msg_${++replies}`, role: 'assistant', model: 'claude-opus-5-5', content: [], usage: { ...NO_USAGE, ...over.usage, ...written } },
+  }
+}
 /** The lines the engine logs as it sends a request, before the reply's: its
  *  shape, its messages as blobs (one of `blobBytes`, an assistant's, as the
  *  engine logs a long history in whole: up to 2 MB), then the request. */
@@ -749,8 +788,11 @@ export const costRecord = (...models: string[]) => ({
   ),
   hasUnknownModelCost: false,
 })
-/** Whether a rate solved from a transcript is `b`, to within float error. */
-export const rateNear = (a: number | null, b: number): boolean => a !== null && Math.abs(a - b) < 1e-15
+/** `actual` is a number within `within` of `expected`; a miss, or no number
+ *  at all, fails showing what was read against what was meant. */
+export const expectNear = (actual: number | null | undefined, expected: number, within: number): void => {
+  expect(typeof actual === 'number' && Math.abs(actual - expected) < within ? expected : actual).toBe(expected)
+}
 
 /** A transcript as Claude Code writes one: a user line, an assistant reply at
  *  `replyAt`, and the cost-state line it adds when the session exits. */

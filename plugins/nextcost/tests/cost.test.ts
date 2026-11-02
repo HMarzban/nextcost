@@ -14,7 +14,6 @@ import {
   CLEAR,
   resp,
   respond,
-  usage,
   textOf,
   cardText,
   hoverCardOf,
@@ -72,8 +71,7 @@ test('spend before a /clear does not inflate the re-warm estimate', LONG, async 
   await $.session.end(CLEAR)
 
   // The ledger keeps counting: $0.59 is this conversation's.
-  usage.current = { ...USAGE, cost: { usd: 3.0 } }
-  await respond($, BUILD_100K)
+  await respond($, BUILD_100K, { billsTo: 3.0 })
   await clock.advance(61 * 60_000)
 
   // writes for the pinned hour at 2×: rate = 0.59 / (10k + 2*100k + 5*2k);
@@ -89,8 +87,8 @@ test('a ledger the engine reset on /clear is used as it stands', LONG, async ($,
   await respond($, BUILD_155K)
   await $.session.end(CLEAR)
 
-  usage.current = { ...USAGE, cost: { usd: 0.59 } } // below the $2.41 baseline: reset
-  await respond($, BUILD_100K)
+  // Below the $2.41 baseline: reset.
+  await respond($, BUILD_100K, { billsTo: 0.59 })
   await clock.advance(61 * 60_000)
 
   const ui = await mountBand($, 'terminal', 110)
@@ -104,10 +102,8 @@ test('a ledger reset on /clear keeps the re-warm price right after the new conve
   await respond($, BUILD_155K)
   await $.session.end(CLEAR)
 
-  usage.current = { ...USAGE, cost: { usd: 0.59 } } // the engine reset the ledger
-  await respond($, BUILD_100K)
-  usage.current = { ...USAGE, cost: { usd: 3.0 } } // now past the old $2.41
-  await respond($, resp(1_000, 112_000, 2_000, 1_000))
+  await respond($, BUILD_100K, { billsTo: 0.59 }) // the engine reset the ledger
+  await respond($, resp(1_000, 112_000, 2_000, 1_000), { billsTo: 3.0 }) // now past the old $2.41
   await clock.advance(61 * MIN)
 
   // all $3.00 is this conversation's, writes at 2×, reads at Opus 5.5's 0.05×:
@@ -121,8 +117,7 @@ test('a session resumed or reloaded with spend on the ledger prices the re-warm 
   const clock = setup(on, { usage: { ...USAGE, cost: { usd: 20 } } }) // the ledger carries an earlier run's $20
   await $.session.start(START)
   await $.turn.start(TURN_START)
-  usage.current = { ...USAGE, cost: { usd: 20.3 } }
-  await respond($, BUILD_100K)
+  await respond($, BUILD_100K, { billsTo: 20.3 })
   await $.turn.complete(TURN_DONE)
   await clock.advance(61 * MIN)
 

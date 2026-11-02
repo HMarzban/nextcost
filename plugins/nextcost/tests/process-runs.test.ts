@@ -4,12 +4,10 @@
 // waits 30 seconds on a hung program.
 
 import { test, expect } from 'claude-code/testing'
-import { LONG, PROJECT, START, TURN_DONE, BUILD_80K, engine, respond, setup, transcriptOf } from './helpers'
-
-const ENV = { HOME: '/Users/me' }
+import { HOME, LONG, PROJECT, START, TURN_DONE, BUILD_80K, engine, respond, setup, transcriptOf } from './helpers'
 
 test('every program the band runs is given its place and 3 seconds', LONG, async ($, on) => {
-  const clock = setup(on, { env: ENV, now: 10_000_000 })
+  const clock = setup(on, { env: HOME, now: 10_000_000 })
   engine.transcript = transcriptOf(clock.now() - 60_000)
   await $.session.start(START)
   await respond($, BUILD_80K)
