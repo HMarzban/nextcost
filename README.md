@@ -44,7 +44,7 @@ the summary.
 
 **Needs** Claude Code with mods (function-hooks plugins), outside WSL, which
 doesn't load plugins. CI tests every change, in the terminal's engine, on
-Claude Code 2.1.299 and the latest release (2.1.308 at 0.19.0). The one-line
+Claude Code 2.1.299 and the latest release (2.1.316 at 0.21.0). The one-line
 install below needs 2.1.292 or later
 (`claude --version`); on an older one, use the two steps underneath.
 
