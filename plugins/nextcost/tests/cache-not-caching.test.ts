@@ -5,6 +5,7 @@
 
 import { test, expect, type Engine } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
+import { LAYOUT_NAMES } from '../hooks/snapshot'
 import { LONG, MIN, START, mountBand, resp, respond, setup, svgAlts, textOf } from './helpers'
 
 const shutAndOpen = async ($: Engine, surface: 'terminal' | 'desktop'): Promise<string> => {
@@ -18,9 +19,9 @@ const shutAndOpen = async ($: Engine, surface: 'terminal' | 'desktop'): Promise<
   return `${shut}\n${open}`
 }
 
-const NO_COUNTDOWN = /\d+m left|re-warm|RE-WARM|DEPARTS|LAST CALL|BOARDING|CHECK-IN|\dh idle|next message/
+const NO_COUNTDOWN = /\d+m left|re-warm|RE-WARM|DEPARTS|LAST CALL|BOARDING|CHECK-IN|\dh idle|next message|\bcache \d/
 
-for (const layout of ['chips', 'pulse', 'departures'])
+for (const layout of LAYOUT_NAMES)
   for (const surface of ['terminal', 'desktop'] as const)
     test(`${layout} on the ${surface} says not caching, with no countdown or price`, LONG, async ($, on) => {
       const clock = setup(on, { store: { layout } })

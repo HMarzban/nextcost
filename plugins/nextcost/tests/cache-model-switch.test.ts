@@ -3,6 +3,7 @@
 
 import { test, expect, type Engine } from 'claude-code/testing'
 import { newCache } from '../hooks/cache'
+import { LAYOUT_NAMES } from '../hooks/snapshot'
 import { LONG, MIN, START, TURN_DONE, TURN_START, engine, mountBand, resp, respond, setup, textOf } from './helpers'
 
 const drawn = async ($: Engine): Promise<string> => {
@@ -16,7 +17,7 @@ const drawn = async ($: Engine): Promise<string> => {
 
 const SAID = /model changed/i
 
-for (const layout of ['chips', 'pulse', 'departures'])
+for (const layout of LAYOUT_NAMES)
   test(`${layout} says the next message rebuilds, in tokens, and counts down no more`, LONG, async ($, on) => {
     const clock = setup(on, { store: { layout } })
     await $.session.start(START)
@@ -28,8 +29,8 @@ for (const layout of ['chips', 'pulse', 'departures'])
     engine.model = 'claude-sonnet-5-5'
     const text = await drawn($)
     expect(text).toMatch(SAID)
-    expect(text).toMatch(/157\.?\d?k tokens|158k tokens|157K TOKENS|158K TOKENS/i)
-    expect(text).not.toMatch(/\d+m left|DEPARTS|re-warm/i)
+    expect(text).toMatch(/157\.?\d?k tokens|158k tokens/i)
+    expect(text).not.toMatch(/\d+m left|DEPARTS|re-warm|\bcache \d/i)
   })
 
 test('the next turn takes the new model, and the countdown is back', LONG, async ($, on) => {
