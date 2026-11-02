@@ -131,3 +131,19 @@ test('a new conversation reads git again, since a resume may be another project'
   await clock.settle()
   expect(gitRuns()).toBe(before + 2)
 })
+
+test('a resume reads git again too, and the other ways a session ends read nothing: git on the way out holds up the exit', async ($, on) => {
+  const clock = setup(on)
+  await $.session.start(START)
+  await clock.settle()
+  for (const reason of ['prompt_input_exit', 'logout', 'other'] as const) {
+    const before = gitRuns()
+    await $.session.end({ reason, sessionId: 's1', resume: { id: 's1' } })
+    await clock.settle()
+    expect({ reason, runs: gitRuns() - before }).toEqual({ reason, runs: 0 })
+  }
+  const before = gitRuns()
+  await $.session.end({ reason: 'resume', sessionId: 's1', resume: { id: 's1' } })
+  await clock.settle()
+  expect(gitRuns()).toBe(before + 2)
+})

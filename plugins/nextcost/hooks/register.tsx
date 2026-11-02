@@ -597,8 +597,9 @@ export const register: Register = on => {
     band.warned = forgetConversation(band.warned)
     await keepCounts($)
     band.lastPaintKey = ''
-    // A resume may be another project.
-    void readWorkspace($)
+    // A resume may be another project. Any other end is the process's, and
+    // two git processes on the way out hold up the exit.
+    if (e.reason === 'clear' || e.reason === 'resume') void readWorkspace($)
     $.ui.invalidate('ui.render')
     return next(e)
   })
