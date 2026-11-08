@@ -27,7 +27,7 @@ every change on 2.1.299 and the latest release, so 2.1.299 is the oldest
 version tested. The one-line form needs Claude Code
 2.1.292 or later; on an older one, add the marketplace first
 (`claude plugin marketplace add HMarzban/nextcost`), then
-`claude plugin install nextcost@hossein-mods`.
+`claude plugin install nextcost@harvey-mods`.
 
 Older than 2.1.299 isn't tested. Known differences there: before 2.1.290,
 Claude Code doesn't tell a mod how many tool calls Anthropic ran, so for a
