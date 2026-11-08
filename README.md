@@ -72,9 +72,9 @@ plugin installed from either is available in the other.
 this repository was `claude-mod`. Swap the old plugin for the new one:
 
 ```bash
-claude plugin uninstall session-usage-band@hossein-mods
-claude plugin marketplace update hossein-mods
-claude plugin install nextcost@hossein-mods
+claude plugin uninstall session-usage-band
+claude plugin marketplace update
+claude plugin install nextcost --marketplace HMarzban/nextcost
 ```
 
 `/usage-band` and the `CC_BAND_*` settings still work. Your chosen layout
@@ -95,7 +95,7 @@ pick a scope:
 
 ```bash
 claude plugin marketplace add HMarzban/nextcost
-claude plugin install nextcost@hossein-mods
+claude plugin install nextcost@harvey-mods
 ```
 
 **For a team**, commit this to the repository's `.claude/settings.json`.
@@ -107,11 +107,14 @@ loads straight from the marketplace. If it isn't showing yet, run
 ```json
 {
   "extraKnownMarketplaces": {
-    "hossein-mods": { "source": { "source": "github", "repo": "HMarzban/nextcost" } }
+    "harvey-mods": { "source": { "source": "github", "repo": "HMarzban/nextcost" } }
   },
-  "enabledPlugins": { "nextcost@hossein-mods": true }
+  "enabledPlugins": { "nextcost@harvey-mods": true }
 }
 ```
+
+Both keys carry the marketplace's name, `harvey-mods`. If the band doesn't
+appear for a teammate, check that both match it.
 
 </details>
 
@@ -121,12 +124,13 @@ loads straight from the marketplace. If it isn't showing yet, run
 ```bash
 # update, then quit and reopen Claude Code (Cmd+Q on the desktop):
 # /reload-plugins doesn't load a new version
-claude plugin marketplace update hossein-mods
-claude plugin update nextcost@hossein-mods
+claude plugin marketplace update
+claude plugin update nextcost
 
-# uninstall
-claude plugin uninstall nextcost@hossein-mods
-claude plugin marketplace remove hossein-mods
+# uninstall, then remove the marketplace under the name
+# `claude plugin marketplace list` shows for HMarzban/nextcost
+claude plugin uninstall nextcost
+claude plugin marketplace remove harvey-mods
 ```
 
 </details>
@@ -318,7 +322,7 @@ change live, the module map and the rules the code follows.
 <summary>Repository layout</summary>
 
 ```
-.claude-plugin/marketplace.json     the marketplace index (named hossein-mods)
+.claude-plugin/marketplace.json     the marketplace index (named harvey-mods)
 plugins/nextcost/
   hooks/                            the band: the hooks, the readings and the three layouts
   tests/                            the test suite
@@ -339,4 +343,4 @@ report a security issue, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE) © Hossein Marzban
+[MIT](LICENSE) © Harvey Marzban

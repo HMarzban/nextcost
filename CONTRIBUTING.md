@@ -60,7 +60,7 @@ it. From the clone's parent folder:
 
 ```bash
 claude plugin marketplace add ./nextcost
-claude plugin install nextcost@hossein-mods
+claude plugin install nextcost@harvey-mods
 ```
 
 Then, after each edit, bump `version` in
@@ -70,8 +70,8 @@ real one ([step 1](#before-you-open-a-pull-request)) before you open the
 pull request. After each bump, run:
 
 ```bash
-claude plugin marketplace update hossein-mods
-claude plugin update nextcost@hossein-mods
+claude plugin marketplace update harvey-mods
+claude plugin update nextcost@harvey-mods
 ```
 
 A new version loads only when Claude Code starts again: on the desktop,
